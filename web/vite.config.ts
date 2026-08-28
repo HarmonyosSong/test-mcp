@@ -12,6 +12,12 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: 5173,
       proxy: {
+        // 部署在 /harmonyos_agent/ 子路径时，dev server 也会带该前缀
+        '^/harmonyos_agent/api': {
+          target: proxyTarget,
+          changeOrigin: true,
+        },
+        // 本地独立测试时的默认代理
         '/api': {
           target: proxyTarget,
           changeOrigin: true,
