@@ -1,0 +1,3 @@
+interface:
+  display_name: "Investigate HarmonyOS Evidence"
+  short_description: "Test diagnosis hypotheses with read-only evidence"

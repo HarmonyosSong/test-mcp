@@ -1,0 +1,154 @@
+/* ---------- 复古像素风（参考 careers.kimi.com） ---------- */
+/* 像素字体：缝合像素字体 Fusion Pixel（SIL OFL 协议） */
+/* 光标：retrosmart 光标主题导出的 PNG */
+
+@font-face {
+  font-family: 'Fusion Pixel 12px Mono';
+  src: url('/assets/fonts/fusion-pixel-12px-monospaced.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-pixel: 'Fusion Pixel 12px Mono', 'PingFang SC', monospace;
+}
+
+/* ---------- 像素字体：应用于标题与界面骨架，正文/表格保持可读字体 ---------- */
+
+.sidebar-brand strong,
+.chat-thread-header h2,
+.chat-guide h2,
+.eyebrow,
+.section-kicker,
+.stage-index,
+.sidebar-nav button,
+.segmented-control button,
+.detail-view-switch button,
+.mobile-view-nav button,
+.status-badge,
+.nav-count,
+.primary-button,
+.secondary-button,
+.new-chat-button {
+  font-family: var(--font-pixel);
+  letter-spacing: 1px;
+  -webkit-font-smoothing: none;
+}
+
+/* 像素字体在 12px 整数倍下最锐利，标题适当放大到 24px 档 */
+.chat-guide h2 {
+  font-size: 24px;
+  line-height: 32px;
+}
+
+/* ---------- 深色主题 = 复古暗黑像素风 ---------- */
+
+/* 全站像素字体（正文也换成点阵字，保留系统等宽字体兜底） */
+[data-theme='dark'] body {
+  font-family: var(--font-pixel);
+  -webkit-font-smoothing: none;
+}
+
+/* 直角边框：Win9x 式硬朗像素 UI */
+[data-theme='dark'] * {
+  border-radius: 0;
+}
+
+/* CRT 扫描线 */
+[data-theme='dark'] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.22) 0,
+    rgba(0, 0, 0, 0.22) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* 主区域点阵网格底纹 */
+[data-theme='dark'] .main-area {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 12px 12px;
+}
+
+/* 反色选中效果 */
+[data-theme='dark'] ::selection {
+  color: #121212;
+  background: #f5f5f5;
+}
+
+/* 长文内容区豁免像素字体：agent 回复、诊断报告等用大段清晰字体，保证可读性 */
+[data-theme='dark'] .chat-bubble,
+[data-theme='dark'] .diagnosis-summary,
+[data-theme='dark'] .report-section,
+[data-theme='dark'] .stage-summary,
+[data-theme='dark'] .case-context,
+[data-theme='dark'] .tool-step-detail {
+  font-family:
+    Inter, 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui,
+    -apple-system, sans-serif;
+  letter-spacing: 0;
+  -webkit-font-smoothing: auto;
+}
+
+/* ---------- retrosmart 复古光标 ---------- */
+/* 用 :root 前缀提升优先级，覆盖 styles.css 中的 cursor 声明（本文件最后引入） */
+
+:root html,
+:root body {
+  cursor: url('/assets/cursors/retrosmart/default.png') 0 0, auto;
+}
+
+:root a,
+:root button,
+:root summary,
+:root [role='button'],
+:root [role='link'],
+:root [role='tab'] {
+  cursor: url('/assets/cursors/retrosmart/pointer.png') 4 0, pointer;
+}
+
+:root input,
+:root textarea,
+:root select,
+:root [contenteditable='true'] {
+  cursor: url('/assets/cursors/retrosmart/text.png') 4 9, text;
+}
+
+:root button:disabled,
+:root input:disabled,
+:root textarea:disabled,
+:root select:disabled,
+:root [aria-disabled='true'] {
+  cursor: url('/assets/cursors/retrosmart/not-allowed.png') 8 8, not-allowed;
+}
+
+/* ---------- 像素化工具类 ---------- */
+
+.pixelated {
+  image-rendering: pixelated;
+}
+
+/* ---------- 打字机光标块 ---------- */
+
+.typewriter-caret {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  margin-left: 3px;
+  vertical-align: -2px;
+  background: currentcolor;
+  animation: typewriter-caret-blink 0.9s steps(2) infinite;
+}
+
+@keyframes typewriter-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}

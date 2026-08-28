@@ -1,0 +1,3 @@
+interface:
+  display_name: "Report HarmonyOS Diagnosis"
+  short_description: "Produce a calibrated evidence-linked diagnosis"

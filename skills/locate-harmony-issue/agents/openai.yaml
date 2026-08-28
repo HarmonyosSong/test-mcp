@@ -1,0 +1,3 @@
+interface:
+  display_name: "Locate HarmonyOS Issue"
+  short_description: "Turn symptoms into an evidence-backed search scope"

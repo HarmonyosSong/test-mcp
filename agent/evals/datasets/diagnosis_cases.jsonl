@@ -1,0 +1,2 @@
+{"title":"登录有问题","description":"登录功能现在有问题","evidence":"","expected_verdict":"insufficient_evidence"}
+{"title":"登录页启动白屏","description":"启动后白屏并抛出 TypeError","evidence":"TypeError: Cannot read property name at LoginPage.ets:42","expected_verdict":"probable"}
