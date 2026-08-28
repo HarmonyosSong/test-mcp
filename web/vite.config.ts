@@ -16,7 +16,6 @@ export default defineConfig(({ mode }) => {
         '^/harmonyos_agent/api': {
           target: proxyTarget,
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/harmonyos_agent/, ''),
         },
         // 本地独立测试时的默认代理
         '/api': {
