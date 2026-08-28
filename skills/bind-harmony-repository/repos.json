@@ -1,0 +1,12 @@
+{
+  "xesapp": {
+    "aliases": ["xesapp", "鸿蒙仓库", "学而思鸿蒙", "鸿蒙主仓库"],
+    "name": "xesapp",
+    "url": "https://git.100tal.com/peiyou_xueersi_harmony/xesapp.git"
+  },
+  "xesapp_pad": {
+    "aliases": ["xesapp_pad", "鸿蒙 Pad", "pad 仓库"],
+    "name": "xesapp_pad",
+    "url": "https://git.100tal.com/peiyou_xueersi_harmony/xesapp_pad.git"
+  }
+}
