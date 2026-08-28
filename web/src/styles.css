@@ -3084,3 +3084,19 @@ button:disabled {
   --spinner-track: rgba(0, 0, 0, 0.25);
   --spinner-head: #121212;
 }
+
+/* ---------- 主题切换像素块扩散转场 ---------- */
+
+.pixel-theme-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 9998; /* 高于对话框，低于 CRT 扫描线（9999） */
+  pointer-events: none;
+}
+
+.pixel-theme-transition canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
