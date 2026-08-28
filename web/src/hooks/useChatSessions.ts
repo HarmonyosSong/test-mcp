@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { streamChatMessage } from '../agui/client';
 import { api } from '../api';
+import {
+  detectRepositoryBindingIntent,
+  registerRepositoryByName,
+} from '../lib/repositoryBinding';
 import type {
   CaseDraft,
   ChatConversation,
   ChatConversationSummary,
   ConnectionState,
+  RepositoryRecord,
 } from '../types';
 
 interface UseChatSessionsOptions {
   connection: ConnectionState;
   onNotice: (notice: { kind: 'info' | 'error'; message: string }) => void;
+  onRepositoryRegistered?: (repository: RepositoryRecord) => void;
 }
 
 export interface ChatController {
@@ -30,7 +36,11 @@ export interface ChatController {
   setModelOverride: (spec: string) => Promise<void>;
 }
 
-export function useChatSessions({ connection, onNotice }: UseChatSessionsOptions): ChatController {
+export function useChatSessions({
+  connection,
+  onNotice,
+  onRepositoryRegistered,
+}: UseChatSessionsOptions): ChatController {
   const [summaries, setSummaries] = useState<ChatConversationSummary[]>([]);
   const [active, setActive] = useState<ChatConversation | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -114,10 +124,59 @@ export function useChatSessions({ connection, onNotice }: UseChatSessionsOptions
     [onNotice, refreshSummaries],
   );
 
+  const appendLocalMessage = useCallback(
+    (role: 'user' | 'assistant', content: string) => {
+      setActive((current) => {
+        if (!current) return current;
+        const now = new Date().toISOString();
+        const message = {
+          id: `local-${now}-${Math.random().toString(36).slice(2, 8)}`,
+          role,
+          content,
+          steps: [],
+          status: 'completed' as const,
+          created_at: now,
+        };
+        return {
+          ...current,
+          messages: [...current.messages, message],
+          updated_at: now,
+        };
+      });
+    },
+    [],
+  );
+
   const send = useCallback(
     async (content: string) => {
       const conversationId = activeIdRef.current;
       if (!conversationId || sending) return;
+
+      // 先检测是否为“绑定仓库”类自然语言指令
+      const bindingTarget = detectRepositoryBindingIntent(content);
+      if (bindingTarget) {
+        setSending(true);
+        try {
+          const repository = await registerRepositoryByName(bindingTarget);
+          appendLocalMessage('user', content);
+          appendLocalMessage(
+            'assistant',
+            `已绑定仓库 ${repository.name}\nURL：${repository.url}\n默认分支：${repository.default_branch}`,
+          );
+          onRepositoryRegistered?.(repository);
+          onNotice({ kind: 'info', message: `${repository.name} 已登记。` });
+          void refreshSummaries();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : '仓库绑定失败';
+          appendLocalMessage('user', content);
+          appendLocalMessage('assistant', `绑定仓库失败：${message}`);
+          onNotice({ kind: 'error', message });
+        } finally {
+          setSending(false);
+        }
+        return;
+      }
+
       const abortController = new AbortController();
       abortRef.current = abortController;
       setSending(true);
@@ -152,7 +211,7 @@ export function useChatSessions({ connection, onNotice }: UseChatSessionsOptions
         setSending(false);
       }
     },
-    [onNotice, refreshSummaries, sending],
+    [appendLocalMessage, onNotice, onRepositoryRegistered, refreshSummaries, sending],
   );
 
   const stop = useCallback(() => {

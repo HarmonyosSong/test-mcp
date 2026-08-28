@@ -75,9 +75,17 @@ function App() {
   const streamingCaseIds = useRef(new Set<string>());
   const linkAfterCreate = useRef(false);
 
+  const handleRepositoryRegistered = useCallback((repository: RepositoryRecord) => {
+    setRepositories((current) =>
+      [...current, repository].sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    setNotice({ kind: 'info', message: `${repository.name} 已登记，可按分支创建诊断。` });
+  }, []);
+
   const chat = useChatSessions({
     connection,
     onNotice: setNotice,
+    onRepositoryRegistered: handleRepositoryRegistered,
   });
 
   const selectedCase = useMemo(
@@ -235,11 +243,6 @@ function App() {
     }
     setShowRepositorySettings(true);
   }, [connection]);
-
-  const handleRepositoryRegistered = useCallback((repository: RepositoryRecord) => {
-    setRepositories((current) => [...current, repository].sort((a, b) => a.name.localeCompare(b.name)));
-    setNotice({ kind: 'info', message: `${repository.name} 已登记，可按分支创建诊断。` });
-  }, []);
 
   const handleOpenCaseFromChat = useCallback(
     (caseId: string) => {
