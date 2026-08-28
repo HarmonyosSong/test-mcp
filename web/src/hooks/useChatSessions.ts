@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { streamChatMessage } from '../agui/client';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import {
   detectRepositoryBindingIntent,
   registerRepositoryByName,
@@ -167,10 +167,19 @@ export function useChatSessions({
           onNotice({ kind: 'info', message: `${repository.name} 已登记。` });
           void refreshSummaries();
         } catch (error) {
-          const message = error instanceof Error ? error.message : '仓库绑定失败';
+          const isAlreadyExists = error instanceof ApiError && error.status === 409;
           appendLocalMessage('user', content);
-          appendLocalMessage('assistant', `绑定仓库失败：${message}`);
-          onNotice({ kind: 'error', message });
+          if (isAlreadyExists) {
+            appendLocalMessage(
+              'assistant',
+              `仓库 ${bindingTarget.name} 已经登记，无需重复绑定。`,
+            );
+            onNotice({ kind: 'info', message: `${bindingTarget.name} 已经登记。` });
+          } else {
+            const message = error instanceof Error ? error.message : '仓库绑定失败';
+            appendLocalMessage('assistant', `绑定仓库失败：${message}`);
+            onNotice({ kind: 'error', message });
+          }
         } finally {
           setSending(false);
         }

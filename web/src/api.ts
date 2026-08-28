@@ -20,7 +20,7 @@ import type {
 const API_BASE = (import.meta.env.VITE_API_BASE || '/harmonyos_agent').replace(/\/$/, '');
 const REQUEST_TIMEOUT_MS = 5_000;
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     message: string,
     readonly status?: number,
