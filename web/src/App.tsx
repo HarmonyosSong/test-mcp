@@ -59,7 +59,6 @@ function App() {
   const chat = useChatSessions({
     connection,
     onNotice: setNotice,
-    onRepositoryRegistered: handleRepositoryRegistered,
   });
 
   const loadWorkspace = useCallback(async (manual = false) => {

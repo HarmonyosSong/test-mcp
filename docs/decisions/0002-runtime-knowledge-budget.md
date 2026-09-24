@@ -69,3 +69,12 @@
 make knowledge-validate
 uv run --project server pytest -q agent/tests agent/evals mcp_server/tests server/tests
 ```
+
+## 2026-09-24 验证与反馈入口补充
+
+- `make live-eval` 运行固定的三场景四轮真实模型报告/追问评估，未配置模型时失败，不静默跳过。
+- `python -m harmony_agent.evaluation --input ... --baseline ...` 汇总及比较同模型、同数据集、同轮次结果。
+  质量标签带 assessed/unassessed 分母，未知成本保留 null，失败轮次仍计入；自由文本无证据断言须另行复核。
+- 聊天终态自动独立归档；`harmony_agent.knowledge_feedback` 提供复核、提案、校验入库与规范条目关联。
+- 受控概念召回和现象覆盖只改善候选触达，不提升知识权威，也不改变观测账本或工具配对。
+- 实际执行结果和适用边界见 [修复与验证说明](../triage-feedback-and-evaluation.md)。

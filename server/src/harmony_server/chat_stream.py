@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import aclosing
+from datetime import UTC, datetime
 from time import perf_counter
 from uuid import uuid4
 
@@ -16,7 +18,9 @@ from harmony_agent.domain import (
     SendMessageRequest,
     ToolEvent,
 )
+from harmony_agent.knowledge_feedback import capture
 from harmony_agent.repositories import ConversationNotFoundError
+from harmony_knowledge_mcp.query_log import QueryLogEntry, QueryLogger, resolve_query_log_path
 
 from .dependencies import ApplicationContainer
 from .services.conversations import begin_turn, public_conversation
@@ -180,6 +184,36 @@ async def _stream_chat_turn(
                                 step.status = "failed"
                                 step.summary = "工具调用中断，结果未知"
                     await container.conversations.save(conversation)
+                    try:
+                        await asyncio.to_thread(
+                            capture,
+                            conversation,
+                            message_id,
+                            container.settings.conversations_data_file.parent / "knowledge-cases",
+                        )
+                    except Exception:
+                        logging.getLogger(__name__).exception(
+                            "诊断案例归档失败，可从会话重新 capture"
+                        )
+                    log_path = resolve_query_log_path(container.settings.knowledge_query_log)
+                    if log_path:
+                        QueryLogger(log_path).record(
+                            QueryLogEntry(
+                                ts=datetime.now(UTC).isoformat(),
+                                tool="diagnosis_outcome",
+                                status="error"
+                                if assistant.status == ChatMessageStatus.FAILED
+                                else "ok",
+                                duration_ms=0,
+                                conversation_id=conversation_id,
+                                message_id=message_id,
+                                verdict=assistant.report.verdict.value
+                                if assistant.report
+                                else None,
+                                outcome="pending",
+                                error=assistant.error,
+                            )
+                        )
 
     if conversation is None:
         return

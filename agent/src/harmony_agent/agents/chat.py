@@ -178,6 +178,14 @@ class HarmonyChatAgent:
             build_knowledge_toolset(
                 self.model_gateway.settings.knowledge_root,
                 self.model_gateway.settings.knowledge_query_log,
+                query_context={
+                    "conversation_id": conversation.id,
+                    **(
+                        {"message_id": conversation.messages[-1].id}
+                        if conversation.messages and conversation.messages[-1].role == "assistant"
+                        else {}
+                    ),
+                },
             )
         )
         settings = self.model_gateway.settings
@@ -283,6 +291,14 @@ class HarmonyChatAgent:
         except Exception as exc:  # noqa: BLE001 —— 任何失败都要如实转成 Failed 事件
             yield Failed(
                 error=f"{type(exc).__name__}: {exc}",
+                tool_usage=metrics(),
+                evidence_state=ledger.snapshot(),
+            )
+            return
+
+        if "<｜｜DSML｜｜" in (final_text or "".join(collected)):
+            yield Failed(
+                error="模型返回了未执行的工具协议文本，本轮未完成，请重试。",
                 tool_usage=metrics(),
                 evidence_state=ledger.snapshot(),
             )

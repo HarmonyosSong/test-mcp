@@ -1,4 +1,4 @@
-.PHONY: setup dev-api dev-server dev-web dev-mcp test knowledge-validate lint build
+.PHONY: setup dev-api dev-server dev-web dev-mcp test knowledge-validate lint build live-eval knowledge-querylog knowledge-cases
 
 setup:
 	uv sync --project agent --index-url https://pypi.org/simple
@@ -34,3 +34,13 @@ lint:
 
 build:
 	npm --prefix web run build
+
+# Live evaluation fails when the model is absent; it never silently skips.
+live-eval:
+	uv run --project server python -m harmony_agent.evaluation --live agent/evals/datasets/live_chat.jsonl --output .data/evals/latest.json
+
+knowledge-querylog:
+	uv run --project mcp_server harmony-knowledge-querylog
+
+knowledge-cases:
+	uv run --project server python -m harmony_agent.knowledge_feedback list

@@ -59,11 +59,14 @@ def create_knowledge_server(
     root: Path | None = None,
     *,
     query_log_path: str | Path | None = None,
+    query_context: dict[str, str] | None = None,
 ) -> FastMCP:
     base = KnowledgeBase(resolve_knowledge_root(root))
     base.load()
     resolved_log = resolve_query_log_path(query_log_path)
-    query_logger = QueryLogger(resolved_log) if resolved_log is not None else None
+    query_logger = (
+        QueryLogger(resolved_log, context=query_context) if resolved_log is not None else None
+    )
     server = FastMCP("issue-triage-knowledge", instructions=INSTRUCTIONS)
 
     @server.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -95,7 +98,11 @@ def create_knowledge_server(
                 hits = search(base.all(), query, scope=scope, **options)
             selected = []
             if hits:
-                selected = list(dict.fromkeys([hits[0].name, *hits[0].references]))
+                selected = list(
+                    dict.fromkeys(
+                        [hits[0].name, *hits[0].references, *(hit.name for hit in hits[1:])]
+                    )
+                )
             documents = []
             for name in selected[:3]:
                 entry = base.get(name)

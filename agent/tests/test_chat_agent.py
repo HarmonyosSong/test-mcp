@@ -427,3 +427,14 @@ async def test_failed_call_is_blocked_and_budget_resets_next_turn(
     second = await _collect(agent, conversation, "下一轮再检查")
     assert isinstance(second[-1], Completed)
     assert attempts == ["a.ets", "a.ets"]
+
+
+async def test_unexecuted_model_tool_markup_is_a_failed_turn(tmp_path):
+    model = TestModel(
+        call_tools=[], custom_output_text='<｜｜DSML｜｜ invoke name="bind_repository">'
+    )
+    agent = _chat_agent(tmp_path, model)
+    events = await _collect(agent, Conversation(), "绑定仓库")
+    assert isinstance(events[-1], Failed)
+    assert "未执行" in events[-1].error
+    assert not any(isinstance(event, Completed) for event in events)

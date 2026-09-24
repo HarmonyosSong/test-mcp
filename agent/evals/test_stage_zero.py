@@ -181,7 +181,7 @@ async def test_live_skill_clarifies_and_narrows(item, monkeypatch, tmp_path) -> 
     try:
         first = [event async for event in agent.stream_turn(conversation, item["description"])]
         assert isinstance(first[-1], Completed), first[-1]
-        assert any(term in first[-1].text for term in item["question_terms"])
+        assert any(term in first[-1].text for term in item["question_terms"]), first[-1].text
         assert any(
             isinstance(event, ToolFinished) and event.event.tool == "lookup_issue"
             for event in first

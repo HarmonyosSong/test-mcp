@@ -57,6 +57,10 @@ class QueryLogEntry(BaseModel):
     top_score: float | None = None
     hits: list[HitRecord] | None = None
     error: str | None = None
+    conversation_id: str | None = None
+    message_id: str | None = None
+    verdict: str | None = None
+    outcome: str | None = None
 
 
 def resolve_query_log_path(value: str | Path | None = None) -> Path | None:
@@ -86,13 +90,14 @@ def _truncate(value: object) -> object:
 class QueryLogger:
     """无状态追加器：不持有 fd、不带缓冲，server 实例创建多少都无害。"""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, context: dict[str, str] | None = None) -> None:
         self.path = path
+        self.context = context or {}
 
     def record(self, entry: QueryLogEntry) -> None:
         """永不抛异常：埋点失败绝不能影响工具调用。"""
         try:
-            line = entry.model_dump_json()
+            line = entry.model_copy(update=self.context).model_dump_json()
             with _lock_for(self.path):
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 with self.path.open("a", encoding="utf-8") as stream:
@@ -238,9 +243,21 @@ def main(argv: list[str] | None = None) -> int:
     print(f"总调用 {len(entries)} 次（错误 {error_count} 次，坏行 {bad} 行）")
     for tool, count in sorted(tool_counts.items()):
         print(f"  {tool}: {count}")
-    searches = [entry for entry in entries if entry.tool == "search_knowledge"]
+    searches = [
+        entry
+        for entry in entries
+        if entry.tool in {"search_knowledge", "lookup_issue"} and entry.status == "ok"
+    ]
     _print_missed(searches)
     _print_weak(searches)
+    outcomes = [entry for entry in entries if entry.tool == "diagnosis_outcome"]
+    if outcomes:
+        print("\n诊断终态（模型报告 verdict，不代表人工确认根因）：")
+        for verdict, count in Counter(
+            entry.verdict or "未提交报告" for entry in outcomes
+        ).most_common():
+            print(f"  {verdict}: {count}")
+        print("  人工复核结果按 conversation_id/message_id 关联 knowledge-cases 中的 review。")
     return 0
 
 

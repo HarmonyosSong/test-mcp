@@ -1,0 +1,3 @@
+{"id":"source-report","files":{"Entry.ets":"export function renderName(profile: { name?: string }): string {\n  return profile.name!.toUpperCase();\n}\n"},"prompts":["这是隔离的复现工程。传入 profile={} 时页面崩溃，请读取 Entry.ets 核实原因，用 submit_diagnosis_report 提交结构化诊断，并在 likely_location 中给出文件位置。"],"expected":[{"location":"Entry.ets","verdict":["located","probable"]}]}
+{"id":"insufficient-report","prompts":["App 有时候不对劲。我没有复现步骤、日志或其他材料。请提交结构化报告，明确证据不足及缺口，不要猜根因。"],"expected":[{"verdict":"insufficient_evidence"}]}
+{"id":"business-clarification","prompts":["错题本进不去","入口能看见，点击进去白屏，没看到其他报错。请总结现有线索和缺口，提交结构化报告。"],"expected":[{"clarification_terms":["入口","白屏","报过","版本"]},{"verdict":"insufficient_evidence"}]}

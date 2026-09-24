@@ -19,6 +19,17 @@ def main(argv: list[str] | None = None) -> int:
         entries = base.load()
         symptoms = sum(1 for entry in entries if entry.kind.value == "symptom")
         print(f"条目：{len(entries)}（现象 {symptoms}，事实 {len(entries) - symptoms}）")
+        linked = {
+            ref for entry in entries if entry.kind.value == "symptom" for ref in entry.references
+        }
+        orphans = sorted(
+            entry.name
+            for entry in entries
+            if entry.kind.value != "symptom" and entry.name not in linked
+        )
+        print(f"现象未覆盖事实：{len(orphans)}")
+        for name in orphans:
+            print(f"警告：事实缺少现象入口：{name}")
     for warning in warnings:
         print(f"警告：{warning}")
     for error in errors:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
+from .concepts import concept_score
 from .schemas import End, KnowledgeEntry, KnowledgeKind, SearchHit, SearchScope
 
 # 归一化时丢弃标点与空白：中文查询没有词边界，靠短语包含与字符二元组重合度打分。
@@ -75,6 +76,9 @@ def score_entry(query: str, entry: KnowledgeEntry) -> tuple[float, str]:
         if candidate > best_score:
             best_score = candidate
             best_term = term
+    semantic_score, semantic_term = concept_score(query, entry.match_terms)
+    if semantic_score > best_score:
+        return semantic_score, semantic_term
     return best_score, best_term
 
 

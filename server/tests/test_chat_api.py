@@ -18,6 +18,7 @@ def make_chat_client(tmp_path: Path) -> TestClient:
     project_root = Path(__file__).resolve().parents[2]
     settings = Settings(
         mode="demo",
+        knowledge_query_log="off",
         model_config_file=tmp_path / "model-config.json",
         conversations_data_file=tmp_path / "conversations.json",
         repository_data_file=tmp_path / "repositories.json",
@@ -322,3 +323,57 @@ def test_available_models_requires_configured_model(tmp_path: Path) -> None:
     with make_chat_client(tmp_path) as client:
         response = client.get("/api/model/available-models")
         assert response.status_code == 409
+
+
+def test_bind_request_reaches_tool_and_survives_restart(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock
+
+    from harmony_agent.domain import RepositoryRecord, RepositorySnapshot
+
+    count = 0
+
+    async def scripted(messages, info):
+        nonlocal count
+        count += 1
+        if count == 1:
+            assert "绑定 xesapp" in ModelMessagesTypeAdapter.dump_json(messages).decode()
+            yield {0: DeltaToolCall(name="bind_repository", json_args='{"name_or_url":"xesapp"}')}
+        else:
+            yield "仓库快照已绑定。"
+
+    with make_chat_client(tmp_path) as client:
+        container = client.app.state.container
+        container.chat_agent.model_override = FunctionModel(stream_function=scripted)
+        container.repositories.list = AsyncMock(
+            return_value=[
+                RepositoryRecord(
+                    id="repo-test",
+                    name="xesapp",
+                    url="https://example.com/repo.git",
+                    default_branch="main",
+                )
+            ]
+        )
+        container.repositories.prepare_snapshot = AsyncMock(
+            return_value=RepositorySnapshot(
+                repository_id="repo-test",
+                repository_name="xesapp",
+                requested_ref="main",
+                resolved_commit="abc123",
+                workspace_path=str(tmp_path),
+            )
+        )
+        conversation = create_conversation(client)
+        response = client.post(
+            f"/api/conversations/{conversation['id']}/messages", json={"content": "绑定 xesapp"}
+        )
+        assert response.status_code == 200
+        container.repositories.prepare_snapshot.assert_awaited_once_with("repo-test", "main")
+    with make_chat_client(tmp_path) as restarted:
+        saved = restarted.get(f"/api/conversations/{conversation['id']}").json()
+        assert saved["repository_id"] == "repo-test"
+        assert saved["requested_ref"] == "main"
+        assert saved["resolved_commit"] == "abc123"
+        assert saved["messages"][0]["content"] == "绑定 xesapp"
+        assert saved["messages"][1]["steps"][0]["tool"] == "bind_repository"
+        assert len(list((tmp_path / "knowledge-cases").glob("*.json"))) == 1

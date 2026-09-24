@@ -304,3 +304,34 @@ class TestQuerylogCli:
     def test_reports_missing_file(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         assert main([str(tmp_path / "none.jsonl")]) == 0
         assert "暂无查询日志" in capsys.readouterr().out
+
+
+def test_lookup_misses_are_in_construction_queue_and_errors_are_separate(tmp_path, capsys):
+    path = tmp_path / "queries.jsonl"
+    logger = QueryLogger(path, context={"conversation_id": "conv-test", "message_id": "msg-test"})
+    logger.record(
+        QueryLogEntry(
+            ts="2026-09-24",
+            tool="lookup_issue",
+            arguments={"query": "组合加购"},
+            status="ok",
+            duration_ms=1,
+            hit_count=0,
+        )
+    )
+    logger.record(
+        QueryLogEntry(
+            ts="2026-09-24",
+            tool="lookup_issue",
+            arguments={"query": "网络失败"},
+            status="error",
+            duration_ms=1,
+            hit_count=0,
+        )
+    )
+    main([str(path)])
+    output = capsys.readouterr().out
+    assert "组合加购" in output
+    assert "网络失败" not in output
+    assert logged_entries(path)[0].conversation_id == "conv-test"
+    assert logged_entries(path)[0].message_id == "msg-test"

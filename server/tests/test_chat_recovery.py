@@ -39,7 +39,13 @@ async def test_interrupted_stream_saves_terminal_state_and_preserves_input(tmp_p
                 closed.set()
 
     request = SimpleNamespace(is_disconnected=AsyncMock(return_value=cancel_mode == "disconnect"))
-    container = SimpleNamespace(conversations=repository, chat_agent=BlockingAgent())
+    container = SimpleNamespace(
+        conversations=repository,
+        chat_agent=BlockingAgent(),
+        settings=SimpleNamespace(
+            conversations_data_file=repository.data_file, knowledge_query_log="off"
+        ),
+    )
     stream = _stream_chat_turn(request, container, "run", conversation.id, assistant.id)
 
     async def consume():
@@ -66,6 +72,9 @@ async def test_interrupted_stream_saves_terminal_state_and_preserves_input(tmp_p
     saved = await repository.get(conversation.id)
     assert saved.messages[-1].status == ChatMessageStatus.FAILED
     assert saved.messages[-1].error
+    archived = json.loads(next((tmp_path / "knowledge-cases").glob("*.json")).read_text())
+    assert archived["message"]["status"] == "failed"
+    assert archived["review"] is None
     assert all(step.status != "running" for step in saved.messages[-1].steps)
     if cancel_mode != "close":
         assert closed.is_set()

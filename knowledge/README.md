@@ -144,10 +144,15 @@ AGENTS.md       后续维护知识内容时的执行约束
 引用使用全库唯一的 `name`，不带目录，例如 `[[order-contract-agreement-sources]]`。
 允许跨业务域引用；移动条目只调整目录和 `domains`，保持 `name` 与文件名不变，引用不需要跟着修改。
 
-现象入口尚未覆盖全部事实；未被现象引用的事实也能通过 `scope="fact"` 或 `scope="all"` 检索。
+现有 65 条事实均有现象入口，校验会列出后续新增的孤儿事实；事实也能通过 `scope="fact"` 或 `scope="all"` 检索。
 定位流程见 [定位 Skill](../skills/locate-harmony-issue/SKILL.md)，新增入口以真实案例为依据。
 
-召回维护先补同一条目的业务别名，不复制事实、不调整域排序来制造命中。
+召回合并原有短语匹配与受控业务概念扩展（`concepts.py`）：如错题本/错题集、优惠券/代金券，
+不依赖完整问句相同，也不降低通用子串阈值。概念命中分数低于精确短语，并按概念覆盖与专一程度排序；
+命中短语以 `concept:` 标注。它是有限术语表的语义扩展，不是通用向量语义检索，未知概念仍可能漏召回。
+域偏好继续只在同分时生效，弱匹配继续回退全库。新增现象为 `auto` 来源，未虚构人工核验日期。
+
+召回维护先补同一条目的业务别名或概念同义表达，不复制事实、不调整域排序来制造命中。
 `agent/evals/datasets/knowledge_retrieval.jsonl` 保存已发现的漏召回、额外改写与无关查询；
 用 `uv run --project server pytest -q agent/evals/test_knowledge_retrieval.py` 执行生产内容评测。
 额外改写不得原样复制进 aliases；评测通过仅说明这些样本覆盖，不能宣称具备通用语义检索能力。
@@ -177,3 +182,15 @@ uv run --project mcp_server harmony-knowledge-validate
 
 校验目录层级、业务域字段、frontmatter 完整性、全库 ID 唯一、名称与文件名一致、跨域引用可解析，
 并报告超过 180 天未验证的条目。`make test` 会先执行这项内容校验。
+
+## 诊断反馈与提炼
+
+每个已结束的聊天轮自动归档到会话数据文件同目录的 `knowledge-cases/`，包含原始问题、报告、
+观测快照、失败状态和成本；删除会话不会删除案例。归档初始为待复核，不能把模型的 probable/located
+当成人工确认。查询日志记录 conversation_id/message_id，并追加 diagnosis_outcome 的报告 verdict；
+人工 confirmed/rejected/uncertain 保存在对应案例 review 中，历史无关联 ID 的日志不伪造回填。
+`harmony-knowledge-querylog` 同时统计 lookup_issue 和 search_knowledge 的未命中/弱命中，工具错误单列。
+
+操作见 [修复与验证说明](../docs/triage-feedback-and-evaluation.md)。确认根因后生成提案，先核对相似条目，
+优先更新规范 ID；编辑适用范围、判据与例外后 apply，在隔离副本校验全库再原子写入。新条目默认 auto，
+不自动提升来源权威，不自动生成 verified_at。新增事实还应补充或更新关联现象及区分问题。
