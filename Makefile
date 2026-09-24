@@ -1,4 +1,4 @@
-.PHONY: setup dev-api dev-server dev-web dev-mcp test lint build
+.PHONY: setup dev-api dev-server dev-web dev-mcp test knowledge-validate lint build
 
 setup:
 	uv sync --project agent --index-url https://pypi.org/simple
@@ -18,7 +18,10 @@ dev-web:
 dev-mcp:
 	uv run --project mcp_server harmony-repository-mcp
 
-test:
+knowledge-validate:
+	uv run --project mcp_server harmony-knowledge-validate
+
+test: knowledge-validate
 	uv run --project server pytest -q
 
 lint:

@@ -45,3 +45,21 @@ The root [`mcp.json`](../mcp.json) contains the equivalent client configuration.
 
 Repository content is treated as untrusted input. Tool annotations declare all
 operations read-only and non-destructive.
+
+## Knowledge MCP
+
+`harmony-knowledge-mcp` loads the Markdown knowledge tree separately from repository evidence.
+Facts live at `facts/<domain>/<name>.md`; symptoms remain at `symptoms/<name>.md`.
+Entry IDs are globally unique and references resolve across domains.
+
+- `list_symptoms`: symptom names, aliases, and candidate domains.
+- `lookup_issue`: default business-symptom entry point; automatic fact fallback and bounded previews
+  of the leading candidate and its direct references, avoiding mandatory separate reads.
+- `list_knowledge_domains`: domain IDs present in the loaded entries.
+- `search_knowledge`: search symptoms, facts, or both; optional `domains` prefer matching domains
+  and `shared` at equal text scores. Other domains remain eligible.
+- `get_knowledge_entry`: read body pages by stable ID (`offset`, `limit`, `next_offset`), regardless of directory.
+
+Run `make knowledge-validate` from the repository root after editing content. See
+[`knowledge/_schema.md`](../knowledge/_schema.md) for layout and metadata constraints.
+Domain preferences and matched domains are included in query logs for retrieval evaluation.
