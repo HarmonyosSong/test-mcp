@@ -23,10 +23,9 @@ from harmony_agent.domain import (
 )
 from harmony_repo_mcp import MCP_TOOL_NAMES
 
-from .agui import router as agui_router
 from .chat_stream import router as chat_stream_router
 from .dependencies import build_container
-from .routes import cases_router, conversations_router, models_router, repositories_router
+from .routes import conversations_router, models_router, repositories_router
 
 
 def create_app(settings: Settings | None = None, static_dir: Path | str | None = None) -> FastAPI:
@@ -35,7 +34,6 @@ def create_app(settings: Settings | None = None, static_dir: Path | str | None =
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        await container.cases.initialize()
         await container.conversations.initialize()
         await container.repositories.initialize()
         app.state.tasks = set()
@@ -96,8 +94,6 @@ def create_app(settings: Settings | None = None, static_dir: Path | str | None =
             model_prices=MODEL_PRICES,
         )
 
-    app.include_router(agui_router)
-    app.include_router(cases_router)
     app.include_router(conversations_router)
     app.include_router(chat_stream_router)
     app.include_router(models_router)
@@ -125,8 +121,16 @@ def _redact_secrets(value: object) -> object:
 
 def run() -> None:
     parser = argparse.ArgumentParser(description="Harmony Agent Server")
-    parser.add_argument("--host", type=str, default=os.environ.get("HARMONY_AGENT_HOST", "127.0.0.1"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("HARMONY_AGENT_PORT", "8000")))
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=os.environ.get("HARMONY_AGENT_HOST", "127.0.0.1"),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("HARMONY_AGENT_PORT", "8000")),
+    )
     parser.add_argument(
         "--static-dir",
         type=str,

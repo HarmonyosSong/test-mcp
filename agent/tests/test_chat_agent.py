@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic_ai import ModelMessagesTypeAdapter, models
@@ -12,7 +13,6 @@ from harmony_agent.agents import (
     Completed,
     Failed,
     HarmonyChatAgent,
-    HarmonyPromoteAgent,
     ModelNotConfiguredError,
     TextDelta,
     ToolFinished,
@@ -78,6 +78,8 @@ async def test_stream_turn_streams_text_and_persists_history(tmp_path) -> None:
     completed = [event for event in events if isinstance(event, Completed)]
     assert len(completed) == 1
     assert completed[0].text == "这是回复正文"
+    assert completed[0].tool_usage["model_requests"] == 1
+    assert completed[0].tool_usage["elapsed_ms"] >= 0
     # messages_state 必须能被 PydanticAI 回读，作为下一轮 message_history
     restored = ModelMessagesTypeAdapter.validate_python(completed[0].messages_state)
     assert len(restored) >= 2  # 本轮的 request + response
@@ -140,6 +142,8 @@ async def test_stream_turn_model_error_becomes_failed_event(tmp_path) -> None:
 
     assert isinstance(events[-1], Failed)
     assert "upstream exploded" in events[-1].error
+    assert events[-1].tool_usage["model_requests"] == 1
+    assert events[-1].tool_usage["elapsed_ms"] >= 0
     assert not any(isinstance(event, TextDelta) for event in events)
 
 
@@ -186,58 +190,6 @@ def test_trim_messages_state_truncates_tool_returns() -> None:
     content = trimmed[1]["parts"][0]["content"]
     assert len(content) < 5_000
     assert content.endswith("...(已截断)")
-
-
-async def test_promote_extracts_case_draft(tmp_path) -> None:
-    models.ALLOW_MODEL_REQUESTS = False
-    conversation = Conversation(title="登录页排查")
-    gateway = ModelGateway(Settings(model_config_file=tmp_path / "model-config.json"))
-    promote = HarmonyPromoteAgent(gateway)
-    promote.model_override = TestModel(
-        call_tools=[],
-        custom_output_text=json.dumps(
-            {
-                "title": "登录页按钮点击无反应",
-                "description": "点击登录按钮没有任何响应",
-                "evidence": "hilog: click event not handled",
-            }
-        ),
-    )
-
-    draft = await promote.extract(conversation, [])
-
-    assert draft.title == "登录页按钮点击无反应"
-    assert draft.workspace_path is None
-    assert draft.repository_id is None
-
-
-async def test_promote_keeps_conversation_binding(tmp_path) -> None:
-    models.ALLOW_MODEL_REQUESTS = False
-    conversation = Conversation(
-        title="已绑定工作区",
-        workspace_path="/tmp/workspace",
-    )
-    promote = HarmonyPromoteAgent(
-        ModelGateway(Settings(model_config_file=tmp_path / "model-config.json"))
-    )
-    promote.model_override = TestModel(
-        call_tools=[],
-        custom_output_text=json.dumps(
-            {
-                "title": "标题",
-                "description": "描述",
-                "evidence": "",
-                "repository_id": "repo-other",
-                "branch": "main",
-            }
-        ),
-    )
-
-    draft = await promote.extract(conversation, [])
-
-    # 会话已绑定工作区时，以绑定为准，模型给出的仓库来源被清除
-    assert draft.workspace_path == "/tmp/workspace"
-    assert draft.repository_id is None
 
 
 class StubRepositoryManager:
@@ -326,6 +278,80 @@ async def test_bind_repository_then_search_in_same_turn(tmp_path) -> None:
     assert persisted.resolved_commit == "abc123def456"
 
 
+@pytest.mark.parametrize("branch", [None, "releaseV/existing", "releaseV/new"])
+async def test_binding_preserves_existing_snapshot_unless_branch_changes(tmp_path, branch) -> None:
+    agent, conversations = _deps_agent(tmp_path, None)
+    conversation = Conversation(
+        workspace_path=str(agent.repositories.workspace),
+        repository_id="repo-xesapp",
+        repository_name="xesapp",
+        requested_ref="releaseV/existing",
+        resolved_commit="original-commit",
+    )
+    await conversations.initialize()
+    await conversations.save(conversation)
+    prepare = AsyncMock(wraps=agent.repositories.prepare_snapshot)
+    agent.repositories.prepare_snapshot = prepare
+    calls = 0
+
+    async def respond(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            assert "releaseV/existing" in info.instructions
+            assert "original-commit" in info.instructions
+            args = {"name_or_url": "xesapp"}
+            if branch:
+                args["branch"] = branch
+            yield {0: DeltaToolCall(name="bind_repository", json_args=json.dumps(args))}
+        else:
+            yield "继续调查"
+
+    agent.model_override = FunctionModel(stream_function=respond)
+    events = await _collect(
+        agent, conversation, "确认现有绑定" if branch != "releaseV/new" else "切换到 releaseV/new"
+    )
+    assert isinstance(events[-1], Completed)
+    persisted = await conversations.get(conversation.id)
+    if branch == "releaseV/new":
+        prepare.assert_awaited_once_with("repo-xesapp", branch)
+        assert persisted.requested_ref == branch
+    else:
+        prepare.assert_not_awaited()
+        assert persisted.requested_ref == "releaseV/existing"
+        assert persisted.resolved_commit == "original-commit"
+
+
+@pytest.mark.parametrize("can_bind", [False, True])
+async def test_chat_catalog_and_loader_enforce_tool_requirements(tmp_path, can_bind) -> None:
+    agent = _deps_agent(tmp_path, None)[0] if can_bind else _chat_agent(tmp_path, None)
+    registry = SkillRegistry(Path(__file__).resolve().parents[2] / "skills")
+    registry.load()
+    agent.registry = registry
+    calls = 0
+
+    async def respond(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            # 报告 Skill 在统一聊天路径下始终可用（submit 工具始终挂载）；
+            # 绑定 Skill 仅在有仓储依赖时出现。
+            assert "report-harmony-diagnosis" in info.instructions
+            assert ("bind-harmony-workspace" in info.instructions) is can_bind
+            yield {
+                0: DeltaToolCall(name="load_skill", json_args='{"name":"report-harmony-diagnosis"}')
+            }
+        else:
+            yield "已加载报告技能，继续排查。"
+
+    agent.model_override = FunctionModel(stream_function=respond)
+    events = await _collect(agent, Conversation(), "排查问题")
+    finished = [event.event for event in events if isinstance(event, ToolFinished)]
+    assert finished[0].status == "completed"
+    assert "submit_diagnosis_report" in (finished[0].result_summary or "")
+    assert isinstance(events[-1], Completed)
+
+
 async def test_bind_repository_rejects_unregistered_repo(tmp_path) -> None:
     models.ALLOW_MODEL_REQUESTS = False
     agent, conversations = _deps_agent(tmp_path, None)
@@ -356,3 +382,48 @@ async def test_bind_repository_rejects_unregistered_repo(tmp_path) -> None:
 
     persisted = await conversations.get(conversation.id)
     assert persisted.workspace_path is None
+
+
+@pytest.mark.parametrize("lazy_workspace", [False, True])
+async def test_failed_call_is_blocked_and_budget_resets_next_turn(
+    tmp_path, monkeypatch, lazy_workspace
+) -> None:
+    from harmony_repo_mcp.inspector import ProjectInspector
+
+    attempts = []
+
+    def broken_read(self, relative_path, start_line=1, end_line=200):
+        attempts.append(relative_path)
+        raise OSError("injected failure")
+
+    monkeypatch.setattr(ProjectInspector, "read_project_file", broken_read)
+    requests = 0
+
+    async def scripted(messages, info):
+        nonlocal requests
+        requests += 1
+        if requests in (1, 2, 4):
+            yield {
+                0: DeltaToolCall(name="read_project_file", json_args='{"relative_path":"a.ets"}')
+            }
+        else:
+            yield "读取失败，当前证据不足。"
+
+    model = FunctionModel(stream_function=scripted)
+    if lazy_workspace:
+        agent, _ = _deps_agent(tmp_path, model)
+        workspace = tmp_path / "workspace"
+    else:
+        agent = _chat_agent(tmp_path, model)
+        workspace = tmp_path
+    conversation = Conversation(workspace_path=str(workspace))
+    first = await _collect(agent, conversation, "查 a.ets")
+    assert isinstance(first[-1], Completed)
+    assert attempts == ["a.ets"]
+    finished = [event.event for event in first if isinstance(event, ToolFinished)]
+    assert [event.status for event in finished] == ["failed", "failed"]
+    assert "禁止原样重试" in finished[-1].result_summary
+    conversation.messages_state = first[-1].messages_state
+    second = await _collect(agent, conversation, "下一轮再检查")
+    assert isinstance(second[-1], Completed)
+    assert attempts == ["a.ets", "a.ets"]

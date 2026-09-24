@@ -1,22 +1,3 @@
-export type CaseStatus = 'queued' | 'running' | 'completed' | 'failed';
-
-export type DiagnosticStageKey =
-  | 'intake'
-  | 'locate'
-  | 'investigate'
-  | 'diagnose';
-
-export type StageStatus = 'pending' | 'running' | 'completed' | 'failed';
-
-export interface DiagnosticStage {
-  key: DiagnosticStageKey;
-  label: string;
-  status: StageStatus;
-  summary: string;
-  started_at?: string | null;
-  completed_at?: string | null;
-}
-
 export interface RootCauseCandidate {
   title: string;
   explanation: string;
@@ -48,52 +29,6 @@ export type ChatStep = ToolEvent;
 
 export type ChatMessageStatus = 'streaming' | 'completed' | 'failed';
 
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  steps: ChatStep[];
-  status: ChatMessageStatus;
-  error?: string | null;
-  case_id?: string | null;
-  input_tokens?: number | null;
-  output_tokens?: number | null;
-  created_at: string;
-}
-
-export interface ChatConversation {
-  id: string;
-  title: string;
-  workspace_path?: string | null;
-  repository_id?: string | null;
-  repository_name?: string | null;
-  requested_ref?: string | null;
-  resolved_commit?: string | null;
-  model_override?: string | null;
-  messages: ChatMessage[];
-  case_ids: string[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ChatConversationSummary {
-  id: string;
-  title: string;
-  repository_name?: string | null;
-  message_count: number;
-  case_ids: string[];
-  updated_at: string;
-}
-
-export interface CreateConversationInput {
-  title?: string;
-  workspace_path?: string;
-  repository_id?: string;
-  branch?: string;
-}
-
-export type CaseDraft = CreateCaseInput;
-
 export interface DiagnosticReport {
   verdict: 'located' | 'probable' | 'insufficient_evidence' | 'tool_error';
   severity: 'critical' | 'high' | 'medium' | 'low' | 'unknown';
@@ -109,23 +44,46 @@ export interface DiagnosticReport {
   limitations: string[];
 }
 
-export interface DiagnosticCase {
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  steps: ChatStep[];
+  status: ChatMessageStatus;
+  error?: string | null;
+  report?: DiagnosticReport | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  created_at: string;
+}
+
+export interface ChatConversation {
   id: string;
   title: string;
-  description: string;
-  input_evidence: string;
   workspace_path?: string | null;
   repository_id?: string | null;
   repository_name?: string | null;
   requested_ref?: string | null;
   resolved_commit?: string | null;
-  status: CaseStatus;
+  model_override?: string | null;
+  messages: ChatMessage[];
   created_at: string;
   updated_at: string;
-  stages: DiagnosticStage[];
-  tool_events: ToolEvent[];
-  report?: DiagnosticReport | null;
-  error?: string | null;
+}
+
+export interface ChatConversationSummary {
+  id: string;
+  title: string;
+  repository_name?: string | null;
+  message_count: number;
+  updated_at: string;
+}
+
+export interface CreateConversationInput {
+  title?: string;
+  workspace_path?: string;
+  repository_id?: string;
+  branch?: string;
 }
 
 export interface HealthResponse {
@@ -150,15 +108,6 @@ export interface MetaResponse {
   constraints: string[];
   context_windows: Record<string, number>;
   model_prices: Record<string, { input: number; output: number }>;
-}
-
-export interface CreateCaseInput {
-  title: string;
-  description: string;
-  evidence: string;
-  workspace_path?: string;
-  repository_id?: string;
-  branch?: string;
 }
 
 export interface RepositoryRecord {
@@ -231,5 +180,3 @@ export interface ModelConnectionResult {
 }
 
 export type ConnectionState = 'checking' | 'connected' | 'demo';
-export type DetailView = 'process' | 'diagnosis';
-export type MobileView = 'cases' | DetailView;

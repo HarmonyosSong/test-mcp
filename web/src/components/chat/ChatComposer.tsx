@@ -1,27 +1,21 @@
-import { FileSearch, SendHorizonal, Square } from 'lucide-react';
+import { SendHorizonal, Square } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
 interface ChatComposerProps {
   disabled: boolean;
   sending: boolean;
-  canPromote: boolean;
-  promotePending: boolean;
   /** 操作区左侧的附加内容（模型选择器、上下文用量等） */
   toolbarExtra?: ReactNode;
   onSend: (content: string) => void;
   onStop: () => void;
-  onPromote: () => void;
 }
 
 export function ChatComposer({
   disabled,
   sending,
-  canPromote,
-  promotePending,
   toolbarExtra,
   onSend,
   onStop,
-  onPromote,
 }: ChatComposerProps) {
   const [value, setValue] = useState('');
 
@@ -51,16 +45,6 @@ export function ChatComposer({
         aria-label="消息输入框"
       />
       <div className="chat-composer-actions">
-        <button
-          type="button"
-          className="chat-promote-button"
-          onClick={onPromote}
-          disabled={disabled || sending || !canPromote || promotePending}
-          title="从当前对话提取结构化诊断案例"
-        >
-          <FileSearch size={15} />
-          <span>{promotePending ? '正在提取…' : '生成诊断案例'}</span>
-        </button>
         {toolbarExtra}
         <span className="chat-composer-spacer" />
         {sending ? (

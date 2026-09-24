@@ -1,4 +1,3 @@
-from .cases import CaseNotFoundError, CaseRepository
 from .conversations import ConversationNotFoundError, ConversationRepository
 from .git import (
     RepositoryAlreadyExistsError,
@@ -8,8 +7,6 @@ from .git import (
 )
 
 __all__ = [
-    "CaseNotFoundError",
-    "CaseRepository",
     "ConversationNotFoundError",
     "ConversationRepository",
     "RepositoryAlreadyExistsError",

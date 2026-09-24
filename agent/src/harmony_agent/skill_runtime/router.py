@@ -13,4 +13,4 @@ class SkillRouter:
     ) -> list[LoadedSkill]:
         if not stages:
             return list(skills)
-        return [skill for skill in skills if skill.stage in stages or skill.stage == "general"]
+        return [skill for skill in skills if skill.stage in stages]

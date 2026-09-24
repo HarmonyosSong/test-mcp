@@ -1,6 +1,6 @@
 import pytest
 
-from harmony_agent.domain import ChatMessage, Conversation
+from harmony_agent.domain import ChatMessage, ChatMessageStatus, Conversation
 from harmony_agent.repositories import ConversationNotFoundError, ConversationRepository
 
 
@@ -40,3 +40,20 @@ async def test_conversation_repository_missing_raises(tmp_path) -> None:
         await repository.get("conv-nothing")
     with pytest.raises(ConversationNotFoundError):
         await repository.delete("conv-nothing")
+
+
+async def test_restart_keeps_interrupted_user_input_without_duplicate_recovery(tmp_path) -> None:
+    repository = ConversationRepository(tmp_path / "conversations.json")
+    conversation = Conversation(
+        messages=[
+            ChatMessage(role="user", content="Error original log"),
+            ChatMessage(role="assistant", status=ChatMessageStatus.STREAMING),
+        ]
+    )
+    await repository.save(conversation)
+    await repository.initialize()
+    recovered = await repository.get(conversation.id)
+    assert recovered.messages[-1].status == ChatMessageStatus.FAILED
+    assert recovered.messages_state[0]["parts"][0]["content"] == "Error original log"
+    await repository.initialize()
+    assert (await repository.get(conversation.id)).messages_state == recovered.messages_state

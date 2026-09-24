@@ -1,12 +1,10 @@
-import type { ChatConversation, DiagnosticCase, DiagnosticStage, ToolEvent } from '../types';
+import type { ChatConversation, ToolEvent } from '../types';
 
 export const AGUI_EVENT_TYPES = [
   'RUN_STARTED',
-  'STEP_STARTED',
   'TOOL_CALL_START',
   'TOOL_CALL_END',
   'STATE_SNAPSHOT',
-  'STEP_FINISHED',
   'RUN_FINISHED',
   'RUN_ERROR',
   'TEXT_MESSAGE_START',
@@ -24,58 +22,39 @@ interface AguiEventBase {
 
 export interface RunStartedEvent extends AguiEventBase {
   type: 'RUN_STARTED';
-  case?: DiagnosticCase;
   conversation_id?: string;
   conversation?: ChatConversation;
 }
 
-export interface StepStartedEvent extends AguiEventBase {
-  type: 'STEP_STARTED';
-  case_id: string;
-  stage: DiagnosticStage;
-}
-
 export interface ToolCallStartEvent extends AguiEventBase {
   type: 'TOOL_CALL_START';
-  case_id?: string;
   message_id?: string;
   tool_event: ToolEvent;
 }
 
 export interface ToolCallEndEvent extends AguiEventBase {
   type: 'TOOL_CALL_END';
-  case_id?: string;
   message_id?: string;
   tool_event: ToolEvent;
 }
 
 export interface StateSnapshotEvent extends AguiEventBase {
   type: 'STATE_SNAPSHOT';
-  case?: DiagnosticCase;
   conversation_id?: string;
   conversation?: ChatConversation;
 }
 
-export interface StepFinishedEvent extends AguiEventBase {
-  type: 'STEP_FINISHED';
-  case_id: string;
-  stage: DiagnosticStage;
-}
-
 export interface RunFinishedEvent extends AguiEventBase {
   type: 'RUN_FINISHED';
-  case?: DiagnosticCase;
   conversation_id?: string;
   conversation?: ChatConversation;
 }
 
 export interface RunErrorEvent extends AguiEventBase {
   type: 'RUN_ERROR';
-  case_id?: string;
   conversation_id?: string;
   message_id?: string;
   error: string;
-  case?: DiagnosticCase;
   conversation?: ChatConversation;
 }
 
@@ -97,11 +76,9 @@ export interface TextMessageEndEvent extends AguiEventBase {
 
 export type AguiEvent =
   | RunStartedEvent
-  | StepStartedEvent
   | ToolCallStartEvent
   | ToolCallEndEvent
   | StateSnapshotEvent
-  | StepFinishedEvent
   | RunFinishedEvent
   | RunErrorEvent
   | TextMessageStartEvent

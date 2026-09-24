@@ -617,6 +617,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "harmony-repository-mcp" },
+    { name = "jsonschema" },
     { name = "pydantic-ai-slim", extra = ["mcp", "openai"] },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
@@ -633,6 +634,7 @@ dev = [
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.4,<4.0" },
     { name = "harmony-repository-mcp", editable = "../mcp_server" },
+    { name = "jsonschema", specifier = ">=4.26,<5" },
     { name = "pydantic-ai-slim", extras = ["mcp", "openai"], specifier = ">=2.35,<2.36" },
     { name = "pydantic-settings", specifier = ">=2.12,<3.0" },
     { name = "pyyaml", specifier = ">=6.0,<7.0" },
@@ -653,6 +655,7 @@ dependencies = [
     { name = "fastmcp" },
     { name = "mcp" },
     { name = "pydantic" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -660,6 +663,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=3.4,<4.0" },
     { name = "mcp", specifier = ">=1.29.1,<2.0" },
     { name = "pydantic", specifier = ">=2.12,<3.0" },
+    { name = "pyyaml", specifier = ">=6.0,<7.0" },
 ]
 
 [package.metadata.requires-dev]

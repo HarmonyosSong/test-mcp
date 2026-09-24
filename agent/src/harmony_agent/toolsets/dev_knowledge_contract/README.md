@@ -1,0 +1,9 @@
+# Public knowledge contract
+
+`src/knowledge/contracts/mcp.py` is the authoritative MCP response definition. `mcp-responses.schema.json` exports the four public tool response schemas in `properties` with shared `$defs`. `examples/*.json` contains independently reusable, synthetic response cases with `tool`, `arguments`, `expected_outcome`, and `response`. `manifest.json` carries a contract version and SHA-256 for every schema/example file.
+
+Regenerate schema and integrity manifest with `uv run knowledge-contracts`. Changes to service responses must update the authoritative models and samples together. Consumers copy this public bundle and validate identities, requested scope, truncation and source closure; they do not import server internals. Generator and reader share `knowledge.contracts.source_contract`, `content`, and strict published-record validation.
+
+Run `PYTHONPATH=knowledge-mcp/tests uv run python -m unittest discover -s knowledge-mcp/tests -p test_public_contracts.py` to verify the checked-in bundle. The samples cover full code/document citations, normal/missing results, truncation, invalid requests and oversized responses. Global catalog queries remain an explicit service capability; each consumer applies its own authorized query scope.
+
+Document locators may include `document_source` with required `source_id`, `document_id`, `role` (`product`, `technical`, or `reference`), nullable declared `version`, and the original file `content_sha256`. Existing locators without this object remain valid; explicit null is rejected. The document reference key hashes the entire locator, including provenance when present, so changed versions or bytes receive distinct references. `wiki-read-ok` demonstrates provenance and `wiki-read-truncated` retains the older absent-field shape.

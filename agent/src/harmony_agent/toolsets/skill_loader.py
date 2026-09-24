@@ -6,7 +6,9 @@ from pydantic_ai.toolsets import FunctionToolset
 from ..skill_runtime.registry import SkillRegistry
 
 
-def build_skill_toolset(registry: SkillRegistry) -> FunctionToolset[None]:
+def build_skill_toolset(
+    registry: SkillRegistry, allowed_names: set[str] | None = None
+) -> FunctionToolset[None]:
     """把 Skill 正文暴露为显式工具，使技能加载在聊天步骤流中可见。
 
     聊天 Agent 的 instructions 只携带技能目录（名称 + 描述），
@@ -23,8 +25,15 @@ def build_skill_toolset(registry: SkillRegistry) -> FunctionToolset[None]:
         再开始分析。一次最多加载与当前任务直接相关的 1-2 个技能。
         """
         skill = registry.get(name)
-        if skill is None:
-            available = ", ".join(item.name for item in registry.all()) or "（无）"
+        if skill is None or (allowed_names is not None and name not in allowed_names):
+            available = (
+                ", ".join(
+                    item.name
+                    for item in registry.all()
+                    if allowed_names is None or item.name in allowed_names
+                )
+                or "（无）"
+            )
             raise ModelRetry(f"unknown skill '{name}', available skills: {available}")
         return skill.instructions
 

@@ -6,18 +6,14 @@ export default defineConfig(({ mode }) => {
   const proxyTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000';
 
   return {
-    base: '/harmonyos_agent/',
     plugins: [react()],
     server: {
       host: '0.0.0.0',
-      port: 5173,
+      port: 5174,
+      // 端口固定：5174 被占用时直接报错退出，不静默漂移到其他端口
+      strictPort: true,
       proxy: {
-        // 部署在 /harmonyos_agent/ 子路径时，dev server 也会带该前缀
-        '^/harmonyos_agent/api': {
-          target: proxyTarget,
-          changeOrigin: true,
-        },
-        // 本地独立测试时的默认代理
+        // 本地调试：/api 由 dev server 代理到后端
         '/api': {
           target: proxyTarget,
           changeOrigin: true,

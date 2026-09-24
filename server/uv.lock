@@ -654,6 +654,7 @@ source = { editable = "../agent" }
 dependencies = [
     { name = "fastmcp" },
     { name = "harmony-repository-mcp" },
+    { name = "jsonschema" },
     { name = "pydantic-ai-slim", extra = ["mcp", "openai"] },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
@@ -663,6 +664,7 @@ dependencies = [
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.4,<4.0" },
     { name = "harmony-repository-mcp", editable = "../mcp_server" },
+    { name = "jsonschema", specifier = ">=4.26,<5" },
     { name = "pydantic-ai-slim", extras = ["mcp", "openai"], specifier = ">=2.35,<2.36" },
     { name = "pydantic-settings", specifier = ">=2.12,<3.0" },
     { name = "pyyaml", specifier = ">=6.0,<7.0" },
@@ -681,6 +683,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "ag-ui-protocol" },
+    { name = "anyio" },
     { name = "fastapi" },
     { name = "harmony-agent-core" },
     { name = "uvicorn", extra = ["standard"] },
@@ -697,6 +700,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "ag-ui-protocol", specifier = ">=0.1.10,<1.0" },
+    { name = "anyio", specifier = ">=4.0,<5.0" },
     { name = "fastapi", specifier = ">=0.135,<1.0" },
     { name = "harmony-agent-core", editable = "../agent" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.41,<1.0" },
@@ -718,6 +722,7 @@ dependencies = [
     { name = "fastmcp" },
     { name = "mcp" },
     { name = "pydantic" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -725,6 +730,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=3.4,<4.0" },
     { name = "mcp", specifier = ">=1.29.1,<2.0" },
     { name = "pydantic", specifier = ">=2.12,<3.0" },
+    { name = "pyyaml", specifier = ">=6.0,<7.0" },
 ]
 
 [package.metadata.requires-dev]

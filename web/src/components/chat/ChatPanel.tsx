@@ -43,7 +43,6 @@ export function ChatPanel({ summaries, activeId, onSelect, onCreate, onDelete }:
                 <span className="case-card-meta">
                   <span>{item.message_count} 条消息</span>
                   {item.repository_name && <span>{item.repository_name}</span>}
-                  {item.case_ids.length > 0 && <span>{item.case_ids.length} 个案例</span>}
                 </span>
               </button>
               <button

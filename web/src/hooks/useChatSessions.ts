@@ -6,7 +6,6 @@ import {
   registerRepositoryByName,
 } from '../lib/repositoryBinding';
 import type {
-  CaseDraft,
   ChatConversation,
   ChatConversationSummary,
   ConnectionState,
@@ -24,15 +23,12 @@ export interface ChatController {
   active: ChatConversation | null;
   activeId: string | null;
   sending: boolean;
-  promotePending: boolean;
   loaded: boolean;
   select: (id: string) => void;
   createNew: () => Promise<void>;
   remove: (id: string) => Promise<void>;
   send: (content: string) => Promise<void>;
   stop: () => void;
-  requestDraft: () => Promise<CaseDraft | null>;
-  linkCase: (caseId: string) => Promise<void>;
   setModelOverride: (spec: string) => Promise<void>;
 }
 
@@ -45,7 +41,6 @@ export function useChatSessions({
   const [active, setActive] = useState<ChatConversation | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [promotePending, setPromotePending] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
@@ -227,37 +222,6 @@ export function useChatSessions({
     abortRef.current?.abort();
   }, []);
 
-  const requestDraft = useCallback(async (): Promise<CaseDraft | null> => {
-    const conversationId = activeIdRef.current;
-    if (!conversationId) return null;
-    setPromotePending(true);
-    try {
-      return await api.promoteDraft(conversationId);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '提取案例草稿失败';
-      onNotice({ kind: 'error', message });
-      return null;
-    } finally {
-      setPromotePending(false);
-    }
-  }, [onNotice]);
-
-  const linkCase = useCallback(
-    async (caseId: string) => {
-      const conversationId = activeIdRef.current;
-      if (!conversationId) return;
-      try {
-        const updated = await api.linkCase(conversationId, caseId);
-        setActive(updated);
-        void refreshSummaries();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : '案例关联失败';
-        onNotice({ kind: 'error', message });
-      }
-    },
-    [onNotice, refreshSummaries],
-  );
-
   const setModelOverride = useCallback(
     async (spec: string) => {
       const conversationId = activeIdRef.current;
@@ -280,15 +244,12 @@ export function useChatSessions({
     active,
     activeId,
     sending,
-    promotePending,
     loaded,
     select,
     createNew,
     remove,
     send,
     stop,
-    requestDraft,
-    linkCase,
     setModelOverride,
   };
 }

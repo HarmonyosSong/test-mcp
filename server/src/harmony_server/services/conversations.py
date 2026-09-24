@@ -47,5 +47,5 @@ def begin_turn(conversation: Conversation, content: str) -> ChatMessage:
 
 
 def public_conversation(conversation: Conversation) -> dict:
-    """API/SSE 视图：剔除模型态历史 messages_state。"""
-    return conversation.model_dump(mode="json", exclude={"messages_state"})
+    """API/SSE 视图：剔除模型态历史 messages_state 与证据账本快照。"""
+    return conversation.model_dump(mode="json", exclude={"messages_state", "evidence_state"})

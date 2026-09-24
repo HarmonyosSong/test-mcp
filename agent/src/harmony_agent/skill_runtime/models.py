@@ -14,6 +14,8 @@ class LoadedSkill:
     stage: str
     instructions: str
     source: Path
+    modes: tuple[str, ...] = ("chat", "diagnosis")
+    required_tools: tuple[str, ...] = ()
 
     def summary(self) -> SkillSummary:
         return SkillSummary(

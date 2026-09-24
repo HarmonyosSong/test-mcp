@@ -1,5 +1,4 @@
 import {
-  ListChecks,
   GitFork,
   LoaderCircle,
   MessageSquare,
@@ -12,14 +11,11 @@ import type { ConnectionState } from '../types';
 import { ThemeToggle } from './ThemeToggle';
 import { Typewriter } from './Typewriter';
 
-export type SidebarNav = 'chat' | 'tasks';
+export type SidebarNav = 'chat';
 
 interface SidebarProps {
   connection: ConnectionState;
-  activeNav: SidebarNav;
-  caseCount: number;
   refreshing: boolean;
-  onNavChange: (nav: SidebarNav) => void;
   onRefresh: () => void;
   onModelSettings: () => void;
   onRepositorySettings: () => void;
@@ -28,10 +24,7 @@ interface SidebarProps {
 
 export function Sidebar({
   connection,
-  activeNav,
-  caseCount,
   refreshing,
-  onNavChange,
   onRefresh,
   onModelSettings,
   onRepositorySettings,
@@ -56,24 +49,9 @@ export function Sidebar({
       </div>
 
       <nav className="sidebar-nav" aria-label="主导航">
-        <button
-          type="button"
-          className={activeNav === 'chat' ? 'selected' : ''}
-          aria-current={activeNav === 'chat' ? 'page' : undefined}
-          onClick={() => onNavChange('chat')}
-        >
+        <button type="button" className="selected" aria-current="page">
           <MessageSquare size={16} />
           <span>聊天</span>
-        </button>
-        <button
-          type="button"
-          className={activeNav === 'tasks' ? 'selected' : ''}
-          aria-current={activeNav === 'tasks' ? 'page' : undefined}
-          onClick={() => onNavChange('tasks')}
-        >
-          <ListChecks size={16} />
-          <span>任务</span>
-          <span className="nav-count">{caseCount}</span>
         </button>
       </nav>
 
@@ -103,8 +81,8 @@ export function Sidebar({
             className="sidebar-icon-button"
             type="button"
             onClick={onRefresh}
-            title="刷新案例"
-            aria-label="刷新案例"
+            title="刷新会话"
+            aria-label="刷新会话"
             disabled={refreshing}
           >
             <RefreshCw className={refreshing ? 'spin' : ''} size={16} />

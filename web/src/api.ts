@@ -1,10 +1,7 @@
 import type {
-  CaseDraft,
   ChatConversation,
   ChatConversationSummary,
-  CreateCaseInput,
   CreateConversationInput,
-  DiagnosticCase,
   HealthResponse,
   MetaResponse,
   ModelConfigInput,
@@ -17,7 +14,7 @@ import type {
   RepositorySnapshot,
 } from './types';
 
-const API_BASE = (import.meta.env.VITE_API_BASE || '/harmonyos_agent').replace(/\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 const REQUEST_TIMEOUT_MS = 5_000;
 
 export class ApiError extends Error {
@@ -75,17 +72,6 @@ async function request<T>(
 export const api = {
   health: () => request<HealthResponse>('/api/health'),
   meta: () => request<MetaResponse>('/api/meta'),
-  listCases: () => request<DiagnosticCase[]>('/api/cases'),
-  getCase: (id: string) => request<DiagnosticCase>(`/api/cases/${id}`),
-  createCase: (input: CreateCaseInput) =>
-    request<DiagnosticCase>(
-      '/api/cases',
-      {
-        method: 'POST',
-        body: JSON.stringify(input),
-      },
-      180_000,
-    ),
   repositories: () => request<RepositoryRecord[]>('/api/repositories'),
   registerRepository: (input: RegisterRepositoryInput) =>
     request<RepositoryRecord>(
@@ -157,15 +143,4 @@ export const api = {
     }),
   deleteConversation: (id: string) =>
     request<void>(`/api/conversations/${id}`, { method: 'DELETE' }),
-  promoteDraft: (conversationId: string) =>
-    request<CaseDraft>(
-      `/api/conversations/${conversationId}/promote-draft`,
-      { method: 'POST', body: JSON.stringify({}) },
-      180_000,
-    ),
-  linkCase: (conversationId: string, caseId: string) =>
-    request<ChatConversation>(`/api/conversations/${conversationId}/cases`, {
-      method: 'POST',
-      body: JSON.stringify({ case_id: caseId }),
-    }),
 };

@@ -56,26 +56,45 @@ def build_chat_workspace_toolset() -> FunctionToolset[ChatDeps]:
         """把当前会话绑定到一个已登记的业务仓库（创建该分支的只读快照）。
 
         当需要查阅项目代码时会话必须已绑定仓库。只能绑定服务端已登记的仓库，
-        不能绑定任意 URL。branch 为空时使用仓库默认分支；用户明确提到分支或
+        不能绑定任意 URL。已有相同仓库绑定时保留现有分支和快照；首次绑定才使用默认分支。
+        只在用户明确要求时切换仓库或分支。用户明确提到分支或
         版本号（如 releaseV/20260825）时应传入该分支。
         """
         deps = ctx.deps
         needle = name_or_url.strip().lower()
         records = await deps.repositories.list()
-        match = next(
-            (item for item in records if needle in item.name.lower() or needle in item.url.lower()),
-            None,
-        )
+        matches = [item for item in records if needle in (item.name.lower(), item.url.lower())]
+        if not matches and needle:
+            matches = [
+                item
+                for item in records
+                if needle in item.name.lower() or needle in item.url.lower()
+            ]
+        if len(matches) > 1:
+            raise ModelRetry(
+                "仓库名称不唯一，请使用完整名称或 URL：" + ", ".join(item.name for item in matches)
+            )
+        match = matches[0] if matches else None
         if match is None:
             available = ", ".join(f"{item.name}({item.url})" for item in records) or "（无）"
             raise ModelRetry(
                 f"未找到登记的仓库 '{name_or_url}'。可用仓库：{available}。"
                 "如需新仓库，请用户先在仓库设置中登记。"
             )
-        ref = (branch or "").strip() or match.default_branch
+        conversation = deps.conversation
+        same_repository = conversation.repository_id == match.id
+        ref = (
+            (branch or "").strip()
+            or (conversation.requested_ref if same_repository else None)
+            or match.default_branch
+        )
+        if same_repository and conversation.workspace_path and ref == conversation.requested_ref:
+            return (
+                f"复用已绑定仓库 {match.name} @ {ref}（commit {conversation.resolved_commit}），"
+                "快照未更换，可直接开展只读调查。"
+            )
         snapshot = await deps.repositories.prepare_snapshot(match.id, ref)
 
-        conversation = deps.conversation
         conversation.workspace_path = snapshot.workspace_path
         conversation.repository_id = match.id
         conversation.repository_name = match.name

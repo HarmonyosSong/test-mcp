@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
@@ -13,27 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
-
-
-class CaseStatus(StrEnum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
-class StageKey(StrEnum):
-    INTAKE = "intake"
-    LOCATE = "locate"
-    INVESTIGATE = "investigate"
-    DIAGNOSE = "diagnose"
-
-
-class StageStatus(StrEnum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
 
 
 class Verdict(StrEnum):
@@ -59,15 +37,6 @@ class EvidenceKind(StrEnum):
     TOOL = "tool"
 
 
-class StageState(BaseModel):
-    key: StageKey
-    label: str
-    status: StageStatus = StageStatus.PENDING
-    summary: str = ""
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
-
-
 class Evidence(BaseModel):
     id: str = Field(default_factory=lambda: f"ev-{uuid4().hex[:8]}")
     kind: EvidenceKind
@@ -89,8 +58,6 @@ class ToolEvent(BaseModel):
     tool: str
     status: str
     summary: str
-    # 以下为可选的审计字段，当前仅聊天路径写入；案例诊断路径保持 None，
-    # 以保证既有 cases.json 数据形态不变。
     arguments_summary: str | None = Field(default=None, max_length=500)
     result_summary: str | None = Field(default=None, max_length=500)
     duration_ms: int | None = None
@@ -115,24 +82,19 @@ class DiagnosisReport(BaseModel):
 
     @model_validator(mode="after")
     def require_evidence_for_positive_verdict(self) -> DiagnosisReport:
-        if self.verdict in {Verdict.LOCATED, Verdict.PROBABLE}:
-            evidence_ids = {item.id for item in self.evidence}
-            linked = {
-                evidence_id
-                for candidate in self.root_cause_candidates
-                for evidence_id in candidate.evidence_ids
-            }
-            if not self.root_cause_candidates or not linked.intersection(evidence_ids):
-                raise ValueError("positive diagnoses require a candidate linked to evidence")
+        evidence_ids = {item.id for item in self.evidence}
+        if len(evidence_ids) != len(self.evidence):
+            raise ValueError("evidence IDs must be unique")
+        for candidate in self.root_cause_candidates:
+            if not set(candidate.evidence_ids).issubset(evidence_ids):
+                raise ValueError("every candidate must be linked to evidence present in the report")
+        if self.verdict in {Verdict.LOCATED, Verdict.PROBABLE} and (
+            not self.root_cause_candidates
+            or any(not candidate.evidence_ids for candidate in self.root_cause_candidates)
+        ):
+            raise ValueError("positive diagnoses require every candidate linked to evidence")
         return self
 
-
-STAGE_LABELS: dict[StageKey, str] = {
-    StageKey.INTAKE: "接收问题",
-    StageKey.LOCATE: "定位范围",
-    StageKey.INVESTIGATE: "验证假设",
-    StageKey.DIAGNOSE: "生成诊断",
-}
 
 # 各厂商主流模型的上下文窗口（token）。OpenAI 兼容协议不提供该信息，
 # 这里手工维护一份参考值，允许随厂商更新而过期——过期只影响占用百分比展示。
@@ -173,87 +135,6 @@ MODEL_PRICES: dict[str, dict[str, float]] = {
     "glm-4-flash": {"input": 0.0, "output": 0.0},
     "glm-4-plus": {"input": 50.0, "output": 50.0},
 }
-
-
-def default_stages() -> list[StageState]:
-    return [StageState(key=key, label=label) for key, label in STAGE_LABELS.items()]
-
-
-class CreateCaseRequest(BaseModel):
-    title: str = Field(min_length=2, max_length=120)
-    description: str = Field(min_length=2, max_length=5_000)
-    evidence: str = Field(default="", max_length=40_000)
-    workspace_path: str | None = Field(default=None, max_length=2_000)
-    repository_id: str | None = Field(default=None, max_length=100)
-    branch: str | None = Field(default=None, max_length=500)
-
-    @field_validator("title", "description", "evidence", mode="before")
-    @classmethod
-    def strip_text(cls, value: object) -> object:
-        return value.strip() if isinstance(value, str) else value
-
-    @field_validator("workspace_path", mode="before")
-    @classmethod
-    def normalize_workspace(cls, value: object) -> object:
-        if isinstance(value, str):
-            stripped = value.strip()
-            return stripped or None
-        return value
-
-    @field_validator("repository_id", "branch", mode="before")
-    @classmethod
-    def normalize_repository_fields(cls, value: object) -> object:
-        if isinstance(value, str):
-            stripped = value.strip()
-            return stripped or None
-        return value
-
-    @model_validator(mode="after")
-    def validate_source(self) -> CreateCaseRequest:
-        if bool(self.repository_id) != bool(self.branch):
-            raise ValueError("repository_id and branch must be provided together")
-        if self.workspace_path and self.repository_id:
-            raise ValueError("workspace_path and repository_id are mutually exclusive")
-        return self
-
-
-class DiagnosisCase(BaseModel):
-    id: str = Field(default_factory=lambda: f"case-{uuid4().hex[:10]}")
-    title: str
-    description: str
-    input_evidence: str = ""
-    workspace_path: str | None = None
-    repository_id: str | None = None
-    repository_name: str | None = None
-    requested_ref: str | None = None
-    resolved_commit: str | None = None
-    status: CaseStatus = CaseStatus.QUEUED
-    stages: list[StageState] = Field(default_factory=default_stages)
-    report: DiagnosisReport | None = None
-    tool_events: list[ToolEvent] = Field(default_factory=list)
-    error: str | None = None
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
-
-    @classmethod
-    def from_request(
-        cls,
-        request: CreateCaseRequest,
-        workspace: Path | None,
-        *,
-        repository_name: str | None = None,
-        resolved_commit: str | None = None,
-    ) -> DiagnosisCase:
-        return cls(
-            title=request.title,
-            description=request.description,
-            input_evidence=request.evidence,
-            workspace_path=str(workspace) if workspace else None,
-            repository_id=request.repository_id,
-            repository_name=repository_name,
-            requested_ref=request.branch,
-            resolved_commit=resolved_commit,
-        )
 
 
 class RegisterRepositoryRequest(BaseModel):

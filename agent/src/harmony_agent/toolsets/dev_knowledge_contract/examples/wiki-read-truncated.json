@@ -1,0 +1,126 @@
+{
+  "name": "wiki-read-truncated",
+  "tool": "wiki_read",
+  "arguments": {
+    "business_line": "cloudlearn",
+    "product_id": "demo",
+    "topic_id": "topic-demo"
+  },
+  "expected_outcome": "hit",
+  "response": {
+    "status": "ok",
+    "key": {
+      "business_line": "cloudlearn",
+      "product_id": "demo",
+      "topic_id": "topic-demo"
+    },
+    "topic": {
+      "business_line": "cloudlearn",
+      "product_id": "demo",
+      "topic_id": "topic-demo",
+      "title": "Demo Topic",
+      "path": "Demo / Topic",
+      "summary": "demo topic",
+      "content_status": "supported",
+      "include": [
+        {
+          "include_id": "i1",
+          "section_ids": [
+            "overview"
+          ],
+          "text": "demo"
+        }
+      ],
+      "exclude": [],
+      "relations": [],
+      "main_evidence_boundaries": [
+        "demo boundary"
+      ]
+    },
+    "content_status": "supported",
+    "sections": [
+      {
+        "section_id": "overview",
+        "section_group": "overview",
+        "title": "overview",
+        "summary": "demo overview",
+        "support_status": "evidence_limited",
+        "gap_reason": "外部结果需要核验",
+        "items": [
+          {
+            "item_id": "item-001",
+            "type": "finding",
+            "text": "demo item overview",
+            "source_ref_keys": [
+              "code:FE-AUTO-001",
+              "doc:1dc34a77bd1e98e8"
+            ],
+            "finding_kind": "boundary"
+          }
+        ]
+      }
+    ],
+    "source_catalog": {
+      "code:FE-AUTO-001": {
+        "code_source_id": "demo-frontend",
+        "end_line": 30,
+        "endpoint": "GET /demo",
+        "kind": "code",
+        "material_id": "FE-AUTO-001",
+        "relative_path": "src/pages/demo/index.vue",
+        "service_ids": [
+          "demo-web"
+        ],
+        "source_id": "frontend",
+        "start_line": 10,
+        "symbols": [
+          "loadDemo",
+          "afterLoad"
+        ]
+      },
+      "doc:1dc34a77bd1e98e8": {
+        "kind": "product_document",
+        "relative_path": "docs/rule.md",
+        "line_ranges": [
+          [
+            1,
+            3
+          ]
+        ]
+      }
+    },
+    "code_sources": {
+      "demo-frontend": {
+        "logical_services": [
+          {
+            "evidence": "explicit source configuration",
+            "path_prefix": "",
+            "service_id": "demo-web"
+          }
+        ],
+        "repository": {
+          "full_name": "demo/web",
+          "host": "github.example.com",
+          "identity_status": "confirmed"
+        },
+        "revision": {
+          "content_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "head_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "worktree_status": "clean"
+        },
+        "service_identity_status": "confirmed",
+        "source_role": "frontend"
+      }
+    },
+    "source_boundary": "Build-time static evidence supports conclusions within its stated coverage. External-call implementations and deployment state are unverified.",
+    "truncated": true,
+    "truncation": {
+      "reason": "server.max_response_bytes exceeded",
+      "max_response_bytes": 2100,
+      "omitted": {
+        "sections": 15
+      },
+      "next_action": "call wiki_read with fewer explicit section_ids"
+    }
+  }
+}

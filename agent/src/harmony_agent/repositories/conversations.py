@@ -34,6 +34,7 @@ class ConversationRepository:
             for conversation in self._conversations.values():
                 for message in conversation.messages:
                     if message.status == ChatMessageStatus.STREAMING:
+                        conversation.retain_failed_turn_input(message.id)
                         message.status = ChatMessageStatus.FAILED
                         message.error = "回复中断：服务已重启"
                         recovered = True

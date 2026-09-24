@@ -21,6 +21,18 @@ class SkillLoader:
             if not metadata.get(key):
                 raise ValueError(f"missing {key} in {path}")
         skill_metadata = metadata.get("metadata") or {}
+        modes = skill_metadata.get("modes", ["chat", "diagnosis"])
+        required_tools = skill_metadata.get("required_tools", [])
+        if (
+            not isinstance(modes, list)
+            or not modes
+            or any(mode not in ("chat", "diagnosis") for mode in modes)
+        ):
+            raise ValueError(f"invalid skill modes: {path}")
+        if not isinstance(required_tools, list) or any(
+            not isinstance(name, str) or not name.strip() for name in required_tools
+        ):
+            raise ValueError(f"invalid required_tools: {path}")
         return LoadedSkill(
             name=str(metadata["name"]),
             description=str(metadata["description"]),
@@ -28,4 +40,6 @@ class SkillLoader:
             stage=str(skill_metadata.get("stage", "general")),
             instructions=body.strip(),
             source=path,
+            modes=tuple(modes),
+            required_tools=tuple(required_tools),
         )

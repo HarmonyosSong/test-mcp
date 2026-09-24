@@ -1,49 +1,23 @@
 import { Select } from '@arco-design/web-react';
-import { AlertTriangle, ArrowRight, MessageSquare } from 'lucide-react';
+import { AlertTriangle, MessageSquare, Wrench } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api';
-import { formatDate } from '../../format';
+import { estimateCost, formatCost, formatDate, formatTokens } from '../../format';
 import type { ChatConversation, ChatMessage, ModelStatus } from '../../types';
 import { ChatComposer } from './ChatComposer';
+import { ReportCard } from './ReportCard';
 import { ToolStepCard } from './ToolStepCard';
 
 interface ChatThreadProps {
   conversation: ChatConversation;
   sending: boolean;
   composerDisabled: boolean;
-  promotePending: boolean;
   modelStatus: ModelStatus;
   contextWindows: Record<string, number>;
   modelPrices: Record<string, { input: number; output: number }>;
   onSend: (content: string) => void;
   onStop: () => void;
-  onPromote: () => void;
-  onOpenCase: (caseId: string) => void;
   onModelChange: (spec: string) => void;
-}
-
-function formatTokens(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  return String(value);
-}
-
-/** 本轮花费估算（元）：价格表按当前模型取，缓存折扣/套餐价不含在内。 */
-function estimateCost(
-  inputTokens: number | null | undefined,
-  outputTokens: number | null | undefined,
-  modelName: string,
-  prices: Record<string, { input: number; output: number }>,
-): number | null {
-  const price = prices[modelName];
-  if (!price || inputTokens == null) return null;
-  return (inputTokens / 1_000_000) * price.input + ((outputTokens ?? 0) / 1_000_000) * price.output;
-}
-
-function formatCost(cost: number): string {
-  if (cost < 0.01) return `¥${cost.toFixed(4)}`;
-  if (cost < 1) return `¥${cost.toFixed(3)}`;
-  return `¥${cost.toFixed(2)}`;
 }
 
 /** 从模型名解析上下文窗口的兜底：如 k3-256k → 256k，k3-1m → 1M。 */
@@ -58,14 +32,12 @@ function AssistantMessage({
   message,
   live,
   cost,
-  onOpenCase,
 }: {
   message: ChatMessage;
   /** 是否为本会话正在进行的回复；否则 streaming 视为中断的遗留消息 */
   live: boolean;
   /** 本轮花费估算文本；无价格数据时为 null */
   cost: string | null;
-  onOpenCase: (caseId: string) => void;
 }) {
   const interrupted = message.status === 'failed' || (message.status === 'streaming' && !live);
   return (
@@ -78,6 +50,7 @@ function AssistantMessage({
         </div>
       )}
       {message.content && <div className="chat-bubble">{message.content}</div>}
+      {message.report && <ReportCard report={message.report} />}
       {message.status === 'streaming' && live && !message.content && (
         <div className="chat-bubble chat-thinking">正在思考…</div>
       )}
@@ -90,18 +63,14 @@ function AssistantMessage({
           <span>{message.error || '回复中断'}</span>
         </div>
       )}
-      {message.case_id && (
-        <button
-          type="button"
-          className="chat-case-link"
-          onClick={() => onOpenCase(message.case_id as string)}
-        >
-          <span>已生成诊断案例</span>
-          <ArrowRight size={13} />
-        </button>
-      )}
       <time className="chat-message-time">
         {formatDate(message.created_at)}
+        {message.steps.length > 0 && (
+          <span className="chat-message-usage" title="本轮工具调用次数">
+            <Wrench size={11} />
+            {message.steps.length} 次工具
+          </span>
+        )}
         {message.input_tokens != null && (
           <span className="chat-message-usage" title="本轮 token 用量（输入 / 输出）与花费估算">
             ↑{formatTokens(message.input_tokens)}
@@ -118,14 +87,11 @@ export function ChatThread({
   conversation,
   sending,
   composerDisabled,
-  promotePending,
   modelStatus,
   contextWindows,
   modelPrices,
   onSend,
   onStop,
-  onPromote,
-  onOpenCase,
   onModelChange,
 }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -133,9 +99,6 @@ export function ChatThread({
   const fetchingModels = useRef(false);
   const messageCount = conversation.messages.length;
   const lastMessage = conversation.messages.at(-1);
-  const canPromote = conversation.messages.some(
-    (message) => message.role === 'assistant' && message.status === 'completed',
-  );
 
   const activeModelName = useMemo(() => {
     const override = conversation.model_override;
@@ -291,7 +254,6 @@ export function ChatThread({
                   );
                   return value != null && value > 0 ? formatCost(value) : null;
                 })()}
-                onOpenCase={onOpenCase}
               />
             ),
           )
@@ -302,12 +264,9 @@ export function ChatThread({
       <ChatComposer
         disabled={composerDisabled}
         sending={sending}
-        canPromote={canPromote}
-        promotePending={promotePending}
         toolbarExtra={toolbarExtra}
         onSend={onSend}
         onStop={onStop}
-        onPromote={onPromote}
       />
     </section>
   );

@@ -1559,6 +1559,65 @@ button:disabled {
 
 /* ---------- 证据与诊断 ---------- */
 
+/* 聊天内联诊断报告卡片 */
+.report-card {
+  width: 100%;
+  min-width: min(520px, 70vw);
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.report-card .diagnosis-summary {
+  margin: 12px 12px 0;
+}
+
+.report-card .report-section {
+  margin: 0 13px;
+}
+
+.report-card .report-section:last-child {
+  border-bottom: none;
+  padding-bottom: 13px;
+}
+
+.verdict-border-located {
+  border-left-color: var(--green);
+}
+
+.verdict-border-probable {
+  border-left-color: var(--amber);
+}
+
+.verdict-border-insufficient_evidence {
+  border-left-color: var(--muted-light);
+}
+
+.verdict-border-tool_error {
+  border-left-color: var(--red);
+}
+
+.verdict-badge.verdict-located {
+  color: var(--green);
+  background: var(--green-soft);
+  border-color: var(--green-border);
+}
+
+.verdict-badge.verdict-probable {
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-color: var(--amber-border);
+}
+
+.verdict-badge.verdict-tool_error {
+  color: var(--red);
+  background: var(--red-soft);
+  border-color: var(--red-border);
+}
+
 .diagnosis-scroll {
   flex: 1 1 auto;
   padding: 15px 17px 28px;
@@ -3012,6 +3071,9 @@ button:disabled {
 }
 
 .chat-message-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   margin-left: 8px;
   color: var(--muted-light);
 }

@@ -1,0 +1,21 @@
+{
+  "transport": "http",
+  "url": "https://knowledge.example.internal/mcp/knowledge/v1",
+  "token_env": "DEV_KNOWLEDGE_TOKEN",
+  "timeout_seconds": 30,
+  "max_result_chars": 16000,
+  "products": [
+    {
+      "business_line": "cloudlearn",
+      "product_id": "humanity-read",
+      "terms": ["人文阅读", "人文书房"],
+      "topic_terms": {"picture-expression": ["口才表达"]}
+    },
+    {
+      "business_line": "cloudlearn",
+      "product_id": "recite-word",
+      "terms": ["背单词"]
+    }
+  ],
+  "excluded_terms": ["口语岛", "english-oralisland"]
+}

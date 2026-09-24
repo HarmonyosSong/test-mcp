@@ -49,3 +49,12 @@ class SkillRegistry:
 
     def instructions(self, stages: set[str] | None = None) -> str:
         return compose_instructions(self.router.for_stages(self.all(), stages))
+
+    def available(
+        self, mode: str, tools: set[str], stages: set[str] | None = None
+    ) -> list[LoadedSkill]:
+        return [
+            skill
+            for skill in self.router.for_stages(self.all(), stages)
+            if mode in skill.modes and set(skill.required_tools) <= tools
+        ]

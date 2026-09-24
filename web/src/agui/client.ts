@@ -1,9 +1,8 @@
-import type { ChatConversation, CreateCaseInput, DiagnosticCase } from '../types';
+import type { ChatConversation } from '../types';
 import { reduceChatEvent } from './chatReducer';
 import { isAguiEvent, type AguiEvent, type AguiEventType } from './events';
-import { reduceAguiEvent } from './reducer';
 
-const API_BASE = (import.meta.env.VITE_API_BASE || '/harmonyos_agent').replace(/\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 
 export class AguiUnavailableError extends Error {
   constructor(message: string) {
@@ -129,20 +128,6 @@ async function readEventStream<TState>(
 
   if (!current) throw new AguiUnavailableError('AG-UI 事件流为空');
   return current;
-}
-
-export async function streamDiagnosis(
-  input: CreateCaseInput,
-  options: {
-    signal?: AbortSignal;
-    onEvent?: (event: AguiEvent, diagnosticCase: DiagnosticCase | null) => void;
-  } = {},
-): Promise<DiagnosticCase> {
-  return readEventStream<DiagnosticCase>(`${API_BASE}/api/agui/runs`, input, {
-    signal: options.signal,
-    onEvent: options.onEvent,
-    reduce: reduceAguiEvent,
-  });
 }
 
 export async function streamChatMessage(

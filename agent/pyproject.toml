@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
   "fastmcp>=3.4,<4.0",
   "harmony-repository-mcp",
+  "jsonschema>=4.26,<5",
   "pydantic-ai-slim[mcp,openai]>=2.35,<2.36",
   "pydantic-settings>=2.12,<3.0",
   "pyyaml>=6.0,<7.0",
@@ -38,4 +39,3 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-

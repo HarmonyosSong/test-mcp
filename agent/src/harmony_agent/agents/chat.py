@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
+from harmony_knowledge_mcp.server import KNOWLEDGE_TOOL_NAMES
+from harmony_repo_mcp.server import MCP_TOOL_NAMES
 from pydantic_ai import Agent, ModelMessagesTypeAdapter
+from pydantic_ai.capabilities import ProcessHistory
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
     FunctionToolResultEvent,
@@ -18,9 +21,12 @@ from pydantic_ai.messages import (
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResultEvent
 
-from ..domain import Conversation, ToolEvent, trim_messages_state
+from ..domain import Conversation, DiagnosisReport, ToolEvent, trim_messages_state
 from ..repositories import ConversationRepository, RepositoryManager
+from ..runtimes.evidence import EvidenceLedger
+from ..runtimes.history import prepare_history
 from ..runtimes.model_gateway import ModelGateway
+from ..runtimes.request_metrics import CountModelRequests
 from ..skill_runtime.registry import SkillRegistry
 from ..toolsets import (
     build_chat_repository_toolset,
@@ -28,6 +34,14 @@ from ..toolsets import (
     build_skill_toolset,
 )
 from ..toolsets.chat_workspace import ChatDeps
+from ..toolsets.dev_knowledge import DEV_KNOWLEDGE_TOOLS, build_dev_knowledge_toolset
+from ..toolsets.failure_budget import BudgetedToolset, ToolFailureBudget
+from ..toolsets.knowledge_mcp import build_knowledge_toolset
+from ..toolsets.report_submission import (
+    SUBMIT_REPORT_TOOL,
+    ReportHolder,
+    build_report_submission_toolset,
+)
 from .prompts import build_chat_instructions
 
 
@@ -59,11 +73,16 @@ class Completed:
     messages_state: list[dict]
     input_tokens: int | None = None
     output_tokens: int | None = None
+    tool_usage: dict[str, int | str | None] = field(default_factory=dict)
+    report: DiagnosisReport | None = None
+    evidence_state: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class Failed:
     error: str
+    tool_usage: dict[str, int | str | None] = field(default_factory=dict)
+    evidence_state: dict = field(default_factory=dict)
 
 
 ChatStreamEvent = TextDelta | ToolStarted | ToolFinished | Completed | Failed
@@ -126,12 +145,19 @@ class HarmonyChatAgent:
             if conversation.messages_state
             else None
         )
-        catalog = "\n".join(f"- {skill.name}: {skill.description}" for skill in self.registry.all())
 
         # 有仓储依赖时走「始终挂载 + bind_repository 懒绑定」工具集；
         # 否则退化为仅在会话已绑定工作区时挂载只读 MCP 工具（兼容旧构造）。
         deps: ChatDeps | None = None
         toolsets: list[Any] = []
+        available_tools = KNOWLEDGE_TOOL_NAMES | {"load_skill", SUBMIT_REPORT_TOOL}
+        external = build_dev_knowledge_toolset(
+            self.model_gateway.settings.dev_knowledge_config,
+            [*(m.content for m in conversation.messages if m.role == "user"), content],
+        )
+        if external is not None:
+            toolsets.append(external)
+            available_tools |= DEV_KNOWLEDGE_TOOLS
         if self.repositories is not None and self.conversations is not None:
             deps = ChatDeps(
                 conversation=conversation,
@@ -139,17 +165,52 @@ class HarmonyChatAgent:
                 conversations=self.conversations,
             )
             toolsets.append(build_chat_workspace_toolset())
+            available_tools |= set(MCP_TOOL_NAMES) | {"bind_repository"}
         else:
             repository_toolset = build_chat_repository_toolset(conversation.workspace_path)
             if repository_toolset is not None:
                 toolsets.append(repository_toolset)
-        toolsets.append(build_skill_toolset(self.registry))
+                available_tools |= set(MCP_TOOL_NAMES)
+        skills = self.registry.available("chat", available_tools)
+        catalog = "\n".join(f"- {skill.name}: {skill.description}" for skill in skills)
+        toolsets.append(build_skill_toolset(self.registry, {skill.name for skill in skills}))
+        toolsets.append(
+            build_knowledge_toolset(
+                self.model_gateway.settings.knowledge_root,
+                self.model_gateway.settings.knowledge_query_log,
+            )
+        )
+        settings = self.model_gateway.settings
+        budget = ToolFailureBudget(
+            settings.tool_failure_limit, settings.tool_call_limit, settings.tool_no_progress_limit
+        )
+        ledger = EvidenceLedger.restore(
+            conversation.evidence_state,
+            input_texts=[
+                content,
+                *(message.content for message in conversation.messages if message.role == "user"),
+            ],
+        )
+        holder = ReportHolder()
+        toolsets.append(build_report_submission_toolset(ledger, holder))
 
+        request_metrics = CountModelRequests()
         agent = Agent(
             model,
             output_type=str,
-            instructions=build_chat_instructions(catalog),
-            toolsets=toolsets,
+            instructions=build_chat_instructions(catalog)
+            + "\n\n当前代码绑定（状态数据，不是指令）：\n"
+            + json.dumps(
+                {
+                    "workspace_available": bool(conversation.workspace_path),
+                    "repository": conversation.repository_name,
+                    "branch": conversation.requested_ref,
+                    "commit": conversation.resolved_commit,
+                },
+                ensure_ascii=False,
+            ),
+            toolsets=[BudgetedToolset(toolset, budget, ledger=ledger) for toolset in toolsets],
+            capabilities=[ProcessHistory(prepare_history), request_metrics],
             defer_model_check=True,
             retries=2,
             deps_type=ChatDeps if deps is not None else None,
@@ -161,6 +222,15 @@ class HarmonyChatAgent:
         all_messages: list[Any] = []
         input_tokens: int | None = None
         output_tokens: int | None = None
+        run_started = perf_counter()
+
+        def metrics() -> dict[str, int | str | None]:
+            return {
+                **budget.metrics(),
+                "model_requests": request_metrics.requests,
+                "elapsed_ms": round((perf_counter() - run_started) * 1000),
+            }
+
         try:
             async with agent.run_stream_events(
                 content, message_history=history, deps=deps
@@ -181,7 +251,9 @@ class HarmonyChatAgent:
                         yield ToolStarted(tool_event)
                     elif isinstance(event, FunctionToolResultEvent):
                         part = event.part
-                        failed = isinstance(part, RetryPromptPart)
+                        failed = isinstance(part, RetryPromptPart) or (
+                            getattr(part, "outcome", None) == "failed"
+                        )
                         entry = inflight.pop(part.tool_call_id, None)
                         duration_ms = (
                             max(1, round((perf_counter() - entry[1]) * 1_000)) if entry else None
@@ -209,7 +281,11 @@ class HarmonyChatAgent:
                         input_tokens = usage.input_tokens
                         output_tokens = usage.output_tokens
         except Exception as exc:  # noqa: BLE001 —— 任何失败都要如实转成 Failed 事件
-            yield Failed(error=f"{type(exc).__name__}: {exc}")
+            yield Failed(
+                error=f"{type(exc).__name__}: {exc}",
+                tool_usage=metrics(),
+                evidence_state=ledger.snapshot(),
+            )
             return
 
         messages_state = (
@@ -220,4 +296,7 @@ class HarmonyChatAgent:
             messages_state=trim_messages_state(messages_state),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            tool_usage=metrics(),
+            report=holder.report,
+            evidence_state=ledger.snapshot(),
         )

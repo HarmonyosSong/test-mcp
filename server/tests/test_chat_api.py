@@ -7,7 +7,7 @@ import anyio
 from fastapi.testclient import TestClient
 from harmony_agent.config import Settings
 from harmony_agent.domain import ChatMessage, ChatMessageStatus
-from pydantic_ai import models
+from pydantic_ai import ModelMessagesTypeAdapter, models
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 
@@ -18,7 +18,6 @@ def make_chat_client(tmp_path: Path) -> TestClient:
     project_root = Path(__file__).resolve().parents[2]
     settings = Settings(
         mode="demo",
-        data_file=tmp_path / "cases.json",
         model_config_file=tmp_path / "model-config.json",
         conversations_data_file=tmp_path / "conversations.json",
         repository_data_file=tmp_path / "repositories.json",
@@ -26,7 +25,6 @@ def make_chat_client(tmp_path: Path) -> TestClient:
         snapshot_dir=tmp_path / "snapshots",
         skills_dir=project_root / "skills",
         allowed_roots=[tmp_path],
-        stage_delay_ms=0,
     )
     return TestClient(create_app(settings))
 
@@ -82,8 +80,14 @@ def test_chat_message_requires_model(tmp_path: Path) -> None:
         )
         assert response.status_code == 409
 
-        promote = client.post(f"/api/conversations/{conversation['id']}/promote-draft")
-        assert promote.status_code == 409
+
+def test_rejects_workspace_outside_allowed_roots(tmp_path: Path) -> None:
+    with make_chat_client(tmp_path) as client:
+        response = client.post(
+            "/api/conversations",
+            json={"title": "越界工作区", "workspace_path": str(tmp_path.parent)},
+        )
+        assert response.status_code == 422
 
 
 def test_chat_message_streams_events(tmp_path: Path) -> None:
@@ -213,53 +217,84 @@ def test_chat_rejects_concurrent_turn(tmp_path: Path) -> None:
         assert response.status_code == 409
 
 
-def test_promote_draft_and_link_case(tmp_path: Path) -> None:
+def test_failed_model_turn_preserves_user_input_for_followup(tmp_path: Path) -> None:
+    calls = 0
+
+    async def scripted(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield {0: DeltaToolCall(name="load_skill", json_args='{"name":"locate-harmony-issue"}')}
+        elif calls == 2:
+            raise RuntimeError("injected upstream failure after a tool call")
+        else:
+            history = ModelMessagesTypeAdapter.dump_json(messages).decode()
+            assert history.count("ORIGINAL_LOG") == 1
+            assert "继续" in history
+            assert "tool-call" not in history
+            assert "tool-return" not in history
+            yield "恢复成功"
+
     models.ALLOW_MODEL_REQUESTS = False
     with make_chat_client(tmp_path) as client:
-        container = client.app.state.container
-        container.chat_agent.model_override = TestModel(
-            call_tools=[], custom_output_text="分析完毕"
+        client.app.state.container.chat_agent.model_override = FunctionModel(
+            stream_function=scripted
         )
-        container.promote_agent.model_override = TestModel(
-            call_tools=[],
-            custom_output_text=json.dumps(
-                {
-                    "title": "登录页按钮无反应",
-                    "description": "点击登录按钮没有响应",
-                    "evidence": "hilog 报错片段",
-                }
-            ),
+        conversation = create_conversation(client)
+        url = f"/api/conversations/{conversation['id']}/messages"
+        first = client.post(url, json={"content": "Error ORIGINAL_LOG at Checkout.ets:88"})
+        assert first.status_code == 200
+        assert any(event["_event"] == "RUN_ERROR" for event in read_sse_events(first))
+        second = client.post(url, json={"content": "继续排查刚才的问题"})
+        assert second.status_code == 200
+        saved = client.get(f"/api/conversations/{conversation['id']}").json()
+        assert saved["messages"][-1]["status"] == "completed"
+        assert saved["messages"][-1]["content"] == "恢复成功"
+
+
+def test_chat_report_submission_persisted_on_message(tmp_path: Path) -> None:
+    calls = 0
+
+    async def scripted(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            report = {
+                "verdict": "insufficient_evidence",
+                "summary": "缺少现场日志，无法支撑候选",
+                "issue_category": "unknown",
+                "missing_information": ["需要完整 hilog 日志"],
+                "confidence": 0.2,
+            }
+            yield {
+                0: DeltaToolCall(
+                    name="submit_diagnosis_report",
+                    json_args=json.dumps({"report": report}),
+                )
+            }
+        else:
+            yield "已生成诊断报告：当前证据不足。"
+
+    models.ALLOW_MODEL_REQUESTS = False
+    with make_chat_client(tmp_path) as client:
+        client.app.state.container.chat_agent.model_override = FunctionModel(
+            stream_function=scripted
         )
         conversation = create_conversation(client)
         with client.stream(
             "POST",
             f"/api/conversations/{conversation['id']}/messages",
-            json={"content": "登录页有问题"},
+            json={"content": "登录页白屏"},
         ) as response:
             response.read()
+        detail = client.get(f"/api/conversations/{conversation['id']}").json()
 
-        draft_response = client.post(f"/api/conversations/{conversation['id']}/promote-draft")
-        assert draft_response.status_code == 200
-        draft = draft_response.json()
-        assert draft["title"] == "登录页按钮无反应"
-
-        # 用草稿创建案例并回写会话
-        created = client.post("/api/cases", json=draft)
-        assert created.status_code == 202
-        case_id = created.json()["id"]
-        linked = client.post(
-            f"/api/conversations/{conversation['id']}/cases", json={"case_id": case_id}
-        )
-        assert linked.status_code == 200
-        body = linked.json()
-        assert body["case_ids"] == [case_id]
-        assert body["messages"][-1]["case_id"] == case_id
-
-        missing = client.post(
-            f"/api/conversations/{conversation['id']}/cases",
-            json={"case_id": "case-missing"},
-        )
-        assert missing.status_code == 404
+    assistant = detail["messages"][-1]
+    assert assistant["status"] == "completed"
+    assert assistant["report"]["verdict"] == "insufficient_evidence"
+    assert assistant["report"]["missing_information"] == ["需要完整 hilog 日志"]
+    assert [step["tool"] for step in assistant["steps"]] == ["submit_diagnosis_report"]
+    assert "evidence_state" not in detail
 
 
 def test_update_conversation_model_override(tmp_path: Path) -> None:

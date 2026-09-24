@@ -1,0 +1,18 @@
+{
+  "contract_version": 1,
+  "files": {
+    "examples/wiki-catalog-invalid.json": "08312bed0929eb5f2eea965cd6becf5f78b63129d018ddfd4aed3a657c2b2345",
+    "examples/wiki-catalog-too-large.json": "52e9a6ff8506562ecce874a2bb3ce0463b6431b14f674e5f4613cf8e5b5678d8",
+    "examples/wiki-catalog.json": "e27c258b9efa80f7345d5f3a6b8e67c13858e6cf819637b9bcf346e30826bf97",
+    "examples/wiki-invalid-request.json": "64e2cc8063aac5bac1db468b3c6fdd5f21c64b35d9f7225c6cef16312fda49e7",
+    "examples/wiki-read-miss.json": "d78a488bf62349b5682735315df6ce0ea6d2e1b59d715fc12f8c815ab8d870df",
+    "examples/wiki-read-ok.json": "fe3c52ae3bee9f34faea5e37e7f38bedb22dfcf489f03babab3ff9d42c43ba20",
+    "examples/wiki-read-too-large.json": "af9186323415b49d7073c0b3f55514fa76110b9fec09d9221a6de39923c7d766",
+    "examples/wiki-read-truncated.json": "62ddbd304e7468d53cd47a8616424b554ad27ab8ab79f1d489c3ac6146ad31db",
+    "examples/wiki-resolve-miss.json": "02d56d741433a12edbf5f65e6e6f7d93451cf9e1496bd8bd783708b16061085d",
+    "examples/wiki-resolve-ok.json": "724d92cd09748c21b171271f3a1b5eecfe7beb986aaaba29d2a38c77346357a3",
+    "examples/wiki-resolve-truncated.json": "4c2dffcecf5e152ee04d9e69cfd061259a94c329661e4df59790b534f17fdd3a",
+    "examples/wiki-status.json": "4f2fe3419d1632ac17648ca7bbc73eb73729477ae5543bbb58852ce522c66455",
+    "mcp-responses.schema.json": "404d2e4959b249f217f40818195fa9859b782f2c3aca4f1c8ae9fc5957816992"
+  }
+}

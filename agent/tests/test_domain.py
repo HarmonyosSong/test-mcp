@@ -1,34 +1,13 @@
-from types import SimpleNamespace
-
 import pytest
-from pydantic import RootModel, ValidationError
+from pydantic import ValidationError
 
 from harmony_agent.domain import (
-    CreateCaseRequest,
-    DiagnosisCase,
     DiagnosisReport,
+    Evidence,
+    EvidenceKind,
     RootCauseCandidate,
     Verdict,
 )
-from harmony_agent.runtimes.demo import (
-    _tool_items,
-    build_demo_report,
-    category_for,
-    collect_input_evidence,
-)
-
-
-def test_vague_issue_returns_insufficient_evidence() -> None:
-    case = DiagnosisCase.from_request(
-        CreateCaseRequest(title="登录有问题", description="登录功能现在有问题"),
-        workspace=None,
-    )
-
-    report = build_demo_report(case, collect_input_evidence(case))
-
-    assert report.verdict == Verdict.INSUFFICIENT_EVIDENCE
-    assert report.root_cause_candidates == []
-    assert report.missing_information
 
 
 def test_positive_verdict_requires_linked_evidence() -> None:
@@ -49,15 +28,44 @@ def test_positive_verdict_requires_linked_evidence() -> None:
         )
 
 
-def test_runtime_error_takes_priority_over_page_symptom() -> None:
-    assert category_for("登录页面白屏 TypeError: value is undefined") == "ArkTS 运行时异常"
+def test_positive_verdict_requires_every_candidate_linked() -> None:
+    observed = Evidence(
+        kind=EvidenceKind.SOURCE,
+        source="mcp:read_project_file",
+        location="A.ets:1",
+        excerpt="observed",
+        supports="observation",
+    )
+    with pytest.raises(ValidationError, match="require every candidate linked"):
+        DiagnosisReport(
+            verdict=Verdict.LOCATED,
+            summary="Located",
+            issue_category="runtime",
+            evidence=[observed],
+            root_cause_candidates=[
+                RootCauseCandidate(
+                    title="Linked",
+                    explanation="has evidence",
+                    confidence=0.9,
+                    evidence_ids=[observed.id],
+                ),
+                RootCauseCandidate(
+                    title="Unlinked",
+                    explanation="no evidence",
+                    confidence=0.5,
+                    evidence_ids=[],
+                ),
+            ],
+            confidence=0.9,
+        )
 
 
-def test_fastmcp_root_models_are_normalized_to_mappings() -> None:
-    wrapped = RootModel[dict[str, object]]({"path": "XesOrder/Order.ets", "line": 42})
-    fastmcp_root = SimpleNamespace(path="XesOrder/Pay.ets", line=7)
-
-    assert _tool_items([wrapped, fastmcp_root]) == [
-        {"path": "XesOrder/Order.ets", "line": 42},
-        {"path": "XesOrder/Pay.ets", "line": 7},
-    ]
+def test_insufficient_evidence_allows_empty_candidates() -> None:
+    report = DiagnosisReport(
+        verdict=Verdict.INSUFFICIENT_EVIDENCE,
+        summary="Not enough material",
+        issue_category="unknown",
+        missing_information=["需要完整 hilog"],
+        confidence=0.2,
+    )
+    assert report.root_cause_candidates == []

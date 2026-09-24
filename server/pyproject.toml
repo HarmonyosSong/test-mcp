@@ -5,6 +5,7 @@ description = "FastAPI and AG-UI gateway for Harmony Agent"
 requires-python = ">=3.11"
 dependencies = [
   "ag-ui-protocol>=0.1.10,<1.0",
+  "anyio>=4.0,<5.0",
   "fastapi>=0.135,<1.0",
   "harmony-agent-core",
   "uvicorn[standard]>=0.41,<1.0",
@@ -41,4 +42,3 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-

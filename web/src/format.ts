@@ -1,49 +1,25 @@
-import type {
-  CaseStatus,
-  DiagnosticCase,
-  DiagnosticStageKey,
-  StageStatus,
-} from './types';
-
-const stageLabels: Record<DiagnosticStageKey, string> = {
-  intake: '问题受理',
-  locate: '找到问题',
-  investigate: '排查问题',
-  diagnose: '给出诊断',
-};
-
-const caseStatusLabels: Record<CaseStatus, string> = {
-  queued: '排队中',
-  running: '诊断中',
-  completed: '已完成',
-  failed: '失败',
-};
-
-const stageStatusLabels: Record<StageStatus, string> = {
-  pending: '等待中',
-  running: '进行中',
-  completed: '已完成',
-  failed: '失败',
-};
-
-export function stageLabel(stage: DiagnosticStageKey): string {
-  return stageLabels[stage] || stage;
+export function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return String(value);
 }
 
-export function currentStage(diagnosticCase: DiagnosticCase): DiagnosticStageKey {
-  const running = diagnosticCase.stages.find((stage) => stage.status === 'running');
-  if (running) return running.key;
-  const pending = diagnosticCase.stages.find((stage) => stage.status === 'pending');
-  if (pending) return pending.key;
-  return diagnosticCase.stages.at(-1)?.key || 'intake';
+/** 花费估算（元）：价格表按模型取，缓存折扣/套餐价不含在内；无价格数据时返回 null。 */
+export function estimateCost(
+  inputTokens: number | null | undefined,
+  outputTokens: number | null | undefined,
+  modelName: string,
+  prices: Record<string, { input: number; output: number }>,
+): number | null {
+  const price = prices[modelName];
+  if (!price || inputTokens == null) return null;
+  return (inputTokens / 1_000_000) * price.input + ((outputTokens ?? 0) / 1_000_000) * price.output;
 }
 
-export function caseStatusLabel(status: CaseStatus): string {
-  return caseStatusLabels[status] || status;
-}
-
-export function stageStatusLabel(status: StageStatus): string {
-  return stageStatusLabels[status] || status;
+export function formatCost(cost: number): string {
+  if (cost < 0.01) return `¥${cost.toFixed(4)}`;
+  if (cost < 1) return `¥${cost.toFixed(3)}`;
+  return `¥${cost.toFixed(2)}`;
 }
 
 export function formatDate(value?: string | null): string {
