@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from fastmcp import Client
-from test_knowledge_base import DEMO_ALIAS, write_sample_entries
+from test_knowledge_base import DEMO_ALIAS, DEMO_PHRASE, write_sample_entries
 
 from harmony_knowledge_mcp.loader import KnowledgeBase
 from harmony_knowledge_mcp.preview_selection import (
@@ -52,11 +52,12 @@ def test_resolve_mode_rejects_unknown_value() -> None:
         resolve_mode("turbo")
 
 
-def test_non_legacy_modes_fail_fast_until_engine_lands(tmp_path: Path) -> None:
+def test_shadow_mode_fails_fast_until_stage_four(tmp_path: Path) -> None:
     write_sample_entries(tmp_path)
-    for mode in ("v2", "shadow"):
-        with pytest.raises(RetrievalConfigError, match="阶段三"):
-            create_knowledge_server(tmp_path, query_log_path="off", retrieval_mode=mode)
+    with pytest.raises(RetrievalConfigError, match="阶段四"):
+        create_knowledge_server(tmp_path, query_log_path="off", retrieval_mode="shadow")
+    # v2 模式已可用(阶段三交付)
+    create_knowledge_server(tmp_path, query_log_path="off", retrieval_mode="v2")
 
 
 def test_config_rejects_out_of_range_and_unbalanced_weights() -> None:
@@ -250,3 +251,205 @@ def test_previews_dedupe_and_skip_unresolvable_or_symptom_references() -> None:
     names = [name for name, _ in selected]
     assert names == ["symptom-top", "symptom-next"]  # 引用不重复占位,症状引用不进池
     assert select_previews([], query="q", resolve=_resolver(entries)) == []
+
+
+# ---------- 阶段三:V2 引擎(文档 5-8 节、14.6 关键行) ----------
+
+from harmony_knowledge_mcp.retrieval_v2 import (  # noqa: E402
+    MAX_QUERY_CHARS,
+    RETRIEVAL_VERSION_V2,
+    SCORE_KIND_V2,
+    STATUS_AMBIGUOUS,
+    STATUS_INSUFFICIENT,
+    STATUS_LEADS,
+    STATUS_NO_MATCH,
+    RetrievalEngine,
+)
+
+
+def _v2_entry(
+    name: str,
+    kind: KnowledgeKind,
+    aliases: list[str],
+    summary: str = "摘要",
+    applies_to: list[End] | None = None,
+) -> KnowledgeEntry:
+    return KnowledgeEntry(
+        name=name,
+        kind=kind,
+        title=f"{name}标题",
+        summary=summary,
+        body="正文",
+        applies_to=applies_to or [End.HARMONY],
+        authority=Authority.AUTO,
+        aliases=aliases,
+        source_path=f"{name}.md",
+    )
+
+
+@pytest.fixture
+def engine() -> RetrievalEngine:
+    return RetrievalEngine(
+        [
+            _v2_entry("sym-appraisal", KnowledgeKind.SYMPTOM, ["个人评价发不出去"]),
+            _v2_entry("fact-appraisal", KnowledgeKind.PLATFORM_FACT, ["个人评价管理", "删除评价"]),
+            _v2_entry("fact-contract", KnowledgeKind.PLATFORM_FACT, ["为什么没有电子合同"]),
+            _v2_entry("sym-cloud", KnowledgeKind.SYMPTOM, ["没有分数", "白屏", "点了没反应"]),
+            _v2_entry("fact-symbol", KnowledgeKind.PLATFORM_FACT, ["evaluationCheckView"]),
+            _v2_entry(
+                "fact-ios-only",
+                KnowledgeKind.PLATFORM_FACT,
+                ["个人评价管理"],
+                applies_to=[End.IOS],
+            ),
+        ]
+    )
+
+
+def test_generic_state_alone_cannot_recall(engine: RetrievalEngine) -> None:
+    """「白屏」「没有分数」是通用症状:不独立召回业务候选,状态为信息不足。"""
+    for query in ("电脑开机后整个屏幕白屏", "高考查分页面没有分数", "点了没反应"):
+        result = engine.lookup(query)
+        assert result.hits == [], query
+        assert result.status == STATUS_INSUFFICIENT
+
+
+def test_latin_substring_never_matches_inside_identifier(engine: RetrievalEngine) -> None:
+    """libnative.so 不得截取 native 撞词;无完整锚点即无匹配。"""
+    result = engine.lookup("应用发生 SIGSEGV，堆栈在 libnative.so")
+    assert result.hits == []
+    assert result.status == STATUS_NO_MATCH
+
+
+def test_full_symbol_recalls_via_exact_pathway(engine: RetrievalEngine) -> None:
+    result = engine.lookup("evaluationCheckView 朗读评测 分数")
+    assert result.hits[0].name == "fact-symbol"
+    assert result.hits[0].match_reasons
+    assert "exact-symbol" in result.hits[0].match_reasons
+
+
+def test_generic_overlap_cannot_outrank_business_object(engine: RetrievalEngine) -> None:
+    """「为什么没有」重合不再有资格;业务对象+动作的候选在前。"""
+    result = engine.lookup("个人评价想撤回，为什么没有删除选项")
+    names = [hit.name for hit in result.hits]
+    assert "fact-contract" not in names  # 仅共享问句套话,不合格
+    assert "sym-appraisal" in names
+    assert result.status == STATUS_LEADS  # 识别了动作,不再是宽对象
+
+
+def test_broad_object_only_marks_ambiguous(engine: RetrievalEngine) -> None:
+    result = engine.lookup("个人评价")
+    assert result.status == STATUS_AMBIGUOUS
+    assert "broad-object-only" in result.reason_codes
+
+
+def test_end_mismatch_demotes_but_keeps_hit(engine: RetrievalEngine) -> None:
+    result = engine.lookup("个人评价管理", end=End.HARMONY)
+    demoted = next(hit for hit in result.hits if hit.name == "fact-ios-only")
+    assert demoted.end_match is False
+    assert demoted.score < 0.55 * 0.55  # 原始覆盖分经 0.4 降权
+    assert result.hits[-1] is demoted  # 降权使其排在匹配候选之后,但未被丢弃
+
+
+def test_empty_and_overlong_queries(engine: RetrievalEngine) -> None:
+    assert engine.lookup("   ").status == STATUS_INSUFFICIENT
+    with pytest.raises(ValueError, match="上限"):
+        engine.lookup("x" * (MAX_QUERY_CHARS + 1))
+
+
+def test_ranking_is_deterministic(engine: RetrievalEngine) -> None:
+    first = engine.lookup("个人评价为什么没有删除选项")
+    second = engine.lookup("个人评价为什么没有删除选项")
+    assert [hit.name for hit in first.hits] == [hit.name for hit in second.hits]
+
+
+def test_v2_hit_metadata(engine: RetrievalEngine) -> None:
+    result = engine.lookup("evaluationCheckView")
+    hit = result.hits[0]
+    assert hit.retrieval_version == RETRIEVAL_VERSION_V2
+    assert hit.score_kind == SCORE_KIND_V2
+    assert 0.0 <= hit.score <= 1.0
+
+
+# ---------- 阶段三:server V2 模式集成(文档 9.1/9.2、14.6 MCP 行) ----------
+
+from harmony_knowledge_mcp.retrieval_v2 import RETRIEVAL_VERSION_V2 as _V2  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_v2_mode_lookup_reports_v2_metadata(tmp_path: Path) -> None:
+    write_sample_entries(tmp_path)
+    server = create_knowledge_server(tmp_path, query_log_path="off", retrieval_mode="v2")
+
+    async with Client(server) as client:
+        result = await client.call_tool("lookup_issue", {"query": DEMO_PHRASE})
+        payload = result.structured_content
+
+    assert payload["retrieval_version"] == _V2
+    assert payload["retrieval_status"] in (STATUS_LEADS, STATUS_AMBIGUOUS)
+    assert payload["scope_used"] == "all"  # V2 全局竞争(文档 9.2)
+    assert len(payload["snapshot_id"]) == 64
+    assert payload["hits"], "样例查询含词表内对象,应召回"
+    hit = payload["hits"][0]
+    assert hit["retrieval_version"] == _V2
+    assert hit["score_kind"] == SCORE_KIND_V2
+    assert hit["match_reasons"]
+    assert payload["documents"][0]["selection_reason"] in (
+        DIRECT_HIT,
+        RELEVANT_REFERENCE,
+        REFERENCE_ONLY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_v2_mode_generic_query_reports_insufficient(tmp_path: Path) -> None:
+    write_sample_entries(tmp_path)
+    server = create_knowledge_server(tmp_path, query_log_path="off", retrieval_mode="v2")
+
+    async with Client(server) as client:
+        result = await client.call_tool("lookup_issue", {"query": "点了没反应"})
+        payload = result.structured_content
+
+    assert payload["retrieval_status"] == STATUS_INSUFFICIENT
+    assert payload["hits"] == []
+    assert payload["documents"] == []
+
+
+@pytest.mark.asyncio
+async def test_v2_mode_search_respects_scope(tmp_path: Path) -> None:
+    write_sample_entries(tmp_path)
+    server = create_knowledge_server(tmp_path, query_log_path="off", retrieval_mode="v2")
+
+    async with Client(server) as client:
+        fact_result = await client.call_tool(
+            "search_knowledge", {"query": DEMO_PHRASE, "scope": "fact"}
+        )
+        symptom_result = await client.call_tool(
+            "search_knowledge", {"query": DEMO_PHRASE, "scope": "symptom"}
+        )
+
+    fact_hits = fact_result.structured_content["result"]
+    symptom_hits = symptom_result.structured_content["result"]
+    assert all(hit["kind"] != "symptom" for hit in fact_hits)
+    assert all(hit["kind"] == "symptom" for hit in symptom_hits)
+    assert all(hit["retrieval_version"] == _V2 for hit in fact_hits + symptom_hits)
+
+
+@pytest.mark.asyncio
+async def test_v2_mode_query_log_records_v2_version(tmp_path: Path, capsys) -> None:
+    write_sample_entries(tmp_path)
+    log_path = tmp_path / "queries.jsonl"
+    server = create_knowledge_server(tmp_path, query_log_path=log_path, retrieval_mode="v2")
+
+    async with Client(server) as client:
+        await client.call_tool("lookup_issue", {"query": DEMO_PHRASE})
+
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    record = records[0]
+    assert record["retrieval_version"] == _V2
+    assert record["score_kind"] == SCORE_KIND_V2
+    assert record["retrieval_status"] in (STATUS_LEADS, STATUS_AMBIGUOUS)
+    # V2 日志按 retrieval_status 分类(文档 10.3),CLI 必须能消费。
+    assert query_log_main([str(log_path)]) == 0
+    output = capsys.readouterr().out
+    assert "无法分类" not in output

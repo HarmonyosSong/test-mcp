@@ -1,9 +1,14 @@
-"""消融 B:仅替换预览选择,保持 V1 hits 不变(设计文档 14.2 变体 A/B、15 节阶段二)。
+"""消融 A-E(设计文档 14.2 变体、15 节阶段二/三)。
 
-对 2026-09-28 审计的同一批查询,变体 A 复刻 server 现行「top1 → 其全部引用 → 其余
-hits」预览顺序,变体 B 用 preview_selection 的槽位分配;比较目标正文可见性。
-本阶段收益只归因于正文选择,不归因于召回提升。输出到
-.data/knowledge-audit-ablation/preview-ab.json。
+对 2026-09-28 审计的同一批查询:
+- A = V1 hits + server 现行预览顺序(基线复刻)
+- B = V1 hits + preview_selection 槽位分配(阶段二)
+- C = V2 评分 + 症状直通(unified=False)+ 旧预览顺序
+- D = C + 统一竞争(unified=True)
+- E = D + 新预览槽位(注入 V2 引用相关性评分)
+F(E + 审核新词表)属人工词表审核后的复跑,不在本脚本。
+
+输出到 .data/knowledge-audit-ablation/ablation.json,并对照 14.5 发布门槛。
 """
 from __future__ import annotations
 
@@ -17,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from run import build_cases  # noqa: E402
 from harmony_knowledge_mcp.loader import KnowledgeBase  # noqa: E402
 from harmony_knowledge_mcp.preview_selection import select_previews  # noqa: E402
+from harmony_knowledge_mcp.retrieval_v2 import RetrievalEngine  # noqa: E402
 from harmony_knowledge_mcp.retriever import CONTAINMENT_SCORE, search  # noqa: E402
 from harmony_knowledge_mcp.schemas import SearchScope  # noqa: E402
 
@@ -45,61 +51,139 @@ def main():
     base = KnowledgeBase(ROOT / "knowledge")
     entries = base.load()
     by_id = {entry.name: entry for entry in entries}
+    engine = RetrievalEngine(entries)
     cases = build_cases(entries)
 
     rows = []
     for case in cases:
-        hits = v1_hits(entries, case["query"])
-        previews_a = variant_a(hits, by_id)
-        previews_b = [name for name, _ in select_previews(hits, query=case["query"], resolve=by_id.get)]
-        expected = set(case["expected"])
-        rows.append({
-            **case,
-            "previews_a": previews_a,
-            "previews_b": previews_b,
-            "target_a": bool(expected & set(previews_a)),
-            "target_b": bool(expected & set(previews_b)),
-            "criteria_a": any("## 判据" in by_id[name].body for name in previews_a if name in expected),
-            "criteria_b": any("## 判据" in by_id[name].body for name in previews_b if name in expected),
-        })
+        query = case["query"]
+        # A/B:V1 召回,两种预览。
+        hits_v1 = v1_hits(entries, query)
+        previews_a = variant_a(hits_v1, by_id)
+        previews_b = [
+            name for name, _ in select_previews(hits_v1, query=query, resolve=by_id.get)
+        ]
+        # C:V2 评分 + 症状直通(unified=False),预览沿用旧顺序。
+        result_c = engine.lookup(query, unified=False)
+        previews_c = variant_a(result_c.hits, by_id)
+        # D:统一竞争(unified=True),预览沿用旧顺序。
+        result_d = engine.lookup(query, unified=True)
+        previews_d = variant_a(result_d.hits, by_id)
+        # E:D + 新预览槽位,引用相关性由 V2 评分注入。
+        result_e = result_d
+        previews_e = [
+            name
+            for name, _ in select_previews(
+                result_e.hits,
+                query=query,
+                resolve=by_id.get,
+                score_reference=lambda entry: engine.evaluate(
+                    entry, result_e.features
+                ).raw_score,
+                threshold=engine.config.min_raw_score,
+            )
+        ]
+        rows.append(
+            {
+                **case,
+                "variants": {
+                    "a": {
+                        "hits": [hit.name for hit in hits_v1],
+                        "previews": previews_a,
+                    },
+                    "b": {
+                        "hits": [hit.name for hit in hits_v1],
+                        "previews": previews_b,
+                    },
+                    "c": {
+                        "hits": [hit.name for hit in result_c.hits],
+                        "previews": previews_c,
+                        "status": result_c.status,
+                    },
+                    "d": {
+                        "hits": [hit.name for hit in result_d.hits],
+                        "previews": previews_d,
+                        "status": result_d.status,
+                    },
+                    "e": {
+                        "hits": [hit.name for hit in result_e.hits],
+                        "previews": previews_e,
+                        "status": result_e.status,
+                    },
+                },
+            }
+        )
 
-    summary = {}
-    for split in sorted({row["split"] for row in rows}):
-        group = [row for row in rows if row["split"] == split]
-        positive = [row for row in group if row["expected"]]
-        summary[split] = {
-            "positive_n": len(positive),
-            "target_preview_a": sum(row["target_a"] for row in positive),
-            "target_preview_b": sum(row["target_b"] for row in positive),
-            "criteria_preview_a": sum(row["criteria_a"] for row in positive),
-            "criteria_preview_b": sum(row["criteria_b"] for row in positive),
-        }
-    changed = [
-        {
-            "id": row["id"],
-            "split": row["split"],
-            "query": row["query"],
-            "a": row["previews_a"],
-            "b": row["previews_b"],
-            "delta": ("+目标" if row["target_b"] and not row["target_a"]
-                      else "-目标" if row["target_a"] and not row["target_b"] else "无目标变化"),
-        }
-        for row in rows
-        if row["previews_a"] != row["previews_b"]
-    ]
+    def metrics(rows, variant):
+        summary = {}
+        for split in sorted({row["split"] for row in rows}):
+            group = [row for row in rows if row["split"] == split]
+            positive = [row for row in group if row["expected"]]
+            negative = [row for row in group if not row["expected"]]
+
+            def direct3(row):
+                return bool(set(row["expected"]) & set(row["variants"][variant]["hits"]))
+
+            def route3(row):
+                reached = set(row["variants"][variant]["hits"])
+                for name in list(reached):
+                    reached |= set(by_id[name].references)
+                return bool(set(row["expected"]) & reached)
+
+            def preview(row):
+                return bool(set(row["expected"]) & set(row["variants"][variant]["previews"]))
+
+            summary[split] = {
+                "positive_n": len(positive),
+                "direct_hit3": sum(direct3(row) for row in positive),
+                "route_hit3": sum(route3(row) for row in positive),
+                "target_preview": sum(preview(row) for row in positive),
+                "negative_with_hits": sum(
+                    bool(row["variants"][variant]["hits"]) for row in negative
+                ),
+            }
+        return summary
+
+    summary = {variant: metrics(rows, variant) for variant in ("a", "b", "c", "d", "e")}
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "preview-ab.json").write_text(json.dumps(
-        {"summary": summary, "changed": changed, "rows": rows}, ensure_ascii=False, indent=2
-    ))
-    for split, stat in summary.items():
-        if stat["positive_n"] == 0:
-            continue
-        print(f"{split}(n={stat['positive_n']}): "
-              f"目标预览 A {stat['target_preview_a']} -> B {stat['target_preview_b']} | "
-              f"判据可见 A {stat['criteria_preview_a']} -> B {stat['criteria_preview_b']}")
-    print(f"\n预览变化 {len(changed)} 条:")
-    for item in changed:
-        print(f"  [{item['delta']}] {item['id']} {item['query'][:30]!r} A={item['a']} B={item['b']}")
+    (OUT / "ablation.json").write_text(
+        json.dumps({"summary": summary, "rows": rows}, ensure_ascii=False, indent=2)
+    )
+
+    # 对照 14.5 发布门槛(E 变体为发布候选形态)。
+    e = summary["e"]
+    challenge = e.get("challenge_positive", {})
+    gates = {
+        "challenge 直接召回 direct_hit3 ≥ 25/38": challenge.get("direct_hit3", 0) >= 25,
+        "challenge 引用可达 route_hit3 ≥ 30/38": challenge.get("route_hit3", 0) >= 30,
+        "challenge 目标预览 ≥ 28/38": challenge.get("target_preview", 0) >= 28,
+        "新负例误放 ≤ 4/16": e.get("challenge_negative", {}).get("negative_with_hits", 99) <= 4,
+        "旧负例误放 = 0": all(
+            stat.get("negative_with_hits", 0) == 0
+            for split, stat in e.items()
+            if split.startswith("existing") and stat.get("negative_with_hits") is not None
+        ),
+        "pilot direct_hit3 ≥ 3/10": e.get("pilot_rewrite", {}).get("direct_hit3", 0) >= 3,
+    }
+
+    header = f"{'split':<22}" + "".join(f"{v:>28}" for v in ("A", "B", "C", "D", "E"))
+    print(header)
+    for split in sorted({row["split"] for row in rows}):
+        line = f"{split:<22}"
+        for variant in ("a", "b", "c", "d", "e"):
+            stat = summary[variant].get(split, {})
+            n = stat.get("positive_n", 0)
+            cell = (
+                f"d{stat.get('direct_hit3', 0)}/r{stat.get('route_hit3', 0)}"
+                f"/p{stat.get('target_preview', 0)} of {n}"
+            )
+            if stat.get("negative_with_hits"):
+                cell += f" 误放{stat['negative_with_hits']}"
+            line += f"{cell:>28}"
+        print(line)
+    print("\n14.5 发布门槛(E 变体):")
+    for gate, passed in gates.items():
+        print(f"  {'✓' if passed else '✗'} {gate}")
 
 
 if __name__ == "__main__":

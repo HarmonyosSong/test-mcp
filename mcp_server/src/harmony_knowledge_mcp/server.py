@@ -11,11 +11,17 @@ from pydantic import Field
 
 from .concepts import CONCEPTS
 from .loader import KnowledgeBase
+from .preview_selection import select_previews
 from .query_log import QueryLogger, logged_tool, resolve_query_log_path, summarize_hits
+from .retrieval_rules import rules_digest as v2_rules_digest
 from .retrieval_v2 import (
+    RETRIEVAL_VERSION_V1,
+    RETRIEVAL_VERSION_V2,
     SCORE_KIND_V1,
+    SCORE_KIND_V2,
     RetrievalConfig,
     RetrievalConfigError,
+    RetrievalEngine,
     RetrievalMode,
     build_snapshot_id,
     resolve_mode,
@@ -74,20 +80,26 @@ def create_knowledge_server(
     retrieval_mode: str | None = None,
 ) -> FastMCP:
     mode = resolve_mode(retrieval_mode)
-    if mode is not RetrievalMode.LEGACY:
-        # V2 引擎主体属阶段三交付;在此之前显式启动失败,不静默降级(文档第 4 节)。
+    if mode is RetrievalMode.SHADOW:
+        # shadow 属阶段四交付;在此之前显式启动失败,不静默降级(文档第 4 节)。
         raise RetrievalConfigError(
-            f"检索模式 {mode.value!r} 需要 V2 引擎,当前仅 legacy 可用(阶段三交付)"
+            f"检索模式 {mode.value!r} 需要 shadow 对照框架,当前不可用(阶段四交付)"
         )
     base = KnowledgeBase(resolve_knowledge_root(root))
     base.load()
-    # 快照标识:内容 + 词表(CONCEPTS 即现行规则)+ 配置 + 引擎版本(文档 11.1)。
-    rules_digest = hashlib.sha256(
-        json.dumps(CONCEPTS, sort_keys=True, ensure_ascii=False).encode()
-    ).hexdigest()
+    engine = RetrievalEngine(base.all(), RetrievalConfig()) if mode is RetrievalMode.V2 else None
+    # 快照标识:内容 + 词表 + 配置 + 引擎版本(文档 11.1);词表摘要随模式取各自注册表。
+    if engine is not None:
+        rules_digest = v2_rules_digest()
+    else:
+        rules_digest = hashlib.sha256(
+            json.dumps(CONCEPTS, sort_keys=True, ensure_ascii=False).encode()
+        ).hexdigest()
     snapshot_id = build_snapshot_id(
         base.all(), root=base.root, rules_digest=rules_digest, config=RetrievalConfig()
     )
+    retrieval_version = RETRIEVAL_VERSION_V2 if engine is not None else RETRIEVAL_VERSION_V1
+    score_kind = SCORE_KIND_V2 if engine is not None else SCORE_KIND_V1
     resolved_log = resolve_query_log_path(query_log_path)
     query_logger = (
         QueryLogger(resolved_log, context=query_context) if resolved_log is not None else None
@@ -112,6 +124,46 @@ def create_knowledge_server(
 
         def lookup() -> KnowledgeLookup:
             options = {"end": End(end) if end else None, "version": version, "domains": domains}
+            if engine is not None:
+                # V2 主流程(文档 12.2):统一候选竞争,scope_used 恒为 all(文档 9.2)。
+                result = engine.lookup(query, **options)
+                selected = select_previews(
+                    result.hits,
+                    query=query,
+                    resolve=base.get,
+                    score_reference=lambda entry: engine.evaluate(entry, result.features).raw_score,
+                    threshold=engine.config.min_raw_score,
+                )
+                documents = []
+                for name, reason in selected:
+                    entry = base.get(name)
+                    document = _to_document(entry)
+                    documents.append(
+                        KnowledgePreview(
+                            **{**document.model_dump(), "body": document.body[:1500]},
+                            truncated=len(document.body) > 1500,
+                            selection_reason=reason,
+                        )
+                    )
+                preview_names = {name for name, _ in selected}
+                omitted = [
+                    name
+                    for name in dict.fromkeys(
+                        [hit.name for hit in result.hits]
+                        + [ref for hit in result.hits for ref in hit.references]
+                    )
+                    if name not in preview_names and base.get(name) is not None
+                ]
+                return KnowledgeLookup(
+                    scope_used=SearchScope.ALL,
+                    hits=result.hits,
+                    documents=documents,
+                    omitted_references=omitted,
+                    retrieval_version=RETRIEVAL_VERSION_V2,
+                    retrieval_status=result.status,
+                    reason_codes=result.reason_codes,
+                    snapshot_id=snapshot_id,
+                )
             scope = SearchScope.SYMPTOM
             hits = search(base.all(), query, scope=scope, **options)
             if (
@@ -154,7 +206,7 @@ def create_knowledge_server(
             summarize=lambda result: {
                 **summarize_hits(result.hits),
                 "retrieval_version": result.retrieval_version,
-                "score_kind": SCORE_KIND_V1,
+                "score_kind": score_kind,
                 "retrieval_status": result.retrieval_status,
                 "snapshot_id": result.snapshot_id,
             },
@@ -217,17 +269,32 @@ def create_knowledge_server(
         Equal-score hits in those domains or shared rank first; other domains are never filtered.
         Omit domains when uncertain. For weak results, retry without preferences and refine query.
         """
+
+        def run_search() -> list[SearchHit]:
+            if engine is not None:
+                # V2 显式 scope 检索(文档 9.1):严格遵守 scope,不做直通回退。
+                return engine.search(
+                    query,
+                    scope=SearchScope(scope),
+                    end=End(end) if end else None,
+                    version=version,
+                    domains=domains,
+                    limit=limit,
+                )
+            return search(
+                base.all(),
+                query,
+                scope=SearchScope(scope),
+                end=End(end) if end else None,
+                version=version,
+                domains=domains,
+                limit=limit,
+            )
+
         return logged_tool(
             query_logger,
             "search_knowledge",
-            search,
-            base.all(),
-            query,
-            scope=SearchScope(scope),
-            end=End(end) if end else None,
-            version=version,
-            domains=domains,
-            limit=limit,
+            run_search,
             arguments={
                 "query": query,
                 "scope": scope,
@@ -238,8 +305,8 @@ def create_knowledge_server(
             },
             summarize=lambda hits: {
                 **summarize_hits(hits),
-                "retrieval_version": "lexical-v1",
-                "score_kind": SCORE_KIND_V1,
+                "retrieval_version": retrieval_version,
+                "score_kind": score_kind,
                 "snapshot_id": snapshot_id,
             },
         )
