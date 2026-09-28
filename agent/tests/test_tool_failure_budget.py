@@ -157,3 +157,31 @@ async def test_mcp_structured_transient_flag_survives_adapter() -> None:
                 "read_status", {}, lambda: toolset.direct_call_tool("read_status", {})
             )
     assert len(attempts) == 2
+
+
+async def test_low_budget_warning_appended_only_near_exhaustion() -> None:
+    """预算将尽时(剩余 ≤ WARN_REMAINING_CALLS)成功结果附 budget_notice,之前不附。"""
+    budget = ToolFailureBudget(call_limit=7)
+    call = AsyncMock(return_value={"hits": ["x"]})
+    # 第 1 次后剩余 6 > 5:无预警
+    first = await budget.call("read", {"path": "a"}, call, [])
+    assert "budget_notice" not in first
+    # 第 2 次后剩余 5:开始预警,dict 结果合并字段
+    second = await budget.call("read", {"path": "b"}, call, [])
+    assert second["budget_notice"].startswith("工具预算仅剩 5 次")
+    assert second["hits"] == ["x"]
+    # 第 3 次后剩余 4:非 dict 结果包装
+    text_call = AsyncMock(return_value="plain")
+    third = await budget.call("read", {"path": "c"}, text_call, [])
+    assert third["result"] == "plain"
+    assert third["budget_notice"].startswith("工具预算仅剩 4 次")
+    # 预警不计入失败,预算状态正常
+    assert budget.failures == []
+    assert budget.stop_reason is None
+
+
+async def test_low_budget_warning_reflects_configured_call_limit() -> None:
+    budget = ToolFailureBudget(call_limit=3)
+    call = AsyncMock(return_value="data")
+    result = await budget.call("read", {}, call, [])
+    assert result["budget_notice"].startswith("工具预算仅剩 2 次")

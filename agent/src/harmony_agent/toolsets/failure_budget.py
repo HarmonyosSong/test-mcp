@@ -33,6 +33,16 @@ REUSABLE_TOOLS = frozenset(
     }
 )
 
+# 预算将尽阈值:剩余调用不超过此值时,在成功结果里附收尾提示。
+# 让模型主动收敛(停止开新线索、用已有证据写结论),而不是耗尽瞬间被
+# 清空工具表——后者会让模型在异常状态下输出协议垃圾(DSML 崩溃的诱因)。
+WARN_REMAINING_CALLS = 5
+
+_BUDGET_NOTICE = (
+    "工具预算仅剩 {remaining} 次。请停止开启新线索,用已收集的证据收尾并输出结论;"
+    "证据不足则如实说明缺口并追问。"
+)
+
 
 def _transient(error: Exception) -> bool:
     """Only an explicit upstream flag permits one identical retry; never guess from prose."""
@@ -176,6 +186,15 @@ class ToolFailureBudget:
                         self._result_signatures.clear()
                         self._failed_signatures.clear()
                         self.no_progress = 0
+                    # 将尽预警:在真实执行成功的结果上附收尾提示(fingerprint/empty
+                    # 判定均在附加前完成,不受影响;复用返回保持固定格式不附加)。
+                    remaining = self.call_limit - self.calls
+                    if 0 < remaining <= WARN_REMAINING_CALLS:
+                        notice = _BUDGET_NOTICE.format(remaining=remaining)
+                        if isinstance(result, dict):
+                            result = {**result, "budget_notice": notice}
+                        else:
+                            result = {"result": result, "budget_notice": notice}
                     self._audit(events, name, started, None)
                     return result
             if self.exhausted:
