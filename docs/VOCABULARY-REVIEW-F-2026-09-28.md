@@ -7,6 +7,30 @@
 泛化,权重高;anchor = 条目 alias 自查,权重低)。标【审核】的是需要你拍板的,
 其余是我认为可直接执行的低风险项。审核通过后我按本清单改词表并复跑消融 F。
 
+## 0. 执行记录(2026-09-28)
+
+已按审核结论执行两轮,消融 F(E + 审核词表)门槛 6 过 4:
+
+| 门槛 | 结果 |
+|---|---|
+| challenge 直接召回 ≥25/38 | ✓ 34 |
+| challenge 引用可达 ≥30/38 | ✓ 35 |
+| challenge 目标预览 ≥28/38 | ✓ 34 |
+| 新负例误放 ≤4/16 | ✗ 5(既定 C+A,无新增碰撞) |
+| 旧负例误放 = 0 | ✓ |
+| pilot ≥3/10 | ✗ 2(冻结集不补词,真实泛化读数) |
+
+- 一轮:§1-4 全部 + §7 符号;审核项定案——coupon「券」不补、combine/purchase
+  ACTION 补、负例走 C+A
+- 二轮(剩余 challenge 归因):personalization、phone、materials、promotion、
+  teaching-point、nearby、full-care、combo-addon+组合下单/组合购买、
+  learning-data+学情、region+港澳台、resource-slot+弹窗
+- 二轮两处修正一轮决策,均有新证据:region 补港澳台(条目侧只有「香港」无
+  「地区」,不补则 challenge-3 无解,碰撞面仅限注册地区场景);「弹窗」从
+  INTENT 改 OBJECT(INTENT 整句枚举覆盖不了「弹窗也不见了」类说法)
+- 不补的维持:笔记(「笔记本电脑」子串碰撞)、体验、handler、笔记类 pilot 问法
+- 残余接受未覆盖:challenge-19(H5 容器)、22(体验调课)、28(调课级联)
+
 ## 1. 建议新增 OBJECT(产品/业务术语,误放风险低)
 
 | 概念 ID | 建议 terms | 支撑案例 | 备注 |

@@ -46,8 +46,9 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     Concept(
         "combo-addon",
         ConceptKind.OBJECT,
-        ("组合加购", "搭配购课", "班课渗透", "加购"),
-        note="同一产品机制叫法;「买正课送体验课」是描述不是叫法,未迁入",
+        ("组合加购", "搭配购课", "班课渗透", "加购", "组合下单", "组合购买"),
+        note="同一产品机制叫法;「买正课送体验课」是描述不是叫法,未迁入;"
+        "「组合下单/组合购买」F 二轮补(one-on-one-full-care-package)",
     ),
     Concept(
         "cart",
@@ -59,9 +60,9 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     Concept(
         "contract",
         ConceptKind.OBJECT,
-        ("合同",),
+        ("合同", "签约入口"),
         related_to=("agreement",),
-        note="合同 ≠ 协议;V1 同组是误并",
+        note="合同 ≠ 协议;V1 同组是误并;「签约入口」F 审核补(2026-09-28)",
     ),
     Concept(
         "agreement",
@@ -90,7 +91,12 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
         note="云听课是独立旁听入口(class-replay-and-cloud-listening)",
     ),
     Concept("notes", ConceptKind.OBJECT, ("课堂笔记", "课后笔记"), note="同一对象叫法"),
-    Concept("invoice", ConceptKind.OBJECT, ("发票",), note="对象"),
+    Concept(
+        "invoice",
+        ConceptKind.OBJECT,
+        ("发票", "开票入口", "开票按钮"),
+        note="对象;开票入口类 F 审核补(2026-09-28)",
+    ),
     Concept("bill", ConceptKind.ACTION, ("开票",), note="动作,从 V1 invoice 组拆出"),
     Concept("coupon", ConceptKind.OBJECT, ("优惠券", "代金券"), note="已审核同义"),
     Concept(
@@ -125,8 +131,8 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     Concept(
         "appraisal",
         ConceptKind.OBJECT,
-        ("个人评价", "课程评价", "教师评价", "评论"),
-        note="评价类对象;维度差异留待 profile 细化",
+        ("个人评价", "课程评价", "教师评价", "评论", "我的评价"),
+        note="评价类对象;维度差异留待 profile 细化;「我的评价」F 审核补(2026-09-28)",
     ),
     Concept("one-on-one", ConceptKind.OBJECT, ("1对1", "一对一"), note="已审核同义"),
     Concept("self-study", ConceptKind.OBJECT, ("自学课", "自主学习课程"), note="同一对象叫法"),
@@ -139,7 +145,12 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
         note="通用状态碎片,从 V1 search 组拆出",
     ),
     Concept("grade", ConceptKind.OBJECT, ("投放年级", "年级显示", "课程年级"), note="同一属性叫法"),
-    Concept("classroom", ConceptKind.OBJECT, ("教室号", "具体教室"), note="同一对象叫法"),
+    Concept(
+        "classroom",
+        ConceptKind.OBJECT,
+        ("教室号", "具体教室", "教室"),
+        note="同一对象叫法;「教室」F 审核补(2026-09-28)",
+    ),
     Concept(
         "authorization",
         ConceptKind.OBJECT,
@@ -147,7 +158,10 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
         note="授权对象;xnote 是触发场景",
     ),
     Concept(
-        "face-login", ConceptKind.OBJECT, ("免密登录", "人脸登录", "刷脸登录"), note="同一功能叫法"
+        "face-login",
+        ConceptKind.OBJECT,
+        ("免密登录", "人脸登录", "刷脸登录", "人脸识别", "人脸"),
+        note="同一功能叫法;「人脸/人脸识别」F 审核补(2026-09-28)",
     ),
     Concept("programming", ConceptKind.OBJECT, ("编程课堂", "编程课入口"), note="同一功能叫法"),
     Concept("report", ConceptKind.OBJECT, ("学习报告", "学情报告"), note="同一对象叫法"),
@@ -160,10 +174,232 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     Concept("download", ConceptKind.ACTION, ("下载", "存成文件", "保存"), note="动作"),
     Concept("enroll", ConceptKind.ACTION, ("报名", "报班"), note="动作"),
     Concept(
+        "combine",
+        ConceptKind.ACTION,
+        ("叠加", "一起用", "同时用"),
+        note="动作,F 审核补(2026-09-28):区分优惠券叠加与单券不可用,不扩召回面",
+    ),
+    Concept(
+        "purchase",
+        ConceptKind.ACTION,
+        ("购买", "买课", "报课"),
+        note="动作,F 审核补(2026-09-28):区分「怎么买」类查询,单字「买」不补",
+    ),
+    # F 阶段审核新增业务对象(2026-09-28,docs/VOCABULARY-REVIEW-F-2026-09-28 §1/补充):
+    # 以产品/业务术语为主,误放面小;通用度中等的词在 note 标注依据。
+    Concept(
+        "cloudlearn-study",
+        ConceptKind.OBJECT,
+        ("云学习",),
+        related_to=("cloud-listening",),
+        note="云学习 ≠ 云听课;cloudlearn-h5-surfaces",
+    ),
+    Concept(
+        "study-home",
+        ConceptKind.OBJECT,
+        ("学习页", "学习首页"),
+        note="库内高频词;study-home-redesign、harmony-phase1-learning-task-mask",
+    ),
+    Concept(
+        "class-mode",
+        ConceptKind.OBJECT,
+        ("智慧伴学", "智能伴学", "组合小班"),
+        note="产品功能名;class-mode-vs-interaction-mode",
+    ),
+    Concept(
+        "course-state",
+        ConceptKind.OBJECT,
+        ("课态", "学习空间"),
+        note="业务术语;coursestate-mapping",
+    ),
+    Concept(
+        "lesson-type",
+        ConceptKind.OBJECT,
+        ("选修课", "选修讲", "三讲一测"),
+        note="lesson-type-and-livetype-codes",
+    ),
+    Concept(
+        "small-stove",
+        ConceptKind.OBJECT,
+        ("小灶课", "第0课", "第零课", "腾讯会议"),
+        note="small-stove-class;腾讯会议是该条目明示的上课工具",
+    ),
+    Concept("renewal", ConceptKind.OBJECT, ("续报",), note="业务术语;renewal-cross-business-line"),
+    Concept(
+        "praise-wall",
+        ConceptKind.OBJECT,
+        ("表扬墙",),
+        related_to=("teacher-homepage",),
+        note="产品功能名;teacher-praise-wall",
+    ),
+    Concept("koubei", ConceptKind.OBJECT, ("口碑值",), note="产品术语;teacher-rating-system"),
+    Concept(
+        "bixin",
+        ConceptKind.OBJECT,
+        ("彼芯", "彼芯教练"),
+        note="产品术语;virtual-teacher-naming",
+    ),
+    Concept(
+        "three-plus-x",
+        ConceptKind.OBJECT,
+        ("3+X",),
+        related_to=("one-on-one",),
+        note="one-on-one-3-plus-x;NFKC/casefold 后命中 3+x",
+    ),
+    Concept(
+        "works",
+        ConceptKind.OBJECT,
+        ("我的作品",),
+        note="库内功能名;classlearn-spoken-island-entry 入口场景",
+    ),
+    Concept(
+        "learning-data",
+        ConceptKind.OBJECT,
+        ("学情数据", "学情"),
+        related_to=("report",),
+        note="学情数据 ≠ 学情报告;learning-data-sharing-switch;「学情」F 二轮补,"
+        "「学情报告」最长匹配优先归 report,不冲突",
+    ),
+    Concept(
+        "digital-currency",
+        ConceptKind.OBJECT,
+        ("数字货币",),
+        note="shenzhen-digital-currency-protocol",
+    ),
+    Concept(
+        "teacher-homepage",
+        ConceptKind.OBJECT,
+        ("教师主页", "老师主页"),
+        note="teacher-profile-page、teacher-praise-wall",
+    ),
+    Concept(
+        "calendar",
+        ConceptKind.OBJECT,
+        ("日历", "日历页"),
+        note="通用度中,教育语境接受;self-study-course-rules 区分词",
+    ),
+    Concept(
+        "study-task",
+        ConceptKind.OBJECT,
+        ("学习任务", "任务按钮"),
+        note="harmony-phase1-learning-task-mask",
+    ),
+    Concept("notice", ConceptKind.OBJECT, ("购课须知",), note="course-notice-confirmation"),
+    # F 二轮补充(消融 F 后剩余 challenge 归因,2026-09-28):
+    Concept(
+        "personalization",
+        ConceptKind.OBJECT,
+        ("个性化推荐",),
+        note="learning-data-sharing-switch alias 锚点",
+    ),
+    Concept(
+        "phone",
+        ConceptKind.OBJECT,
+        ("手机号", "手机号码"),
+        note="login-registration-basics;库外「手机号」场景有碰撞面,负例验证通过",
+    ),
+    Concept(
+        "materials",
+        ConceptKind.OBJECT,
+        ("资料页", "课程资料"),
+        note="class-notes-in-materials;不补「笔记」(「笔记本电脑」子串碰撞)",
+    ),
+    Concept(
+        "promotion",
+        ConceptKind.OBJECT,
+        ("优惠活动", "促销活动", "联报"),
+        note="promotion-coupon-rules summary 锚点;「优惠」「活动」单字不补",
+    ),
+    Concept(
+        "teaching-point",
+        ConceptKind.OBJECT,
+        ("教学点",),
+        note="class-location-display、nearby-teaching-point-filter 双条目锚点",
+    ),
+    Concept(
+        "nearby",
+        ConceptKind.OBJECT,
+        ("附近",),
+        note="nearby-teaching-point-filter;库外「附近的X」有碰撞面,负例验证通过",
+    ),
+    Concept(
+        "full-care",
+        ConceptKind.OBJECT,
+        ("全托", "全托课", "全托包"),
+        related_to=("one-on-one",),
+        note="one-on-one-full-care-package alias 锚点",
+    ),
+    Concept(
+        "online-offline",
+        ConceptKind.OBJECT,
+        ("面授", "网课"),
+        note="online-lesson-in-offline-class",
+    ),
+    Concept(
+        "resource-slot",
+        ConceptKind.OBJECT,
+        ("资源位", "弹窗"),
+        note="resource-slot-class-expiry;「弹窗」F 二轮补:INTENT 枚举覆盖不了"
+        "「弹窗也不见了」类说法,改 OBJECT 以负例验证",
+    ),
+    Concept(
+        "verification-code",
+        ConceptKind.OBJECT,
+        ("验证码",),
+        note="库外 App 也会问,但库内有条目(login-registration-basics),接受",
+    ),
+    Concept("schedule", ConceptKind.OBJECT, ("课表",), note="通用度中;class-reschedule-cascade"),
+    Concept(
+        "answer",
+        ConceptKind.OBJECT,
+        ("答案", "答案解析"),
+        related_to=("handout",),
+        note="讲义答案场景;handout-answer-not-shown",
+    ),
+    Concept(
+        "region",
+        ConceptKind.OBJECT,
+        ("地区", "区域", "香港", "澳门", "台湾"),
+        note="registration-option-limits;港澳台仅限注册地区场景,库外地理查询有碰撞面,"
+        "其他城市名单字不补",
+    ),
+    Concept(
+        "sensitive-word",
+        ConceptKind.OBJECT,
+        ("敏感词", "内容风险", "潜在风险"),
+        note="appraise-sensitive-word-block",
+    ),
+    # F 阶段审核新增意图短语(§3):通用语义的精确问法,整句命中才召回,
+    # 比把「老师」「提醒」「弹窗」补成 OBJECT 安全。
+    Concept(
+        "search-teacher-intent",
+        ConceptKind.INTENT,
+        ("搜不到老师", "搜索不出来", "搜不到结果"),
+        note="app-search-behavior;「老师」太通用,不补 OBJECT",
+    ),
+    Concept(
+        "message-missed-intent",
+        ConceptKind.INTENT,
+        ("没收到提醒", "上课提醒没收到"),
+        note="message-types-catalog;「提醒」太通用,不补 OBJECT",
+    ),
+    Concept(
+        "bridge-native-intent",
+        ConceptKind.INTENT,
+        ("调起原生录音", "h5调用原生", "h5调原生失败"),
+        note="classlearn-h5-bridge-contract;handler 是编程通用词,不补",
+    ),
+    Concept(
+        "popup-missed-intent",
+        ConceptKind.INTENT,
+        ("弹窗不显示了", "首页活动没了"),
+        note="resource-slot-class-expiry;「弹窗」通用,不补 OBJECT",
+    ),
+    Concept(
         "quota",
         ConceptKind.OBJECT,
-        ("名额", "满员", "超员", "超限额"),
-        note="班级名额对象(class-quota-and-over-quota)",
+        ("名额", "满员", "超员", "超限额", "班级满了"),
+        note="班级名额对象(class-quota-and-over-quota);「班级满了」F 审核补,单字「满了」不补",
     ),
     # 通用症状碎片(审计负例暴露 + 条目 alias 中的通用态):不独立召回。
     Concept(
@@ -200,11 +436,14 @@ QUESTION_SCAFFOLD_RE = re.compile(
 )
 
 # 技术符号锚点:完整边界、大小写敏感匹配才可召回(文档 5.2.2/5.2.4)。
+# 只收驼峰完整标识符;「H5」「handler」「native」单 token 通用度太高,不收录。
 REGISTERED_SYMBOLS: tuple[str, ...] = (
     "evaluationCheckView",
     "fromTask",
     "isNative",
     "JSBridge",
+    "lessonType",
+    "liveType",
 )
 
 # 数量/单位/角色白名单(文档 5.2.6):只转换登记过的等价,不全局替换数字。
