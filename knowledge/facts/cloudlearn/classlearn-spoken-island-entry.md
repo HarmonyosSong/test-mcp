@@ -5,7 +5,7 @@ kind: mapping
 description: 语音评测页只有一个原生入口，fromTask 参数把它分派成四条互不相干的链路
 applies_to: [harmony]
 authority: code
-updated_at: 2026-09-17
+updated_at: 2026-09-28
 verified_at: 2026-09-17
 aliases:
   - 语音评测入口
@@ -16,6 +16,7 @@ aliases:
   - 磨耳朵
   - fromTask 参数
   - isNative 参数
+  - evaluationCheckView
 ---
 
 # 语音评测：单入口，四链路

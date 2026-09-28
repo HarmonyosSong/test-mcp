@@ -7,12 +7,15 @@ aliases:
 - 绘本无法评测
 - 朗读没有评分
 - 磨耳朵打不开
+- 没有分数
+- 无分数
+- 空分数
 domains:
 - cloudlearn
 applies_to:
 - harmony
 authority: auto
-updated_at: 2026-09-24
+updated_at: 2026-09-28
 description: 依据既有事实组织的候选入口，尚待真实案例验证
 ---
 

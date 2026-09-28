@@ -5,7 +5,7 @@ kind: mapping
 description: H5 不知道自己在哪个容器里，全靠原生注入的 UA、cookie 和 URL 开关判断；注入不同则同一页面走不同分支
 applies_to: [harmony]
 authority: code
-updated_at: 2026-09-17
+updated_at: 2026-09-28
 verified_at: 2026-09-17
 aliases:
   - app 内嵌还是浏览器
@@ -15,6 +15,9 @@ aliases:
   - UA 不一样
   - cookie 没带上
   - 环境注入
+  - 浏览器正常
+  - 浏览器行为差异
+  - H5 无法录音
 ---
 
 # H5 靠原生注入判断自己在哪
