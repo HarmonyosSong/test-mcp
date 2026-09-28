@@ -81,6 +81,18 @@ class SearchHit(BaseModel):
     )
     matched_on: str = Field(description="命中的短语")
     references: list[str] = Field(default_factory=list)
+    retrieval_version: str = Field(
+        default="lexical-v1",
+        description="检索引擎版本：lexical-v1 / deterministic-v2。V1 默认 legacy 语义。",
+    )
+    score_kind: str = Field(
+        default="legacy-0-to-3",
+        description="分数口径：legacy-0-to-3 / relevance-0-to-1。不同口径的分数不可直接比较。",
+    )
+    match_reasons: list[str] = Field(
+        default_factory=list,
+        description="紧凑匹配理由（最多 6 项），如对象、动作、完整符号；V1 恒为空。",
+    )
 
 
 class KnowledgeDocument(BaseModel):
@@ -109,6 +121,11 @@ class SymptomSummary(BaseModel):
 class KnowledgePreview(KnowledgeDocument):
     truncated: bool = False
     leads_only: bool = True
+    selection_reason: str = Field(
+        default="legacy_unclassified",
+        description="预览入选原因：direct_hit / relevant_reference / reference_only；"
+        "V1 不区分，恒为 legacy_unclassified。",
+    )
 
 
 class KnowledgePage(KnowledgeDocument):
@@ -123,3 +140,20 @@ class KnowledgeLookup(BaseModel):
     hits: list[SearchHit]
     documents: list[KnowledgePreview]
     omitted_references: list[str] = Field(default_factory=list)
+    retrieval_version: str = Field(
+        default="lexical-v1",
+        description="检索引擎版本；空 hits 时也可据此识别版本。",
+    )
+    retrieval_status: str = Field(
+        default="legacy_unclassified",
+        description="检索相关性状态：no_match / insufficient_query / ambiguous / leads_found；"
+        "V1 不推导强弱，恒为 legacy_unclassified。",
+    )
+    reason_codes: list[str] = Field(
+        default_factory=list,
+        description="检索层状态原因（最多 6 项）；V1 恒为空。",
+    )
+    snapshot_id: str = Field(
+        default="",
+        description="内容/规则/配置/引擎的联合快照标识，用于回归归因与日志分析。",
+    )

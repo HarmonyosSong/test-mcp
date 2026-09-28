@@ -20,6 +20,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from .retrieval_v2 import RETRIEVAL_VERSION_V1, RETRIEVAL_VERSION_V2
 from .retriever import CONTAINMENT_SCORE
 from .schemas import SearchHit
 
@@ -61,6 +62,11 @@ class QueryLogEntry(BaseModel):
     message_id: str | None = None
     verdict: str | None = None
     outcome: str | None = None
+    # 检索版本化遥测(文档 10.2):缺省为 None,历史行按 lexical-v1 解释。
+    retrieval_version: str | None = None
+    score_kind: str | None = None
+    retrieval_status: str | None = None
+    snapshot_id: str | None = None
 
 
 def resolve_query_log_path(value: str | Path | None = None) -> Path | None:
@@ -169,6 +175,25 @@ def logged_tool(
 # ---------- 未命中分析 CLI ----------
 
 
+def _print_v2_status(searches: list[QueryLogEntry]) -> None:
+    """V2 结果按 retrieval_status 分类;分数是 0-1 相关性,不能套 V1 的 2.7 阈值。"""
+    if not searches:
+        return
+    print(f"\nV2 检索状态分布（{len(searches)} 次）——按 retrieval_status 分类：")
+    for status_value, count in Counter(
+        entry.retrieval_status or "未记录" for entry in searches
+    ).most_common():
+        print(f"  {status_value}: {count}")
+    missed = [
+        entry for entry in searches if entry.retrieval_status in {"no_match", "insufficient_query"}
+    ]
+    counter = Counter(_query_of(entry) for entry in missed)
+    if counter:
+        print("  其中无匹配/信息不足查询（条目建设清单来源）：")
+        for query, count in counter.most_common(20):
+            print(f"    {count:>4} 次  {query}")
+
+
 def _read_entries(path: Path) -> tuple[list[QueryLogEntry], int]:
     """逐行解析，坏行跳过并计数（日志文件可能被截断或手工编辑）。"""
     entries: list[QueryLogEntry] = []
@@ -248,8 +273,25 @@ def main(argv: list[str] | None = None) -> int:
         for entry in entries
         if entry.tool in {"search_knowledge", "lookup_issue"} and entry.status == "ok"
     ]
-    _print_missed(searches)
-    _print_weak(searches)
+    # 版本分流(文档 10.3):历史行缺版本字段,按 V1 解释;V2 按状态分类;未知版本不套阈值。
+    v1_searches: list[QueryLogEntry] = []
+    v2_searches: list[QueryLogEntry] = []
+    unknown_versions: Counter[str] = Counter()
+    for entry in searches:
+        version = entry.retrieval_version or RETRIEVAL_VERSION_V1
+        if version == RETRIEVAL_VERSION_V1:
+            v1_searches.append(entry)
+        elif version == RETRIEVAL_VERSION_V2:
+            v2_searches.append(entry)
+        else:
+            unknown_versions[version] += 1
+    _print_missed(v1_searches)
+    _print_weak(v1_searches)
+    _print_v2_status(v2_searches)
+    if unknown_versions:
+        print(f"\n无法分类的检索版本（{sum(unknown_versions.values())} 次），不套用任何已知阈值：")
+        for version, count in unknown_versions.most_common():
+            print(f"  {version}: {count}")
     outcomes = [entry for entry in entries if entry.tool == "diagnosis_outcome"]
     if outcomes:
         print("\n诊断终态（模型报告 verdict，不代表人工确认根因）：")

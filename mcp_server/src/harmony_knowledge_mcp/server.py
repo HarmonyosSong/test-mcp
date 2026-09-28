@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from pathlib import Path
 from typing import Annotated, Literal
@@ -7,8 +9,17 @@ from typing import Annotated, Literal
 from fastmcp import FastMCP
 from pydantic import Field
 
+from .concepts import CONCEPTS
 from .loader import KnowledgeBase
 from .query_log import QueryLogger, logged_tool, resolve_query_log_path, summarize_hits
+from .retrieval_v2 import (
+    SCORE_KIND_V1,
+    RetrievalConfig,
+    RetrievalConfigError,
+    RetrievalMode,
+    build_snapshot_id,
+    resolve_mode,
+)
 from .retriever import CONTAINMENT_SCORE, search
 from .schemas import (
     End,
@@ -60,9 +71,23 @@ def create_knowledge_server(
     *,
     query_log_path: str | Path | None = None,
     query_context: dict[str, str] | None = None,
+    retrieval_mode: str | None = None,
 ) -> FastMCP:
+    mode = resolve_mode(retrieval_mode)
+    if mode is not RetrievalMode.LEGACY:
+        # V2 引擎主体属阶段三交付;在此之前显式启动失败,不静默降级(文档第 4 节)。
+        raise RetrievalConfigError(
+            f"检索模式 {mode.value!r} 需要 V2 引擎,当前仅 legacy 可用(阶段三交付)"
+        )
     base = KnowledgeBase(resolve_knowledge_root(root))
     base.load()
+    # 快照标识:内容 + 词表(CONCEPTS 即现行规则)+ 配置 + 引擎版本(文档 11.1)。
+    rules_digest = hashlib.sha256(
+        json.dumps(CONCEPTS, sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()
+    snapshot_id = build_snapshot_id(
+        base.all(), root=base.root, rules_digest=rules_digest, config=RetrievalConfig()
+    )
     resolved_log = resolve_query_log_path(query_log_path)
     query_logger = (
         QueryLogger(resolved_log, context=query_context) if resolved_log is not None else None
@@ -118,6 +143,7 @@ def create_knowledge_server(
                 hits=hits,
                 documents=documents,
                 omitted_references=selected[3:],
+                snapshot_id=snapshot_id,
             )
 
         return logged_tool(
@@ -125,7 +151,13 @@ def create_knowledge_server(
             "lookup_issue",
             lookup,
             arguments={"query": query, "end": end, "version": version, "domains": domains},
-            summarize=lambda result: summarize_hits(result.hits),
+            summarize=lambda result: {
+                **summarize_hits(result.hits),
+                "retrieval_version": result.retrieval_version,
+                "score_kind": SCORE_KIND_V1,
+                "retrieval_status": result.retrieval_status,
+                "snapshot_id": result.snapshot_id,
+            },
         )
 
     @server.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -204,7 +236,12 @@ def create_knowledge_server(
                 "limit": limit,
                 "domains": domains,
             },
-            summarize=summarize_hits,
+            summarize=lambda hits: {
+                **summarize_hits(hits),
+                "retrieval_version": "lexical-v1",
+                "score_kind": SCORE_KIND_V1,
+                "snapshot_id": snapshot_id,
+            },
         )
 
     @server.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
