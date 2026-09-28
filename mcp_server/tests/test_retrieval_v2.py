@@ -13,6 +13,13 @@ import pytest
 from fastmcp import Client
 from test_knowledge_base import DEMO_ALIAS, write_sample_entries
 
+from harmony_knowledge_mcp.loader import KnowledgeBase
+from harmony_knowledge_mcp.preview_selection import (
+    DIRECT_HIT,
+    REFERENCE_ONLY,
+    RELEVANT_REFERENCE,
+    select_previews,
+)
 from harmony_knowledge_mcp.query_log import main as query_log_main
 from harmony_knowledge_mcp.retrieval_v2 import (
     RETRIEVAL_VERSION_V1,
@@ -22,6 +29,13 @@ from harmony_knowledge_mcp.retrieval_v2 import (
     RetrievalConfigError,
     build_snapshot_id,
     resolve_mode,
+)
+from harmony_knowledge_mcp.schemas import (
+    Authority,
+    End,
+    KnowledgeEntry,
+    KnowledgeKind,
+    SearchHit,
 )
 from harmony_knowledge_mcp.server import create_knowledge_server
 
@@ -54,7 +68,6 @@ def test_config_rejects_out_of_range_and_unbalanced_weights() -> None:
 
 def test_snapshot_id_is_stable_order_independent_and_content_sensitive(tmp_path: Path) -> None:
     write_sample_entries(tmp_path)
-    from harmony_knowledge_mcp.loader import KnowledgeBase
 
     config = RetrievalConfig()
     entries = KnowledgeBase(tmp_path).load()
@@ -142,3 +155,98 @@ async def test_query_log_records_retrieval_version(tmp_path: Path, capsys) -> No
     output = capsys.readouterr().out
     assert "历史未命中查询" in output
     assert "无法分类" not in output
+
+
+# ---------- 阶段二:预览槽位分配(文档 8.2 / 14.6 预览行) ----------
+
+
+def _hit(name: str, kind: KnowledgeKind, score: float, refs: list[str] | None = None) -> SearchHit:
+    return SearchHit(
+        name=name,
+        kind=kind,
+        summary=f"{name}摘要",
+        score=score,
+        authority=Authority.AUTO,
+        applies_to=[End.HARMONY],
+        end_match=True,
+        version_match=True,
+        matched_on="x",
+        references=refs or [],
+    )
+
+
+def _entry(name: str, kind: KnowledgeKind, aliases: list[str] | None = None) -> KnowledgeEntry:
+    return KnowledgeEntry(
+        name=name,
+        kind=kind,
+        title=f"{name}标题",
+        summary=f"{name}摘要",
+        body="正文",
+        applies_to=[End.HARMONY],
+        authority=Authority.AUTO,
+        aliases=aliases or [],
+        source_path=f"{name}.md",
+    )
+
+
+def _resolver(entries: list[KnowledgeEntry]):
+    by_name = {entry.name: entry for entry in entries}
+    return by_name.get
+
+
+def test_fact_in_remaining_hits_keeps_preview_slot_despite_crowded_references() -> None:
+    """首候选八个引用、第二候选是目标事实:目标必须留在三篇预算内。"""
+    crowded_refs = [f"ref-{index}" for index in range(8)]
+    hits = [
+        _hit("symptom-top", KnowledgeKind.SYMPTOM, 3.0, crowded_refs),
+        _hit("target-fact", KnowledgeKind.PLATFORM_FACT, 2.7),
+        _hit("symptom-third", KnowledgeKind.SYMPTOM, 2.6),
+    ]
+    entries = [_entry(ref, KnowledgeKind.PLATFORM_FACT) for ref in crowded_refs]
+    selected = select_previews(hits, query="无关查询词", resolve=_resolver(entries))
+    names = [name for name, _ in selected]
+    assert names == ["symptom-top", "target-fact", "symptom-third"]
+    assert dict(selected)["target-fact"] == DIRECT_HIT
+
+
+def test_relevant_reference_takes_second_slot_when_no_fact_hit() -> None:
+    """直接 hits 全是症状时,过门槛的引用事实占槽位二,标 relevant_reference。"""
+    hits = [
+        _hit("symptom-top", KnowledgeKind.SYMPTOM, 3.0, ["ref-relevant", "ref-other"]),
+        _hit("symptom-next", KnowledgeKind.SYMPTOM, 2.8),
+    ]
+    entries = [
+        _entry("ref-relevant", KnowledgeKind.PLATFORM_FACT, aliases=["蓝牙耳机接入"]),
+        _entry("ref-other", KnowledgeKind.PLATFORM_FACT, aliases=["完全无关"]),
+    ]
+    selected = select_previews(hits, query="蓝牙耳机", resolve=_resolver(entries))
+    assert selected[0] == ("symptom-top", DIRECT_HIT)
+    assert selected[1] == ("ref-relevant", RELEVANT_REFERENCE)
+    assert selected[2] == ("symptom-next", DIRECT_HIT)
+
+
+def test_leftover_references_fill_as_reference_only() -> None:
+    """无过门槛引用且直接 hits 不足三篇:hits[0] 的一跳引用补足,标 reference_only。"""
+    hits = [_hit("symptom-top", KnowledgeKind.SYMPTOM, 3.0, ["ref-a", "ref-b"])]
+    entries = [
+        _entry("ref-a", KnowledgeKind.PLATFORM_FACT),
+        _entry("ref-b", KnowledgeKind.PLATFORM_FACT),
+    ]
+    selected = select_previews(hits, query="完全无关", resolve=_resolver(entries))
+    assert selected == [
+        ("symptom-top", DIRECT_HIT),
+        ("ref-a", REFERENCE_ONLY),
+        ("ref-b", REFERENCE_ONLY),
+    ]
+
+
+def test_previews_dedupe_and_skip_unresolvable_or_symptom_references() -> None:
+    hits = [
+        _hit("symptom-top", KnowledgeKind.SYMPTOM, 3.0, ["symptom-next", "missing-ref"]),
+        _hit("symptom-next", KnowledgeKind.SYMPTOM, 2.8),
+    ]
+    entries = [_entry("symptom-next", KnowledgeKind.SYMPTOM)]
+    selected = select_previews(hits, query="无关", resolve=_resolver(entries))
+    names = [name for name, _ in selected]
+    assert names == ["symptom-top", "symptom-next"]  # 引用不重复占位,症状引用不进池
+    assert select_previews([], query="q", resolve=_resolver(entries)) == []
