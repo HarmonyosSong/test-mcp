@@ -589,6 +589,50 @@ button:disabled {
   align-items: flex-end;
 }
 
+/* 气泡内容允许选中复制;深色气泡上给出高对比选区色 */
+.chat-bubble {
+  user-select: text;
+}
+
+.chat-message-user .chat-bubble::selection,
+.chat-message-user .chat-bubble *::selection {
+  background: rgba(255, 255, 255, 0.32);
+  color: inherit;
+}
+
+.chat-bubble-wrap {
+  position: relative;
+  max-width: 100%;
+}
+
+.chat-copy-button {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.chat-bubble-wrap:hover .chat-copy-button,
+.chat-copy-button:focus-visible {
+  opacity: 1;
+}
+
+.chat-copy-button:hover {
+  color: var(--ink);
+}
+
 .chat-message-assistant {
   align-self: flex-start;
   align-items: flex-start;

@@ -1,5 +1,5 @@
 import { Select } from '@arco-design/web-react';
-import { AlertTriangle, MessageSquare, Wrench } from 'lucide-react';
+import { AlertTriangle, Check, Copy, MessageSquare, Wrench } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api';
 import { estimateCost, formatCost, formatDate, formatTokens } from '../../format';
@@ -26,6 +26,59 @@ function inferContextWindow(modelName: string): number | undefined {
   if (!match) return undefined;
   const value = Number(match[1]);
   return match[2] === 'm' ? value * 1_048_576 : value * 1_024;
+}
+
+/** 用户消息气泡:支持拖选复制,也提供一键复制按钮(深色气泡上选区不明显)。 */
+function UserMessage({ message }: { message: ChatMessage }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  const copyContent = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+    } catch {
+      // 剪贴板 API 不可用(非安全上下文)时退化为选中原文,由用户手动复制
+      const selection = window.getSelection();
+      const range = document.createRange();
+      const node = document.getElementById(`user-bubble-${message.id}`);
+      if (selection && node) {
+        range.selectNodeContents(node);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      return;
+    }
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="chat-message chat-message-user">
+      <div className="chat-bubble-wrap">
+        <div className="chat-bubble" id={`user-bubble-${message.id}`}>
+          {message.content}
+        </div>
+        <button
+          type="button"
+          className="chat-copy-button"
+          onClick={copyContent}
+          title={copied ? '已复制' : '复制'}
+          aria-label={copied ? '已复制' : '复制这条消息'}
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </button>
+      </div>
+      <time className="chat-message-time">{formatDate(message.created_at)}</time>
+    </div>
+  );
 }
 
 function AssistantMessage({
@@ -236,10 +289,7 @@ export function ChatThread({
         ) : (
           conversation.messages.map((message, index) =>
             message.role === 'user' ? (
-              <div key={message.id} className="chat-message chat-message-user">
-                <div className="chat-bubble">{message.content}</div>
-                <time className="chat-message-time">{formatDate(message.created_at)}</time>
-              </div>
+              <UserMessage key={message.id} message={message} />
             ) : (
               <AssistantMessage
                 key={message.id}
