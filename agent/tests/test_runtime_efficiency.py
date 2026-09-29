@@ -379,6 +379,129 @@ def test_user_only_positive_candidate_rejected_without_keyerror() -> None:
         ledger.resolve_draft(draft)
 
 
+def test_capture_registers_only_delivered_search_matches() -> None:
+    """SearchPage 形态:只有 matches 里的实际命中进账本;locator_hint/next_cursor
+    等元数据不是观测,不得登记;返回保持页结构不变。"""
+    ledger = EvidenceLedger()
+    page = {
+        "query": "onShowFileSelector",
+        "file_glob": "**/*",
+        "matches": [
+            {"path": "a.ets", "line": 10, "excerpt": "onShowFileSelector((event) => ..."},
+            {"path": "b.ets", "line": 20, "excerpt": "onShowFileSelector(callback)"},
+        ],
+        "truncated": False,
+        "scanned_files": 3,
+        "scan_limit_reached": False,
+        "next_cursor": None,
+        "locator_hint": "知识索引已给出位置:`onShowFileSelector` 已索引于 a.ets:10",
+    }
+    captured = ledger.capture("search_project_text", {"query": "onShowFileSelector"}, page)
+    assert captured["result"] == page  # 页结构(含 hint 元数据)原样带给模型
+    assert len(captured["evidence_refs"]) == 2
+    locations = {entry.location for entry in ledger.entries.values()}
+    assert locations == {"a.ets:10", "b.ets:20"}
+    assert all("已索引" not in entry.excerpt for entry in ledger.entries.values())
+
+
+def test_trim_preserves_bounded_pages_but_cuts_uncontrolled_returns() -> None:
+    """有界页(FileContent/SearchPage + 引用元数据)通过 schema+大小复核后完整保留,
+    runtime 不二次截坏;旧版/不受控的同名工具返回仍被结构化截断。"""
+    bounded_read = {
+        "path": "a.ets",
+        "start_line": 1,
+        "end_line": 95,
+        "requested_end_line": 200,
+        "total_lines": 430,
+        "content": "\n".join(f"{n}: {'x' * 50}" for n in range(1, 96)),  # 超过 4000 字符
+        "truncated": True,
+        "next_line": 96,
+        "has_more_in_file": True,
+        "truncation_reason": "character_budget",
+        "skipped_lines": [],
+    }
+    wrapped_page = {
+        "evidence_refs": [{"id": "ev-1", "kind": "source", "source": "mcp:read_project_file"}],
+        "result": {
+            "query": "q",
+            "file_glob": "**/*",
+            "matches": [{"path": "a.ets", "line": n, "excerpt": "y" * 400} for n in range(10)],
+            "truncated": False,
+            "scanned_files": 3,
+            "scan_limit_reached": False,
+            "next_cursor": None,
+        },
+    }
+    uncontrolled = {"path": "a.ets", "content": "z" * 9000}  # 旧版形态,无分页字段
+    state = [
+        {"role": "user", "parts": [{"part_kind": "user-prompt", "content": "q"}]},
+        {
+            "role": "model",
+            "parts": [
+                {
+                    "part_kind": "tool-return",
+                    "tool_name": "read_project_file",
+                    "content": bounded_read,
+                },
+                {
+                    "part_kind": "tool-return",
+                    "tool_name": "search_project_text",
+                    "content": wrapped_page,
+                },
+                {
+                    "part_kind": "tool-return",
+                    "tool_name": "read_project_file",
+                    "content": uncontrolled,
+                },
+            ],
+        },
+    ]
+    trimmed = trim_messages_state(state)
+    parts = trimmed[1]["parts"]
+    # 有界页:整页保留,一个字符都不少
+    assert parts[0]["content"] == bounded_read
+    assert parts[1]["content"] == wrapped_page
+    # 不受控返回:结构化截断说明 + 可读摘录,且仍是合法 JSON(不再拦腰切字符串)
+    cut = parts[2]["content"]
+    assert cut["runtime_truncated"] is True
+    assert cut["original_chars"] > 9000
+    assert "已截断" in cut["note"]
+    assert cut["content_preview"].startswith('{"path": "a.ets"')
+    json.dumps(trimmed)  # 整棵状态树可序列化
+
+
+def test_trim_drops_oversized_fake_page_from_exemption() -> None:
+    """结构像页但超过协议硬上限的返回不豁免裁剪:不能给同名工具结果无条件免裁剪。"""
+    oversized_fake_page = {
+        "path": "a.ets",
+        "start_line": 1,
+        "end_line": 95,
+        "requested_end_line": 200,
+        "total_lines": 430,
+        "content": "x" * 20_000,  # 超过 12000 的协议硬上限
+        "truncated": True,
+        "next_line": 96,
+        "has_more_in_file": True,
+        "truncation_reason": "character_budget",
+    }
+    state = [
+        {"role": "user", "parts": [{"part_kind": "user-prompt", "content": "q"}]},
+        {
+            "role": "model",
+            "parts": [
+                {
+                    "part_kind": "tool-return",
+                    "tool_name": "read_project_file",
+                    "content": oversized_fake_page,
+                }
+            ],
+        },
+    ]
+    trimmed = trim_messages_state(state)
+    cut = trimmed[1]["parts"][0]["content"]
+    assert cut["runtime_truncated"] is True and cut["original_chars"] > 20_000
+
+
 def test_trim_annotates_truncation_with_original_size() -> None:
     """截断必须附原始长度:模型要知道丢了多少,才能判断是否需要按行号精准补读,
     而不是把残文当全部(实测因此反复通读文件头)。"""

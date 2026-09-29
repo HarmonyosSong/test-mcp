@@ -46,7 +46,11 @@ def test_registry_matches_symbol_as_substring_of_query() -> None:
 
 
 async def test_search_hit_with_indexed_symbol_gets_locator_hint() -> None:
-    """端到端:知识返回带代码位置后,搜索同一符号时结果附直达提示。"""
+    """端到端:知识返回带代码位置后,搜索同一符号时结果附直达提示。
+
+    SearchPage 形态:hint 是页上的独立元数据字段,不混入 matches——
+    matches 里只有实际交付的命中,提示不是观测。
+    """
     knowledge = FunctionToolset()
     workspace = FunctionToolset()
 
@@ -63,14 +67,22 @@ async def test_search_hit_with_indexed_symbol_gets_locator_hint() -> None:
         }
 
     @workspace.tool_plain
-    def search_project_text(query: str) -> list[dict]:
-        return [
-            {
-                "path": "XesWebView/src/main/ets/components/webview/WebView.ets",
-                "line": 163,
-                "excerpt": ".onShowFileSelector((event) => ...",
-            }
-        ]
+    def search_project_text(query: str) -> dict:
+        return {
+            "query": query,
+            "file_glob": "**/*",
+            "matches": [
+                {
+                    "path": "XesWebView/src/main/ets/components/webview/WebView.ets",
+                    "line": 163,
+                    "excerpt": ".onShowFileSelector((event) => ...",
+                }
+            ],
+            "truncated": False,
+            "scanned_files": 1,
+            "scan_limit_reached": False,
+            "next_cursor": None,
+        }
 
     registry = CodeLocatorRegistry()
     steps = iter(["lookup", "search"])
@@ -106,5 +118,56 @@ async def test_search_hit_with_indexed_symbol_gets_locator_hint() -> None:
     assert result.output == "done"
     assert len(tool_returns) == 2
     assert "locator_hint" not in tool_returns[0]
-    assert "locator_hint" in tool_returns[1]
-    assert "WebView.ets:163" in tool_returns[1]
+    page = json.loads(tool_returns[1])
+    assert "WebView.ets:163" in page["locator_hint"]
+    assert all("locator_hint" not in match for match in page["matches"])
+
+
+async def test_read_marks_actual_delivered_range_not_requested_range() -> None:
+    """已读标记按实际交付区间:字符预算只交付 1-95 时,163 行锚点提示不能消除。"""
+    workspace = FunctionToolset()
+
+    @workspace.tool_plain
+    def read_project_file(relative_path: str) -> dict:
+        # 请求 1-200 但预算只交付 1-95 的分页页
+        return {
+            "path": relative_path,
+            "start_line": 1,
+            "end_line": 95,
+            "requested_end_line": 200,
+            "total_lines": 430,
+            "content": "1: ...",
+            "truncated": True,
+            "next_line": 96,
+            "has_more_in_file": True,
+            "truncation_reason": "character_budget",
+        }
+
+    registry = CodeLocatorRegistry()
+    registry.register_text(
+        "容器 `XesWebView/src/main/ets/components/webview/WebView.ets:163` 的 `onShowFileSelector`"
+    )
+    steps = iter(["read"])
+
+    def respond(messages, info):
+        if next(steps, None) == "read":
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "read_project_file",
+                        {"relative_path": "XesWebView/src/main/ets/components/webview/WebView.ets"},
+                    )
+                ]
+            )
+        return ModelResponse(parts=[TextPart("done")])
+
+    agent = Agent(
+        FunctionModel(respond),
+        retries=0,
+        toolsets=[LocatorGuidanceToolset(workspace, registry=registry)],
+    )
+    await agent.run("排查")
+    path = "XesWebView/src/main/ets/components/webview/WebView.ets"
+    # 只交付到 95 行:记 (1, 95) 而非请求的 (1, 200),163 行锚点的直达提示保留
+    assert registry.read_ranges[path] == [(1, 95)]
+    assert registry.hint_for("onShowFileSelector") is not None

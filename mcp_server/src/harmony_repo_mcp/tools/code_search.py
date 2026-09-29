@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastmcp import FastMCP
 
 from ..inspector import ProjectInspector
-from ..schemas import SearchMatch
+from ..schemas import DEFAULT_SEARCH_LIMIT, SearchPage
 
 
 def register_code_search_tools(server: FastMCP, inspector: ProjectInspector) -> None:
@@ -16,7 +16,13 @@ def register_code_search_tools(server: FastMCP, inspector: ProjectInspector) -> 
     def search_project_text(
         query: str,
         file_glob: str = "**/*",
-        limit: int = 50,
-    ) -> list[SearchMatch]:
-        """Search snapshot text files for a literal, case-insensitive string."""
-        return inspector.search_project_text(query, file_glob, limit)
+        limit: int = DEFAULT_SEARCH_LIMIT,
+        cursor: str | None = None,
+    ) -> SearchPage:
+        """Search snapshot text files for a literal, case-insensitive string.
+
+        Returns a bounded page. When truncated is true, pass next_cursor back with the
+        same query/file_glob to continue; scan_limit_reached means the scan did not
+        cover every file, so narrow file_glob instead of claiming no repository hit.
+        """
+        return inspector.search_project_text(query, file_glob, limit, cursor=cursor)

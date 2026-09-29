@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from harmony_repo_mcp.inspector import InspectionBoundaryError, ProjectInspector
+from harmony_repo_mcp.schemas import DEFAULT_READ_CHARS, DEFAULT_SEARCH_LIMIT
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import ModelRetry
 from pydantic_ai.toolsets import FunctionToolset
@@ -120,12 +121,21 @@ def build_chat_workspace_toolset() -> FunctionToolset[ChatDeps]:
         ctx: RunContext[ChatDeps],
         query: str,
         file_glob: str = "**/*",
-        limit: int = 50,
-    ) -> list[dict]:
-        """在已绑定工作区内做大小写不敏感的字面文本搜索。"""
+        limit: int = DEFAULT_SEARCH_LIMIT,
+        cursor: str | None = None,
+    ) -> dict:
+        """在已绑定工作区内做大小写不敏感的字面文本搜索，返回有界分页。
+
+        truncated 为 true 时把 next_cursor 原样带回（保持同一 query/file_glob）续查下一页；
+        scan_limit_reached 为 true 表示未扫完全部文件，应缩小 file_glob 再查，
+        不得据局部无命中声称全仓不存在。
+        """
         inspector = await _require_inspector(ctx)
-        matches = inspector.search_project_text(query, file_glob, limit)
-        return [match.model_dump(mode="json") for match in matches]
+        try:
+            page = inspector.search_project_text(query, file_glob, limit, cursor=cursor)
+        except ValueError as exc:
+            raise ModelRetry(f"搜索参数无效：{exc}") from exc
+        return page.model_dump(mode="json")
 
     @toolset.tool
     async def read_project_file(
@@ -133,13 +143,27 @@ def build_chat_workspace_toolset() -> FunctionToolset[ChatDeps]:
         relative_path: str,
         start_line: int = 1,
         end_line: int = 200,
+        max_chars: int = DEFAULT_READ_CHARS,
     ) -> dict:
-        """读取已绑定工作区内单个文件的指定行范围。"""
+        """按行范围读取已绑定工作区内的单个文件，按字符预算有界分页。
+
+        truncated 为 true 表示请求范围未完整交付，从 next_line 续读即可，不要从头重读；
+        has_more_in_file 只表示文件在已交付区间之后还有内容。
+        """
         inspector = await _require_inspector(ctx)
         try:
-            content = inspector.read_project_file(relative_path, start_line, end_line)
+            if max_chars == DEFAULT_READ_CHARS:
+                # 默认预算走旧三参形式：保持与既有签名消费者（含测试替身）兼容，
+                # 仅显式调整预算时才传第四参。
+                content = inspector.read_project_file(relative_path, start_line, end_line)
+            else:
+                content = inspector.read_project_file(
+                    relative_path, start_line, end_line, max_chars
+                )
         except InspectionBoundaryError as exc:
             raise ModelRetry(f"文件不可读（不存在、越界或类型不允许）：{exc}") from exc
+        except ValueError as exc:
+            raise ModelRetry(f"读取参数无效：{exc}") from exc
         return content.model_dump(mode="json")
 
     @toolset.tool
