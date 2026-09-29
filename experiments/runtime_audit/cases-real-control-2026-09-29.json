@@ -1,0 +1,75 @@
+[
+  {
+    "id": "error-book-pdf",
+    "title": "本例:错题本选 PDF 点完成后返回首页",
+    "messages": [
+      "学员姓名:测试学员\n学员编号:100000001\n年级: 初三\n家长反馈错题本功能中错题录入无法正常使用,华为手机可选择PDF文件但点击完成后返回首页 ,鸿蒙releaseV/20260921出现的问题"
+    ],
+    "expect": {
+      "verdict": ["probable", "located"],
+      "should_submit": true,
+      "quality_marks": ["只支持图片", "fileSuffixFilters"]
+    }
+  },
+  {
+    "id": "error-book-image-fails",
+    "title": "图片也失败:规则不适用,应转故障定位而非复读规则",
+    "messages": [
+      "学员姓名:测试学员\n学员编号:100000002\n年级: 初二\n家长反馈错题本录入时按要求选了照片(图片,jpg格式),点击完成后仍然返回首页,不是PDF的问题,鸿蒙releaseV/20260921"
+    ],
+    "expect": {
+      "verdict": ["probable", "located", "insufficient_evidence"],
+      "should_submit": true,
+      "quality_marks": []
+    }
+  },
+  {
+    "id": "error-book-entry-missing",
+    "title": "缺入口:我的页看不到错题本",
+    "messages": [
+      "学员姓名:测试学员\n学员编号:100000003\n年级: 初一\n家长反馈在 App 我的页面找不到错题本入口,之前听说有这个功能,华为鸿蒙 releaseV/20260921"
+    ],
+    "expect": {
+      "verdict": null,
+      "should_submit": null,
+      "quality_marks": ["入口"]
+    }
+  },
+  {
+    "id": "unknown-repo",
+    "title": "未知仓库:小驴 H5 问题不应乱绑 xesapp",
+    "messages": [
+      "家长反馈小驴英语 H5 页面打开白屏,麻烦看下是不是咱们 App 容器的问题,鸿蒙releaseV/20260921"
+    ],
+    "expect": {
+      "verdict": null,
+      "should_submit": null,
+      "quality_marks": []
+    }
+  },
+  {
+    "id": "cross-turn-citation",
+    "title": "跨轮引用:第二轮补材料后出报告,引用第一轮观测",
+    "messages": [
+      "学员姓名:测试学员\n学员编号:100000005\n年级: 初三\n家长反馈错题本功能中错题录入无法正常使用,华为手机可选择PDF文件但点击完成后返回首页 ,鸿蒙releaseV/20260921出现的问题",
+      "客服补充确认:换成照片上传图片,点击完成后一样返回首页。请基于现有材料给出诊断报告。"
+    ],
+    "expect": {
+      "verdict": ["probable", "located", "insufficient_evidence"],
+      "should_submit": true,
+      "quality_marks": []
+    }
+  },
+  {
+    "id": "other-product-pdf",
+    "title": "另一产品 PDF:学家云 HD 资料上传,不应误套错题本结论",
+    "messages": [
+      "学员姓名:测试学员\n学员编号:100000006\n年级: 初三\n家长反馈学家云HD(云朵课堂)里资料上传功能选 PDF 文件没反应,华为鸿蒙 releaseV/20260921"
+    ],
+    "expect": {
+      "verdict": null,
+      "should_submit": null,
+      "quality_marks": []
+    }
+  }
+]

@@ -1,0 +1,552 @@
+{
+  "date": "2026-09-29",
+  "conditions": {
+    "model": "deepseek-flash",
+    "repo": {
+      "name": "xesapp",
+      "branch": "releaseV/20260921"
+    },
+    "knowledge_head": "339fa2e docs(knowledge): 错题本录入文件类型条目——仅支持图片,PDF 仅导出方向",
+    "tool_budget_defaults": {
+      "failure_limit": 10,
+      "call_limit": 30,
+      "no_progress_limit": 4
+    }
+  },
+  "repeat": 3,
+  "runs": [
+    {
+      "case_id": "cross-turn-citation",
+      "conversation_id": "conv-79e26d6c10",
+      "status": "completed",
+      "steps": 25,
+      "failed_calls": 0,
+      "tools": {
+        "load_skill": 1,
+        "read_project_file": 11,
+        "lookup_issue": 1,
+        "search_project_text": 9,
+        "get_knowledge_entry": 1,
+        "search_knowledge": 1,
+        "submit_diagnosis_report": 1
+      },
+      "input_tokens": 406282,
+      "output_tokens": 21637,
+      "verdict": "probable",
+      "confidence": 0.4,
+      "evidence_count": 14,
+      "missing_count": 6,
+      "quality_marks": {},
+      "verdict_ok": true,
+      "submit_ok": true,
+      "turns": [
+        {
+          "content_head": "学员姓名:测试学员\n学员编号:100000005\n年级: 初三\n家长反馈错题本功",
+          "elapsed_s": 87.2
+        },
+        {
+          "content_head": "客服补充确认:换成照片上传图片,点击完成后一样返回首页。请基于现有材料给出诊断报",
+          "elapsed_s": 140.0
+        }
+      ],
+      "text": "诊断报告已提交（verdict = probable）。客服这条补充把问题边界明显收窄了。\n\n## 结论：不再是文件类型的问题\n\n「选 PDF 后完成跳首页」原本可以解释为「PDF 本就不支持」；但照片同样失败，说明失败点在**两条入口共用的「选择结果 → 回传 H5 → 上传」这一段**，而不是 accept/文件类型契约。\n\n## 客户端已核实的两处缺口\n\n**1. 容器三个入口（照片/拍照/文件）都无失败回传**——`XesWebView/src/main/ets/components/webview/WebView.ets`\n\n- 「照片」项走 `openPhotoUploadPicker()`，结果无条件 `event.result.handleFileList(chooseFile.photoUris)`，失败只有一句 `console.error(...)`，既不回调 H5 也不给失败信号（`:83-99`）；\n- 「拍照」`cameraPicker.pick` 的 catch 同样只打日志（`:117-120`）；\n- H5 侧因此既等不到成功也等不到失败，只能由自身异常分支收场——这解释了为什么换成照片后现象一模一样。\n\n**2. 原生相册桥接链路（另一条入口）上传失败静默**\n\n`XesWebview.ets:1337-1360` 的 `xesApp_business_wrongBookOpenTakePicture` → `CameraAndAlbumPage`；`WrongBookViewModel.uploadImages` 内部先压缩再传 COS，**没有 try/catch**，调用处 `uploadImages(uris).then(...)` **也没有 .catch**（`CameraAndAlbumPage.ets:193-196`、`WrongBookViewModel.ets:25-26`）。上传失败就不回传、不退出，H5 永远收不到 `wrongBookPictureUploadResult`。\n\n顺带确认一个此前存疑的点：`popAndResult` 只弹一层（`AppRouter.ets:177-179`），所以「原生页返回时弹到首页」这个候选可以排除。\n\n## 必须问清的一个问题（决定调查方向）\n\n**点「完成」后，是回到应用内的首页（录入页被关掉），还是整个 App 重启、能看到启动闪屏？**\n一句话追问客服即可：**「点完成后有没有看到 App 的启动闪屏？」** 这区分「H5 页面自己退出」和「应用进程被回收」，两者查的是完全不同的东西。\n\n同时请补：家长用的是 H5 录入页内的「拍照/相册」按钮，还是容器弹窗里的「照片/文件」（两条链路不同）；机型 + HarmonyOS 版本 + App 版本号；「选择上传」到「完成」的录屏或分步截图；点完后是否有「上传中」常驻或任何报错提示。\n\n## 说明\n\n- 「返回首页」这一具体跳转在客户端仓库里查不到依据——错题本详情页是小驴团队的 H5，源头在 H5 侧，本次无法核实；因此整条只判 probable。\n- 之前那条「容器未按 accept 收敛、华为上能选到 PDF」的缺陷**依然成立**（`onShowFileSelector` 直接接管并 `return true`，唯一读 accept 的代码在 `:317` 是注释、`DocumentSelectOptions` 未设 `fileSuffixFilters`），但它已被照片同样失败的事实排除为本次故障主因，属另一个独立缺陷，可单独提修复。",
+      "report": {
+        "verdict": "probable",
+        "severity": "high",
+        "summary": "客服补充「换成照片上传图片，点完成后一样返回首页」后，本次故障的归因发生收窄：两类输入（文档 PDF 与图片）都在点「完成」后跳回首页，说明失败点不在文件类型是否被支持，而在两条入口共用的「选择结果回传 → H5 上传」这一段链路。客户端已核实三点：(1) 容器自研弹窗「照片 / 拍照 / 文件」三个入口都把选择结果统一交给 onShowFileSelector 接管后的 handleFileList，全程不读 H5 的 accept（这是「能选到 PDF」的原因，PDF 可选本身成立，但已被照片同样失败的事实排除为本次故障主因）；(2) 三个选择器（照片/拍照/文件）的失败与取消分支只写 console.error，既不回调 H5 也不给出失败信号，H5 侧拿不到任何结果；(3) 另一条 H5 桥接链路（xesApp_business_wrongBookOpenTakePicture → 原生 CameraAndAlbumPage）在相册图片上传失败时同样没有异常回传：WrongBookViewModel.uploadImages 无 try/catch，调用处 uploadImages(...).then(...) 无 .catch，H5 永远收不到 wrongBookPictureUploadResult。「点完成后返回首页」这一具体跳转在客户端仓库内没有任何依据（错题本详情页是小驴 H5），因此整条结论判为 probable：客户端可确认的是回传/异常处理缺口与 PDF 类型收敛缺失，H5 侧为何退出到首页需运行时材料才能闭环。",
+        "issue_category": "鸿蒙 WebView 文件选择/上传链路（错题本错题录入）",
+        "likely_location": "XesWebView/src/main/ets/components/webview/WebView.ets:56-167（照片/拍照/文件三个入口与 onShowFileSelector 接管）；XesWebView/src/main/ets/components/webview/WebViewV2.ets:39-137（同构实现）；XesWebView/src/main/ets/components/XesWebview.ets:1337-1360 与 XesClassLearn/src/main/ets/page/camera/CameraAndAlbumPage.ets:177-201、XesClassLearn/src/main/ets/page/camera/WrongBookViewModel.ets:15-37（错题本原生相册/相机桥接链路）",
+        "root_cause_candidates": [
+          {
+            "title": "容器文件选择链路无失败回传：H5 拿不到选择结果/失败信号，录入页自行退出到首页",
+            "explanation": "容器的照片、拍照、文件三个入口都从同一个 pendingFileSelectorEvent 取结果并调用 handleFileList；三个分支的失败路径只有 console.error（照片选择器、拍照 picker、文档选择器各一处），没有向 H5 传递失败或空列表，也没有任何类型/大小校验。H5 端在等待文件输入结果期间收到不到成功也收不到失败，只能由自身异常分支（返回首页/关闭录入页）收场——这解释了为什么换成照片后现象完全一致。",
+            "confidence": 0.4,
+            "evidence_ids": [
+              "ev-ec81c2e2dd5277a0",
+              "ev-6bdf283b4c97b1dd",
+              "ev-0bf129cabecf83cb",
+              "ev-e65a61997ec77167",
+              "ev-user-ecb5eba66867"
+            ]
+          },
+          {
+            "title": "原生相册桥接链路上传失败静默：H5 收不到 wrongBookPictureUploadResult",
+            "explanation": "若家长走的是 H5 页内的「相册」按钮（xesApp_business_wrongBookOpenTakePicture → CameraAndAlbumPage），原生页先压缩再传 COS 后才回传并 pop 一层；而 WrongBookViewModel.uploadImages 内部没有 try/catch，调用处 uploadImages(uris).then(...) 也没有 .catch。上传一旦失败（网络、COS、4M/8 张限制）则既不回传结果也不退出页面，H5 侧永远等不到图片结果，表现为录入流程中断；该链路同样与文件类型无关，可与「照片也失败」自洽。",
+            "confidence": 0.3,
+            "evidence_ids": [
+              "ev-21f193e9320d2d0e",
+              "ev-afbf1e291100bbe7",
+              "ev-18e2c997c596d2af",
+              "ev-1b58019b9a93d547"
+            ]
+          }
+        ],
+        "evidence": [
+          {
+            "id": "ev-user-878d3deaeaf8",
+            "kind": "user",
+            "source": "user-message",
+            "location": "学员姓名:测试学员\n学员编号:100000005\n年级: 初…",
+            "excerpt": "家长反馈错题本功能中错题录入无法正常使用,华为手机可选择PDF文件但点击完成后返回首页",
+            "supports": "工单原始现象：错题录入在华为手机上点完成后回到首页，且当时选的是 PDF。"
+          },
+          {
+            "id": "ev-user-ecb5eba66867",
+            "kind": "user",
+            "source": "user-message",
+            "location": "客服补充确认:换成照片上传图片,点击完成后一样返回首页。请基…",
+            "excerpt": "换成照片上传图片,点击完成后一样返回首页",
+            "supports": "路线收窄的关键事实：图片路径同样失败，说明故障不在文件类型契约，而在两条入口共用的回传/上传链路。"
+          },
+          {
+            "id": "ev-ec81c2e2dd5277a0",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:20",
+            "excerpt": "this.openPhotoUploadPicker()",
+            "supports": "容器自研上传弹窗中的「照片」项直接调用 openPhotoUploadPicker，照片路径与文件路径共用同一套 container 回调（注释亦写明「Web 选择文件后需要等用户点选弹窗项，再把结果回传给 H5」）。"
+          },
+          {
+            "id": "ev-6bdf283b4c97b1dd",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:70",
+            "excerpt": "event.result.handleFileList(chooseFile.photoUris);",
+            "supports": "照片选择结果被无条件回传 H5，没有类型/大小/数量校验，也没有失败分支。"
+          },
+          {
+            "id": "ev-6bdf283b4c97b1dd",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:70",
+            "excerpt": "console.error(`Invoke photoViewPicker.select failed, code is ${err.code}, message is ${err.message}`);",
+            "supports": "照片选择器失败时只写日志，H5 得不到任何失败信号——「静默失败」缺口的直接证据。"
+          },
+          {
+            "id": "ev-6bdf283b4c97b1dd",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:70",
+            "excerpt": "const documentSelectOptions = new picker.DocumentSelectOptions();",
+            "supports": "「文件」分支用默认文档选项、未设 fileSuffixFilters，这是 PDF 可选（accept 未收敛）的直接原因。"
+          },
+          {
+            "id": "ev-e65a61997ec77167",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:300",
+            "excerpt": "//   // let acceptTYpe = ev?.fileSelector.getAcceptType()",
+            "supports": "唯一读取 H5 accept 的逻辑处于注释状态，当前实现完全没有做类型收敛。"
+          },
+          {
+            "id": "ev-0bf129cabecf83cb",
+            "kind": "source",
+            "source": "mcp:search_project_text",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:163",
+            "excerpt": ".onShowFileSelector((event: OnShowFileSelectorEvent) => {",
+            "supports": "容器通过 onShowFileSelector 接管 Web 文件选择（随后 return true），H5 的 input[type=file] 结果完全由容器决定。"
+          },
+          {
+            "id": "ev-21f193e9320d2d0e",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/XesWebview.ets:1300",
+            "excerpt": "this.jsBridge.registerHandler(\"xesApp_business_wrongBookOpenTakePicture\", {",
+            "supports": "错题本还有一条 H5 桥接的原生相机/相册链路，与容器弹窗链路并存，需要区分家长实际走的是哪条。"
+          },
+          {
+            "id": "ev-21f193e9320d2d0e",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/XesWebview.ets:1300",
+            "excerpt": "XESRouter.pushForResult('talxesapp://classLearn/CameraAndAlbumPage', model,",
+            "supports": "原生 CameraAndAlbumPage 以 pushForResult 打开，成功返回时由回调再通知 H5。"
+          },
+          {
+            "id": "ev-afbf1e291100bbe7",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesClassLearn/src/main/ets/page/camera/CameraAndAlbumPage.ets:160",
+            "excerpt": "this.viewModel.uploadImages(uris).then((result)=>{",
+            "supports": "原生相册选择后直接进入上传，调用处无 .catch，上传失败不会回传也不会退出页面。"
+          },
+          {
+            "id": "ev-18e2c997c596d2af",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesClassLearn/src/main/ets/page/camera/WrongBookViewModel.ets:1",
+            "excerpt": "const netPaths = await XesCosUtil.uploadImageLists(compressedPaths)",
+            "supports": "上传包含压缩与 COS 上传两个可能失败的 await 步骤，而 uploadImages 全程没有 try/catch。"
+          },
+          {
+            "id": "ev-1b58019b9a93d547",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesClassLearn/src/main/ets/page/camera/CameraAndAlbumPage.ets:200",
+            "excerpt": "XESRouter.popAndResult(callback, true);",
+            "supports": "只有上传成功路径才会回传结果并关闭原生页，失败路径没有对应的回传/收尾。"
+          },
+          {
+            "id": "ev-9562e91f193c6ab3",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesComm/XesRouter/src/main/ets/AppRouter.ets:120",
+            "excerpt": "return AppRouter.getRouterManager().getRootStack().pop(result, animated)",
+            "supports": "popAndResult 只弹一层（不是 pop 到栈底/首页），因此「原生页返回时跳首页」这一候选不成立。"
+          }
+        ],
+        "ruled_out": [
+          "「PDF 不被业务支持导致上传失败」——照片路径同样失败，文件类型契约不是本次故障主因（但「容器未按 accept 收敛、PDF 可选」作为独立缺陷仍然成立）。",
+          "「原生相机/相册页 pop 时弹过头导致跳回首页」——AppRouter.popAndResult 实现为 getRootStack().pop(result, animated)，只弹一层，不会回到首页。",
+          "「客户端存在选择文件成功后跳首页的路由」——在已绑定的 xesapp@releaseV/20260921 上检索 onShowFileSelector / handleFileList / DocumentViewPicker / CameraAndAlbumPage 等定位点，未发现此类跳转；注意检索非穷尽，不能视为完全排除。"
+        ],
+        "missing_information": [
+          "「返回首页」的准确含义（决定调查方向）：是回到应用内的首页 tab、H5 页面内部返回，还是整个 App 重启（能看到启动闪屏）？客服/家长追问「点完成后是否看到启动闪屏」即可区分。",
+          "复现入口：家长是用 H5 录入页内的「拍照/相册」按钮（走原生 CameraAndAlbumPage 桥接），还是容器弹窗的「照片/拍照/文件」？两者的失败链路不同。",
+          "机型、HarmonyOS 版本、App 版本号；从「选择上传」到点「完成」那一刻的录屏或分步截图。",
+          "点完成后是否出现「上传中」loading 常驻、是否有报错提示；H5 页面 URL 与 H5 侧网络请求结果/埋点。",
+          "若能拿到开发者环境的 hilog，关注 console.error 的 Invoke photoViewPicker.select failed / documentViewPicker.select failed / the pick call failed，以及 Web 侧是否重新加载。",
+          "知识库「录入仅支持图片、≤4M×8 张」出自 2024-12 需求文档，工单时间明显更晚，需业务侧确认当前 H5 录入规则是否已变化。"
+        ],
+        "checks_performed": [
+          "绑定仓库 xesapp 分支 releaseV/20260921（commit 6919c027f1d8）。",
+          "读取容器文件选择实现：WebView.ets（56-167 行 ActionSheet 三个入口与 onShowFileSelector、83-139 行三个 picker、300-343 行注释掉的 accept 过滤）。",
+          "确认两套容器同构：WebViewV2.ets 的 handleFileList 与 onShowFileSelector 位置（63/76/91/137 行）。",
+          "读取 XesWebview.ets 1337-1360 行，确认错题本原生相机/相册桥接 xesApp_business_wrongBookOpenTakePicture 与 pushForResult 回调。",
+          "读取 CameraAndAlbumPage.ets 20-251 行与 WrongBookViewModel.ets 1-38 行，确认相册选择→压缩→COS 上传→popAndResult 的成功路径与缺失的失败路径。",
+          "读取 AppRouter.ets 120-230 行，确认 popAndResult/pushForResult 的栈语义。",
+          "全仓检索 handleFileList、onShowFileSelector、fileSelector、DocumentViewPicker、popAndResult、CameraAndAlbumPage、wrongBook、错题，确认容器路径全覆盖且未发现「选完文件跳首页」的客户端路由。",
+          "知识检索：error-book-upload-file-types、error-book-entry-picai-only、error-book-upload-fails、error-book-unavailable（仅作线索）。"
+        ],
+        "limitations": [
+          "只读诊断：未编译、未运行、未抓取真机日志，所有结论均来自源码阅读与知识检索。",
+          "错题本详情页/录入页是小驴团队 H5，其路由与「返回首页」的触发点不在客户端仓库内，无法在本次排查中核实。",
+          "无法确认家长实际走的是容器弹窗链路还是 H5 桥接的原生相机/相册链路，两条链路同时作为候选保留。",
+          "「客户端未发现选完文件跳首页的路由」来自有界检索，属未命中的正向/负向证据不足，不能作为完全排除的依据。",
+          "知识命中（错题本仅支持图片等）只作线索，未作为本次故障的证据。"
+        ],
+        "confidence": 0.4
+      },
+      "iteration": 1
+    },
+    {
+      "case_id": "cross-turn-citation",
+      "conversation_id": "conv-f955e45730",
+      "status": "completed",
+      "steps": 47,
+      "failed_calls": 0,
+      "tools": {
+        "load_skill": 1,
+        "lookup_issue": 1,
+        "search_project_text": 21,
+        "read_project_file": 18,
+        "load_business_context": 1,
+        "list_project_files": 1,
+        "search_knowledge": 2,
+        "get_knowledge_entry": 1,
+        "submit_diagnosis_report": 1
+      },
+      "input_tokens": 1213078,
+      "output_tokens": 23595,
+      "verdict": "probable",
+      "confidence": 0.4,
+      "evidence_count": 9,
+      "missing_count": 4,
+      "quality_marks": {},
+      "verdict_ok": true,
+      "submit_ok": true,
+      "turns": [
+        {
+          "content_head": "学员姓名:测试学员\n学员编号:100000005\n年级: 初三\n家长反馈错题本功",
+          "elapsed_s": 69.1
+        },
+        {
+          "content_head": "客服补充确认:换成照片上传图片,点击完成后一样返回首页。请基于现有材料给出诊断报",
+          "elapsed_s": 158.1
+        }
+      ],
+      "text": "## 结论（probable，报告已提交）\n\n**客服这条补充把问题性质改变了：症状与「选的是什么文件」无关，所以「PDF 不是录入支持的格式」不再是解释。** 图片同样在点「完成」后回到首页，说明失败发生在文件选择回来之后，而不是文件类型校验环节。\n\n### 已核实的客户端事实\n- 上传链路里**没有任何路由/返回动作**：无论照片分支还是文件分支，都只是把 picker 返回的**原始 uri 直接交给 H5**（`event.result.handleFileList(...)`），异常也只 `console.error`；V1（`WebView.ets`）和 V2（`WebViewV2.ets`）两套容器同构，所以走哪套都一样。\n- 容器里**唯一会 `XESRouter.pop()` 的原生入口是 H5 主动调用的返回桥接**（`xesApp_nativeAbility_backClickAction`）——也就是说「回上一层」这件事是 H5 驱动的，上传代码本身不会做。\n- picker 拉起时本应用进后台，容器会**向 H5 发 `appInactive`，回前台再发 `appActive`**，这是文件选择过程中 H5 唯一能感知到的原生事件。\n- 应用（能力）冷启动/重建时**落地页固定是 `pages/home/HomePage`**，与「返回首页」现象吻合。\n- 顺手排除了一个嫌疑：`onNewWant` 里的 `disWant` 只认 `talxesapp://PermissionSettingPage/studentLogin` 一个 uri，其余 want 仅打印日志、不跳转，不会把用户带去首页。\n\n### 还没闭环的部分\n「页面为什么离开栈」有两种可能，客户端源码无法独立判定：\n\n1. **录入页/能力被重建**——pickers 期间应用切后台，重建后落地 HomePage；\n2. **H5 自行回退**——错题本录入页在拿到 uri 或收到前后台通知后自己 back（该页是小驴 H5，逻辑不在本仓库）。\n\n另外，「能选到 PDF」确实成立（文件分支用默认 `DocumentSelectOptions`、未设 `fileSuffixFilters`），但它只是并列的第二个缺陷，**解释不了本次主症状**。\n\n### 请补充（按优先级，第 1 条最能分流）\n1. 点「完成」后到的「首页」是**App 首页（底部 tab）吗？中间有没有闪一下启动页/白屏**？——是 → 偏向能力/页面重建；不是、只是小驴页面内回退 → 偏向 H5 自行 back。\n2. 复现**录屏或截图** + 机型与 HarmonyOS 版本。\n3. 客服侧能取的**H5 前端日志/埋点**，或出错时刻的 hilog（看是否有能力/窗口重建）。\n4. 本次录入页走的是 V1（`talxesapp://Main/Browser`）还是 V2（`AIWebContainer`）。\n\n> 说明：本次为只读静态诊断，未编译、未运行、未上机复现；仓库快照 `xesapp @ releaseV/20260921`（commit `6919c027f1d8`）。",
+      "report": {
+        "verdict": "probable",
+        "severity": "high",
+        "summary": "客服补充「换成照片上传图片，点击完成后一样返回首页」，说明该症状与所选文件类型无关：此前「PDF 不被录入支持」不能解释图片同样复现，PDF 能选到只是并列的第二个缺陷（选择器未收敛）。按 releaseV/20260921 代码核实：容器的上传链路（照片/拍照/文件三分支）本身不含任何路由/返回调用，只把 picker 返回的原始 uri 透传给 H5；唯一会把用户带回上一层的原生路径是 H5 主动调用返回桥接。picker 弹出期间应用切后台，容器会向 H5 发 appInactive/appActive；而应用能力一旦被重建，落地页固定是 HomePage。因此「点完成回首页」目前有两个方向：错题本录入页在文件选择过程中离开栈（能力/页面重建 → 回 HomePage），或 H5 侧在交互后自行回退——两者都还缺运行时观测来区分。",
+        "issue_category": "鸿蒙端 H5 容器（错题本录入）文件上传后跳回首页",
+        "likely_location": null,
+        "root_cause_candidates": [
+          {
+            "title": "错题本录入页在文件选择过程中离开页面栈，用户被带回根页面 HomePage（能力/页面重建）",
+            "explanation": "picker 拉起后本应用进入后台，容器按源码向 H5 发 appInactive，回前台再发 appActive；若在此期间应用能力/页面被系统重建，鸿蒙端冷启动的落地页固定是 pages/home/HomePage，用户看到的即为「返回首页」。容器上传分支本身不跳转，所以页面消失不是上传代码直接造成的。仍需运行时证据（是否伴随启动闪屏、hilog 是否出现能力重建）确认。",
+            "confidence": 0.35,
+            "evidence_ids": [
+              "ev-d9d892b6653d6409",
+              "ev-0db14b6867e7c3d4"
+            ]
+          },
+          {
+            "title": "H5（小驴错题本录入页）在文件选择/回前台通知后自行回退到错题本首页",
+            "explanation": "客户端的返回路径是 H5 驱动的：容器里唯一会 XESRouter.pop() 的原生入口是 H5 主动调用的「返回主界面能力」桥接；同时容器把 picker 返回的原始 uri 直接交给 H5，未做拷贝/授权处理。若 H5 在拿到 uri 后校验或上报失败，或对 appInactive/appActive 做了回退处理，就会表现为「点完成回首页」。错题本详情页逻辑不在本仓库，需 H5 侧日志确认。",
+            "confidence": 0.3,
+            "evidence_ids": [
+              "ev-d7afefe21fc4c925",
+              "ev-0421ba3fa4c502f1",
+              "ev-7a7e0c807433f8b4"
+            ]
+          },
+          {
+            "title": "并列的独立缺陷：容器文件选择器未按 H5 accept 收敛类型（能选到 PDF）",
+            "explanation": "该问题成立，但客服已确认换图片同样复现，所以它解释不了「点完成返回首页」这一主症状，只能解释「为什么能选到 PDF」。文件分支使用默认 DocumentSelectOptions、未设 fileSuffixFilters，照片分支虽限 IMAGE_TYPE，但两条分支的结果回传方式相同。",
+            "confidence": 0.75,
+            "evidence_ids": [
+              "ev-1292d58c8dd386e8",
+              "ev-7a7e0c807433f8b4"
+            ]
+          }
+        ],
+        "evidence": [
+          {
+            "id": "ev-user-ecb5eba66867",
+            "kind": "user",
+            "source": "user-message",
+            "location": "客服补充确认:换成照片上传图片,点击完成后一样返回首页。请基…",
+            "excerpt": "换成照片上传图片,点击完成后一样返回首页",
+            "supports": "症状与所选文件类型无关：图片路径同样复现「点完成回首页」，排除「仅 PDF 不支持」这一解释分支。"
+          },
+          {
+            "id": "ev-user-878d3deaeaf8",
+            "kind": "user",
+            "source": "user-message",
+            "location": "学员姓名:测试学员\n学员编号:100000005\n年级: 初…",
+            "excerpt": "家长反馈错题本功能中错题录入无法正常使用",
+            "supports": "被反馈现象本身（错题本录入不可用）存在，且出现于鸿蒙 releaseV/20260921。"
+          },
+          {
+            "id": "ev-d7afefe21fc4c925",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:1",
+            "excerpt": "event.result.handleFileList(chooseFile.photoUris);",
+            "supports": "V1 容器照片分支把相册 picker 返回的原始 uri 直接交给 H5，未做拷贝/授权，也无任何路由或返回动作。"
+          },
+          {
+            "id": "ev-7a7e0c807433f8b4",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/webview/WebViewV2.ets:30",
+            "excerpt": "event.result.handleFileList(chooseFile.photoUris);",
+            "supports": "V2 容器（AIWebContainer 承载）照片分支与 V1 同构，同样只透传 uri、不跳转，故 V1/V2 在上传后行为一致。"
+          },
+          {
+            "id": "ev-1292d58c8dd386e8",
+            "kind": "source",
+            "source": "mcp:search_project_text",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:131",
+            "excerpt": "const documentViewPicker = new picker.DocumentViewPicker();",
+            "supports": "文件分支使用默认 DocumentSelectOptions（未设 fileSuffixFilters），可解释「能选到 PDF」，与图片同样失败是两件事。"
+          },
+          {
+            "id": "ev-0db14b6867e7c3d4",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/XesWebview.ets:300",
+            "excerpt": "this.nativeCallH5?.xesApp_webAbility_appInactive()",
+            "supports": "picker 弹出期间本应用切后台，容器会向 H5 发 appInactive（同段回前台发 appActive），这是文件选择过程中 H5 能感知到的唯一原生事件。"
+          },
+          {
+            "id": "ev-0421ba3fa4c502f1",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/XesWebview.ets:1130",
+            "excerpt": "XESRouter.pop()",
+            "supports": "容器内会执行路由 pop 的原生入口是 H5 主动调用的返回桥接，即返回上一层是 H5 驱动的，不是上传代码自动触发。"
+          },
+          {
+            "id": "ev-d9d892b6653d6409",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "products/xes/src/main/ets/entryability/EntryAbility.ets:270",
+            "excerpt": "let contentPath = 'pages/home/HomePage'",
+            "supports": "应用（能力）冷启动/重建时的落地页固定为首页，与用户描述的「返回首页」现象一致，支撑「页面栈被重建」这一候选。"
+          },
+          {
+            "id": "ev-d2d47478c87bf2e1",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesBusiness/XesBusinessComm/src/main/ets/DisposeWant/DisposeWantUtil.ets:1",
+            "excerpt": "console.log(TAG, \"当前want走default逻辑，可根据入参处理当前want\")",
+            "supports": "未知 want 走 default 分支、不产生跳转，排除「picker 返回的 want 触发 onNewWant 跳首页」。"
+          }
+        ],
+        "ruled_out": [
+          "「PDF 属于不支持的录入类型导致上传被拒」这一分支：客服已确认改用相册图片同样在点完成后回到首页，症状与文件类型无关。",
+          "「picker 返回时携带的 want 被 onNewWant 兜底跳首页」：DisposeWantUtil.disWant 只处理 talxesapp://PermissionSettingPage/studentLogin 一个 uri，其余 want 走 default 仅打印日志，不产生任何路由跳转。"
+        ],
+        "missing_information": [
+          "点「完成」后到达的「首页」具体是哪一层：App 首页（底部 tab，且是否伴随启动闪屏/冷启动）还是小驴错题本页内部的回退？这一条直接分流「能力/页面重建」与「H5 自行回退」。",
+          "复现录屏或截图，以及机型与 HarmonyOS 版本（家长反馈只写了「华为手机」）。",
+          "若客服/家长侧能取到：出错时刻的 hilog（是否出现能力/窗口重建）或 H5 侧日志、前端埋点，用于确认是原生栈被重建还是 H5 主动 back。",
+          "本次录入页走的是 V1 容器（talxesapp://Main/Browser）还是 V2（AIWebContainer），以确认两条链路中哪一份在选择文件后发生了页面变化。"
+        ],
+        "checks_performed": [
+          "在 releaseV/20260921（commit 6919c027f1d8）只读核实容器文件选择链路：WebView.ets 的 onShowFileSelector / 照片 / 拍照 / 文件三分支，WebViewV2.ets 同构分支",
+          "核实两个 picker 分支的结果回传方式：均直接 handleFileList(原始 uri)，异常仅 console.error，无路由或返回动作",
+          "核实容器在应用前后台切换时的行为（XesWebview.ets 的 ApplicationStateChangeCallback 与 onBackgroundAction）",
+          "核实容器内会执行 XESRouter.pop() 的原生入口（H5 桥接 backClickAction）",
+          "核实应用冷启动/能力重建的落地页（products/xes EntryAbility.onWindowStageCreate）",
+          "核实 onNewWant 对未知 want 的兜底行为（DisposeWantUtil.disWant）以排除误跳首页",
+          "知识检索：错题本录入文件类型契约、错题本上传不了的候选链路"
+        ],
+        "limitations": [
+          "本次为只读静态诊断：未编译、未运行、未上机复现，未调用任何构建或调试工具。",
+          "未取得任何运行时材料（hilog/埋点/录屏），因此「页面为何离开栈」这一步没有观测支撑，结论只能到候选级。",
+          "错题本详情页/录入页是小驴 H5，其业务逻辑不在客户端仓库；客户端侧只能核实容器与桥接，H5 侧触发点无法从源码断定。",
+          "工单只给出「华为手机」「鸿蒙 releaseV/20260921」，机型与系统版本未知。"
+        ],
+        "confidence": 0.4
+      },
+      "iteration": 2
+    },
+    {
+      "case_id": "cross-turn-citation",
+      "conversation_id": "conv-1ed76dd392",
+      "status": "completed",
+      "steps": 17,
+      "failed_calls": 1,
+      "tools": {
+        "load_skill": 1,
+        "lookup_issue": 1,
+        "search_project_text": 7,
+        "read_project_file": 6,
+        "submit_diagnosis_report": 2
+      },
+      "input_tokens": 222392,
+      "output_tokens": 20523,
+      "verdict": "insufficient_evidence",
+      "confidence": 0.35,
+      "evidence_count": 7,
+      "missing_count": 6,
+      "quality_marks": {},
+      "verdict_ok": true,
+      "submit_ok": true,
+      "turns": [
+        {
+          "content_head": "学员姓名:测试学员\n学员编号:100000005\n年级: 初三\n家长反馈错题本功",
+          "elapsed_s": 69.1
+        },
+        {
+          "content_head": "客服补充确认:换成照片上传图片,点击完成后一样返回首页。请基于现有材料给出诊断报",
+          "elapsed_s": 103.8
+        }
+      ],
+      "text": "诊断报告已提交（verdict: **insufficient_evidence**）。客服的新反馈改变了主线，下面是更新后的结论。\n\n## 关键变化：本次失败与文件类型无关\n\n你给的补充（ev-user-ecb5eba66867 原文：\"换成照片上传图片,点击完成后一样返回首页\"）说明：**图片这条本来被业务支持、也是容器最\"正常\"的路径，同样返回首页**。因此上一轮的主线——\"选 PDF 超出产品支持范围（知识条目 `error-book-upload-file-types`：录入仅图片，PDF 只用于导出）\"——只能解释**为什么能选到 PDF**，不能解释**为什么点完成后返回首页**。上一轮另外两点（accept 未收敛、被注释的过滤逻辑）也因此降级为次要异常。\n\n## 已核实的事实（源码）\n\n**1. 两套容器都是把 picker 原始 URI 直接透传 H5，中间没有任何补偿处理。**\n- V1 图片：`event.result.handleFileList(chooseFile.photoUris)`（`WebView.ets:95`，ev-bb5d983c09f0d7f1）\n- V2 图片：同实现（`WebViewV2.ets:63`，ev-670b37248289c81e）\n- V1 文件：`event.result.handleFileList([uri])`（`WebView.ets:135`，ev-d5fdbce7d6c682c3）\n\n图片拿到的是媒体库 URI、文档拿到 docs URI，客户端既没拷贝到应用沙箱、也没做权限/可读性转换。因此\"无论走 V1 还是 V2，无论选图片还是 PDF，回传形态一样\"——与\"两种都失败\"的现象自洽。\n\n**2. 客户端不存在\"返回首页\"的代码路径。**\nWeb 出错分支只把 `showEmptyView` 置真、显示\"系统开小差\"空页并提供重载；在 `XesWebView` 模块内搜 `closePage` / `router.back()` 均无命中；各宿主页（`ClassLearnWebView.ets`、`XesAppCSNPSPage.ets`）的 `onErrorReceive` 回调体为空。\n\n## 尚存的一个根因候选（未验证）\n\n容器把原始 URI 透传 → https 侧 H5 读不到/上传失败 → H5 兜底逻辑跳走。**客户端侧前提有源码证据，\"H5 读取失败→返回首页\"这段因果链没有**，而且跳转本身发生在小驴提供的 H5 里，不在客户端仓库。\n\n## 最小缺失信息（请优先回答第 1 条）\n\n1. 返回的\"**首页**\"是 **App 首页**（带底部 Tab 的应用主界面 → 页面栈回退/路由跳转），还是**系统桌面**（应用没了、重新进入 → 进程或 Ability 级异常）？这一条直接决定调查方向。\n2. 若是 App 首页：跳转发生在上传请求发出前后？有没有\"上传失败/网络异常\"的提示，还是毫无提示直接跳走？\n3. 复现录屏/截图；如可取得，出错时刻的 hilog / ArkWeb 日志（看 `handleFileList` 异常、JSCrash、页面重载痕迹）。\n4. 该页走的是哪套容器（`talxesapp://Main/Browser` 的 V1 还是 `AIWebContainer` 的 V2）。\n5. 所选图片大小与数量（契约上限：单张 ≤4M、最多 8 张），排除超限型失败。\n\n说明：本次为只读诊断，未编译、未运行、未取设备日志；以上均未经过运行时复现验证。",
+      "report": {
+        "verdict": "insufficient_evidence",
+        "severity": "medium",
+        "summary": "客服补充『换成照片上传图片，点击完成后一样返回首页』这一新事实，改写了上一轮主线：本次失败与所选文件类型无关，『能选到 PDF（accept 未收敛）』只是次要异常，不是失败主因。据此核对 releaseV/20260921 源码：鸿蒙两套容器（V1 WebView.ets、V2 WebViewV2.ets）在照片/拍照/文件三条路径上都把 picker 返回的原始 URI 直接 handleFileList 回传给 H5，没有任何拷贝到应用沙箱或 URI 可读性转换的补偿处理；同时 XesWebView 模块范围内未见 closePage、router.back 一类返回逻辑，Web 出错分支只把 showEmptyView 置真、显示『系统开小差』空页。即：客户端既未做文件回传前的可读性处理，也没有『点完成后返回首页』的代码路径，该跳转的触发点在客户端仓库之外（小驴 H5 详情页的兜底跳转，或应用/Ability 级异常），凭现有材料无法唯一定位。最小缺失观测是：『返回首页』是回到 App 首页（页面栈回退）还是系统桌面（应用重启）。",
+        "issue_category": "错题本录入上传（鸿蒙容器文件回传链路）",
+        "likely_location": "疑似链路 XesWebView/src/main/ets/components/webview/WebView.ets:83-145 与 163-167；XesWebView/src/main/ets/components/webview/WebViewV2.ets:39-99 与 137-141。『返回首页』触发点不在客户端仓库（详情页 H5 由小驴团队提供）。",
+        "root_cause_candidates": [
+          {
+            "title": "容器把 picker 原始 URI 直接透传 H5，未做沙箱拷贝或可读性转换，H5 读取/上传失败后走兜底跳转",
+            "explanation": "V1 图片路径为 event.result.handleFileList(chooseFile.photoUris)（WebView.ets:95），V2 同实现（WebViewV2.ets:63）；文件路径同样是直接回传 picker 结果（WebView.ets:135、WebViewV2.ets:91）。图片返回媒体库 URI、文档返回 docs URI，客户端未拷贝到应用沙箱、未做权限或可读性转换，也未读取 H5 accept 收敛类型。若 https 侧 H5 无法读取该 URI，上传必然失败，随后由 H5 兜底逻辑跳转，这与图片、PDF 都失败而文件本身可选的现象一致。客户端侧前提有源码支撑，但 H5 读取失败到返回首页的因果链需运行时材料确认，未经复现验证。",
+            "confidence": 0.3,
+            "evidence_ids": [
+              "ev-bb5d983c09f0d7f1",
+              "ev-670b37248289c81e",
+              "ev-d5fdbce7d6c682c3",
+              "ev-5782435432137c74"
+            ]
+          }
+        ],
+        "evidence": [
+          {
+            "id": "ev-user-ecb5eba66867",
+            "kind": "user",
+            "source": "user-message",
+            "location": "客服补充确认:换成照片上传图片,点击完成后一样返回首页。请基…",
+            "excerpt": "换成照片上传图片,点击完成后一样返回首页",
+            "supports": "新事实：改用图片上传后同样失败，现象与所选文件类型无关，上一轮的 PDF 不受支持、accept 未收敛不能解释本次失败"
+          },
+          {
+            "id": "ev-user-878d3deaeaf8",
+            "kind": "user",
+            "source": "user-message",
+            "location": "学员姓名:测试学员\n学员编号:100000005\n年级: 初…",
+            "excerpt": "华为手机可选择PDF文件但点击完成后返回首页",
+            "supports": "工单原始现象存在（华为机、错题录入选文件后点完成返回首页），仅支撑现象，不支撑机制"
+          },
+          {
+            "id": "ev-bb5d983c09f0d7f1",
+            "kind": "source",
+            "source": "mcp:search_project_text",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:95",
+            "excerpt": "event.result.handleFileList(chooseFile.photoUris);",
+            "supports": "V1 容器图片路径把图片选择器返回的媒体库 URI 原样回传 H5，无沙箱拷贝或可读性处理"
+          },
+          {
+            "id": "ev-670b37248289c81e",
+            "kind": "source",
+            "source": "mcp:search_project_text",
+            "location": "XesWebView/src/main/ets/components/webview/WebViewV2.ets:63",
+            "excerpt": "event.result.handleFileList(chooseFile.photoUris);",
+            "supports": "V2 容器图片路径与 V1 同实现（同样原样回传媒体库 URI），故无论工单走 V1 还是 V2，图片链路行为一致"
+          },
+          {
+            "id": "ev-d5fdbce7d6c682c3",
+            "kind": "source",
+            "source": "mcp:search_project_text",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:135",
+            "excerpt": "event.result.handleFileList([uri]);",
+            "supports": "V1 文件（文档）路径同样只是把 picker 返回的单个 uri 原样回传，未做类型收敛或可读性处理"
+          },
+          {
+            "id": "ev-5782435432137c74",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:1",
+            "excerpt": "const documentSelectOptions = new picker.DocumentSelectOptions();",
+            "supports": "文件分支使用默认 DocumentSelectOptions、未设 fileSuffixFilters，系统选择器放开全部类型，解释『能选到 PDF』，属次要异常而非本次失败主因"
+          },
+          {
+            "id": "ev-4fdd9e99d71351fe",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "XesWebView/src/main/ets/components/webview/WebView.ets:220",
+            "excerpt": "//   // let acceptTYpe = ev?.fileSelector.getAcceptType()",
+            "supports": "原本按 H5 accept 收敛的过滤逻辑已被整段注释，当前完全未生效，与『能选到 PDF』一致"
+          }
+        ],
+        "ruled_out": [
+          "本次失败由 PDF 不受支持或容器未按 H5 accept 收敛引起——图片路径同样复现，该解释只能说明为什么能选到 PDF，不能说明为什么点完成后返回首页",
+          "容器自身在 Web 出错时自动返回首页——WebView.ets 的 onErrorReceive/onHttpErrorReceive 分支只置 showEmptyView 显示『系统开小差』空页并提供重载，无路由回退",
+          "客户端容器中存在点完成后返回首页的代码路径——XesWebView 模块内对 closePage、router.back() 的搜索均无命中（属模块范围内局部搜索，不构成全仓不存在的证明；宿主页错误回调体也为空）"
+        ],
+        "missing_information": [
+          "最关键的区分性问题（尚未回答）：点完成后返回的『首页』是 App 首页（带底部 Tab 的应用主界面，属页面栈回退或路由跳转），还是系统桌面（应用消失后重新进入，属进程或 Ability 级异常）",
+          "若是 App 首页：跳转发生在上传请求发出前后？页面有无上传失败或网络异常提示，还是毫无提示直接跳走",
+          "复现时的录屏或截图；出错时刻能否取得 hilog 或 ArkWeb 日志（看是否有 handleFileList 异常、JSCrash、页面重载痕迹）",
+          "该错题本详情页实际走哪套容器（talxesapp://Main/Browser 的 V1，还是 AIWebContainer 的 V2），以确定核对哪条分支",
+          "是否多机型、多学员普遍复现，用于区分个人环境与版本级缺陷",
+          "所选图片大小与数量（契约限制单张不超过 4M、最多 8 张），排除超限型失败"
+        ],
+        "checks_performed": [
+          "加载 investigate-harmony-evidence 技能，按证据实证方式重排候选",
+          "lookup_issue（end=harmony）错题录入上传图片点击完成后返回首页，命中 error-book-upload-fails、error-book-upload-file-types、error-book-entry-picai-only",
+          "全仓搜索 onShowFileSelector、handleFileList、DocumentSelectOptions，确认只有 WebView.ets 与 WebViewV2.ets 两套实现",
+          "通读 XesWebView/webview/WebView.ets（1-427 行）：照片/拍照/文件三条分支、被注释的 accept 过滤、错误分支与上传弹窗",
+          "通读 XesWebView/webview/WebViewV2.ets（30-145 行）：同款接管加 return true 与三条 picker 分支",
+          "在 XesWebView 模块内搜索 closePage、router.back()：均无命中（52 个文件，未触发扫描上限）",
+          "搜索 onErrorReceive 各宿主页实现（ClassLearnWebView.ets、XesAppCSNPSPage.ets），错误回调体为空，未见返回首页动作",
+          "读取 XesUtilTool/PickerUtil.ets 的 selectDocument：公共工具支持 fileSuffixFilters，WebView 未使用该能力"
+        ],
+        "limitations": [
+          "只读诊断：仅核对仓库 xesapp @ releaseV/20260921（commit 6919c027），未编译、未运行、未取设备日志，所有失败与跳转结论均未经运行时复现验证",
+          "错题本详情页由小驴团队提供的 H5 实现，其完成按钮与兜底跳转逻辑不在客户端仓库，无法核实",
+          "无 closePage / router.back 命中来自模块范围内的字面搜索（未见扫描上限提示），只说明未在该范围发现，不等于全仓不存在",
+          "知识条目录入契约（仅图片、单张不超过 4M、最多 8 张）未结合本工单的具体文件信息核实"
+        ],
+        "confidence": 0.35
+      },
+      "iteration": 3
+    }
+  ]
+}

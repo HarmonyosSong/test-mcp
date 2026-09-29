@@ -321,6 +321,23 @@ def test_resolve_draft_assembles_provenance_from_ledger() -> None:
     assert report.verdict == "probable"
 
 
+def test_same_observation_may_be_cited_with_distinct_excerpts() -> None:
+    """同一观测允许以不同摘录引用多次(支撑不同论点);(id+excerpt) 纯重复才拒绝。
+    实测跨轮场景模型需要引用同一观测的两段摘录,旧 unique 约束把它逼到塞旁路
+    字段再撞 unique,连挂两次提交。"""
+    ledger = EvidenceLedger()
+    draft = observed_draft(ledger)
+    oid = draft.evidence[0].id
+    draft.evidence.append(EvidenceCitation(id=oid, excerpt="1: throw", supports="抛出点行号观测"))
+    report = ledger.resolve_draft(draft)
+    assert [item.excerpt for item in report.evidence] == ["throw Error('boom')", "1: throw"]
+    # 纯重复(同 ID 同摘录)仍拒绝
+    dup = observed_draft(ledger).model_dump()
+    dup["evidence"].append(dict(dup["evidence"][0]))
+    with pytest.raises(ValidationError, match="duplicate citation"):
+        DiagnosisReportDraft.model_validate(dup)
+
+
 def test_rejection_lists_observed_ids_for_self_correction() -> None:
     """拦回伪造 ID 时必须给出已观测 ID 清单:只说一句 "use runtime IDs" 会让长上下文
     里的模型凭格式编造(实测 e1 → ev-短hex → ev-伪16hex 三连编),清单让它可直接照抄。"""

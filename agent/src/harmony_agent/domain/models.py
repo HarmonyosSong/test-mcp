@@ -96,9 +96,12 @@ class DiagnosisReport(BaseModel):
 
     @model_validator(mode="after")
     def require_evidence_for_positive_verdict(self) -> DiagnosisReport:
+        # 同一观测允许以不同摘录引用多次(支撑不同论点);纯重复(id+excerpt 相同)
+        # 才是注水,按对判重。候选关联仍按 ID 集合语义。
+        pairs = [(item.id, item.excerpt.strip()) for item in self.evidence]
+        if len(set(pairs)) != len(pairs):
+            raise ValueError("duplicate citation of the same observation and excerpt")
         evidence_ids = {item.id for item in self.evidence}
-        if len(evidence_ids) != len(self.evidence):
-            raise ValueError("evidence IDs must be unique")
         for candidate in self.root_cause_candidates:
             if not set(candidate.evidence_ids).issubset(evidence_ids):
                 raise ValueError("every candidate must be linked to evidence present in the report")
@@ -135,9 +138,13 @@ class DiagnosisReportDraft(BaseModel):
 
     @model_validator(mode="after")
     def require_citations_for_candidates(self) -> DiagnosisReportDraft:
+        # 同一观测允许以不同摘录引用多次(支撑不同论点);纯重复(id+excerpt 相同)
+        # 按对判重——实测跨轮场景模型需要引用同一观测的两段摘录,旧 unique 约束
+        # 把它逼到塞 kind_note 旁路字段(extra_forbidden)再撞 unique,连挂两次。
+        pairs = [(item.id, item.excerpt.strip()) for item in self.evidence]
+        if len(set(pairs)) != len(pairs):
+            raise ValueError("duplicate citation of the same observation and excerpt")
         citation_ids = {item.id for item in self.evidence}
-        if len(citation_ids) != len(self.evidence):
-            raise ValueError("evidence citation IDs must be unique")
         for candidate in self.root_cause_candidates:
             if not set(candidate.evidence_ids).issubset(citation_ids):
                 raise ValueError("every candidate must be linked to a citation in the draft")
