@@ -13,7 +13,12 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from harmony_agent.agents import Completed, HarmonyChatAgent
 from harmony_agent.config import Settings
-from harmony_agent.domain import Conversation, DiagnosisReport, Evidence, RootCauseCandidate
+from harmony_agent.domain import (
+    Conversation,
+    DiagnosisReportDraft,
+    EvidenceCitation,
+    RootCauseCandidate,
+)
 from harmony_agent.runtimes.model_gateway import ModelGateway
 from harmony_agent.skill_runtime import SkillRegistry
 
@@ -57,14 +62,15 @@ async def run_case(item: dict, tmp_path: Path) -> Completed:
             if item["evidence"]:
                 payload = messages[-1].parts[0].content
                 reference = payload["evidence_refs"][0]
-                report = DiagnosisReport(
+                # 引用式草稿:只交 id/excerpt/supports,出处由账本组装
+                report = DiagnosisReportDraft(
                     verdict="probable",
                     summary="LoginPage.ets 抛出 TypeError",
                     issue_category="runtime",
                     confidence=0.6,
                     evidence=[
-                        Evidence(
-                            **reference,
+                        EvidenceCitation(
+                            id=reference["id"],
                             excerpt=payload["result"]["content"],
                             supports="TypeError",
                         )
@@ -79,7 +85,7 @@ async def run_case(item: dict, tmp_path: Path) -> Completed:
                     ],
                 )
             else:
-                report = DiagnosisReport(
+                report = DiagnosisReportDraft(
                     verdict="insufficient_evidence",
                     summary="描述模糊，缺少可观测证据",
                     issue_category="unknown",
@@ -89,7 +95,7 @@ async def run_case(item: dict, tmp_path: Path) -> Completed:
             yield {
                 0: DeltaToolCall(
                     name="submit_diagnosis_report",
-                    json_args=json.dumps({"report": report.model_dump(mode="json")}),
+                    json_args=json.dumps({"draft": report.model_dump(mode="json")}),
                 )
             }
             return

@@ -236,9 +236,7 @@ def test_failed_model_turn_preserves_user_input_for_followup(tmp_path: Path) -> 
             user_prompts = [p["content"] for p in parts if p.get("part_kind") == "user-prompt"]
             assert sum("ORIGINAL_LOG" in content for content in user_prompts) == 1
             assert any("继续" in content for content in user_prompts)
-            assert not any(
-                p.get("part_kind") in {"tool-call", "tool-return"} for p in parts
-            )
+            assert not any(p.get("part_kind") in {"tool-call", "tool-return"} for p in parts)
             yield "恢复成功"
 
     models.ALLOW_MODEL_REQUESTS = False
