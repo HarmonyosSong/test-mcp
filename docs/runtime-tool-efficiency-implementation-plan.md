@@ -56,7 +56,7 @@
 | E（指标口径） | ✅ 完成 | `f59ce33`(attempted/accepted/blocked 等 10 键，终态等式 attempted = accepted + blocked + pending) |
 | B | ✅ 完成 | `2f7b209`（读取字符预算 + next_line 游标 + SearchPage,两侧入口同步） |
 | D | ✅ 大部分完成 | 7.1 观测范围去重、7.2 定位提示随 `bf533e0` 落地；7.3 提问时机属提示词层持续调优 |
-| E（真实对照） | ⏳ 待执行 | 脱敏对照集与 live-eval 扩充，需固定模型/commit/预算后多轮跑批 |
+| E（真实对照） | ✅ 完成 | `720f332`（6 场景 × 3 次，报告见 experiments/runtime_audit/REPORT-REAL-CONTROL-2026-09-29.md；发现并修复 citation 判重误伤） |
 
 实测基线对比（错题本工单，同模型同知识库）:53 步/submit 4 连挂（修复前）→ 21 步/submit 6 次（A 后）→ 15 步/submit 1 次通过/0 失败调用（C 后，输入 token 315K→124K)→ 12 步/submit 1 次/0 失败/45.9s（B 后，输入 token 107K，置信度 0.6→0.7)。调用序列无绕圈:知识索引直达 → 行号窗口读 → 定向搜索 → 一次边界确认后收尾。
 
