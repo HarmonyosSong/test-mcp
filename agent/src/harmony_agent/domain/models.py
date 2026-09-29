@@ -53,6 +53,20 @@ class RootCauseCandidate(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+class EvidenceCitation(BaseModel):
+    """模型提交的证据引用:只给 ID、逐字摘录与用途。
+
+    kind/source/location 由运行时从观测账本(或用户输入登记)组装——
+    模型不提供这些字段,也就无从与账本不一致。ID 必填且无随机默认。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    excerpt: str = Field(min_length=1, max_length=2_000)
+    supports: str = Field(min_length=1, max_length=500)
+
+
 class ToolEvent(BaseModel):
     id: str = Field(default_factory=lambda: f"tool-{uuid4().hex[:8]}")
     tool: str
@@ -93,6 +107,45 @@ class DiagnosisReport(BaseModel):
             or any(not candidate.evidence_ids for candidate in self.root_cause_candidates)
         ):
             raise ValueError("positive diagnoses require every candidate linked to evidence")
+        return self
+
+
+class DiagnosisReportDraft(BaseModel):
+    """submit_diagnosis_report 的引用式输入:模型只交引用,不交出处字段。
+
+    与 DiagnosisReport 的差异仅在 evidence:这里收 EvidenceCitation(id+excerpt+supports),
+    由 EvidenceLedger.resolve_draft 核对摘录并组装成完整 Evidence 后再构造
+    DiagnosisReport——持久化与前端仍读原结构,API/UI 无迁移面。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    verdict: Verdict
+    severity: Severity = Severity.UNKNOWN
+    summary: str
+    issue_category: str
+    likely_location: str | None = None
+    root_cause_candidates: list[RootCauseCandidate] = Field(default_factory=list)
+    evidence: list[EvidenceCitation] = Field(default_factory=list)
+    ruled_out: list[str] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+    checks_performed: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0, le=1)
+
+    @model_validator(mode="after")
+    def require_citations_for_candidates(self) -> DiagnosisReportDraft:
+        citation_ids = {item.id for item in self.evidence}
+        if len(citation_ids) != len(self.evidence):
+            raise ValueError("evidence citation IDs must be unique")
+        for candidate in self.root_cause_candidates:
+            if not set(candidate.evidence_ids).issubset(citation_ids):
+                raise ValueError("every candidate must be linked to a citation in the draft")
+        if self.verdict in {Verdict.LOCATED, Verdict.PROBABLE} and (
+            not self.root_cause_candidates
+            or any(not candidate.evidence_ids for candidate in self.root_cause_candidates)
+        ):
+            raise ValueError("positive diagnoses require every candidate linked to a citation")
         return self
 
 

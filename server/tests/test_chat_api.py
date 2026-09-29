@@ -229,11 +229,16 @@ def test_failed_model_turn_preserves_user_input_for_followup(tmp_path: Path) -> 
         elif calls == 2:
             raise RuntimeError("injected upstream failure after a tool call")
         else:
-            history = ModelMessagesTypeAdapter.dump_json(messages).decode()
-            assert history.count("ORIGINAL_LOG") == 1
-            assert "继续" in history
-            assert "tool-call" not in history
-            assert "tool-return" not in history
+            # 按 part 检查(user_evidence 预览会在 instructions 状态块中引用用户原文,
+            # 那不算输入重复):用户输入不重复,失败轮的孤儿工具对已被剥离。
+            parsed = json.loads(ModelMessagesTypeAdapter.dump_json(messages))
+            parts = [part for message in parsed for part in message["parts"]]
+            user_prompts = [p["content"] for p in parts if p.get("part_kind") == "user-prompt"]
+            assert sum("ORIGINAL_LOG" in content for content in user_prompts) == 1
+            assert any("继续" in content for content in user_prompts)
+            assert not any(
+                p.get("part_kind") in {"tool-call", "tool-return"} for p in parts
+            )
             yield "恢复成功"
 
     models.ALLOW_MODEL_REQUESTS = False
@@ -260,7 +265,8 @@ def test_chat_report_submission_persisted_on_message(tmp_path: Path) -> None:
         nonlocal calls
         calls += 1
         if calls == 1:
-            report = {
+            # 引用式草稿:无证据引用的 insufficient_evidence 报告
+            draft = {
                 "verdict": "insufficient_evidence",
                 "summary": "缺少现场日志，无法支撑候选",
                 "issue_category": "unknown",
@@ -270,7 +276,7 @@ def test_chat_report_submission_persisted_on_message(tmp_path: Path) -> None:
             yield {
                 0: DeltaToolCall(
                     name="submit_diagnosis_report",
-                    json_args=json.dumps({"report": report}),
+                    json_args=json.dumps({"draft": draft}),
                 )
             }
         else:

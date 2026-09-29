@@ -15,6 +15,7 @@ from pydantic_ai.toolsets.abstract import ToolsetTool
 
 from ..domain import ToolEvent
 from ..runtimes.evidence import EvidenceLedger
+from .report_submission import SUBMIT_REPORT_TOOL
 
 REUSABLE_TOOLS = frozenset(
     {
@@ -105,12 +106,20 @@ class ToolFailureBudget:
     limit: int = 10
     call_limit: int = 30
     no_progress_limit: int = 4
+    # 收尾预算:调用余量进入 finalize_reserved 范围(或 no_progress 满)时,只放行
+    # submit_diagnosis_report——把「停止开新线索、用已有证据收尾」从提示词建议变成
+    # 机制约束;submit 成功或尝试 finalize_attempt_limit 次后全停。
+    finalize_reserved: int = 2
+    finalize_attempt_limit: int = 3
     failures: list[str] = field(default_factory=list)
     calls: int = 0
     executed: int = 0
     reused: int = 0
     result_chars: int = 0
     no_progress: int = 0
+    # submit 尝试计数与成功标记:收尾阶段的生命周期。
+    submit_attempts: int = 0
+    submit_succeeded: bool = False
     _result_signatures: set[str] = field(default_factory=set)
     _failed_signatures: dict[str, bool] = field(default_factory=dict)
     # 成功调用缓存(签名 → 记录);替代旧的「序号 + 载荷」两张表。
@@ -134,13 +143,27 @@ class ToolFailureBudget:
         return self.stop_reason is not None
 
     @property
+    def finalize_only(self) -> bool:
+        """收尾阶段:只放行 submit_diagnosis_report,其余调用被拒绝并引导收尾。
+
+        触发条件二选一:无进展次数打满(调查已绕圈,继续搜索不会有新信息),或
+        调用余量进入 finalize_reserved(把最后的预算保留给报告提交)。
+        """
+        return (
+            self.no_progress >= self.no_progress_limit
+            or self.calls >= self.call_limit - self.finalize_reserved
+        )
+
+    @property
     def stop_reason(self) -> str | None:
+        if self.submit_succeeded:
+            return "诊断报告已提交,本轮调查收尾完成"
         if len(self.failures) >= self.limit:
             return "本轮工具失败预算已耗尽"
+        if self.finalize_only and self.submit_attempts >= self.finalize_attempt_limit:
+            return "报告收尾提交尝试已耗尽"
         if self.calls >= self.call_limit:
             return "本轮工具调用预算已耗尽"
-        if self.no_progress >= self.no_progress_limit:
-            return "连续工具调用没有新增信息"
         return None
 
     def metrics(self) -> dict[str, Any]:
@@ -150,6 +173,7 @@ class ToolFailureBudget:
             "reused": self.reused,
             "result_chars": self.result_chars,
             "evidence_restored": self.restored,
+            "submit_attempts": self.submit_attempts,
             "stop_reason": self.stop_reason,
         }
 
@@ -169,6 +193,17 @@ class ToolFailureBudget:
             failure: str | None = None
             if self.exhausted:
                 raise ToolFailed(f"{self.stop_reason}；按已有证据报告缺口或追问。")
+            # 收尾阶段拦截(判定基于已消耗计数,先于本次计数):非 submit 调用一律
+            # 拒绝并引导收尾——被拒绝的调用没有执行,不占调用预算,只计入失败预算
+            # 作为兜底,防止模型在 finalize_only 下无限重试普通工具。
+            if self.finalize_only and name != SUBMIT_REPORT_TOOL:
+                failure = (
+                    "已进入收尾阶段:停止开启新线索,请基于已有证据调用 "
+                    f"{SUBMIT_REPORT_TOOL} 提交结论;证据不足就在报告中如实说明缺口。"
+                )
+                self.failures.append(f"{name}: {failure}")
+                self._audit(events, name, started, failure)
+                raise ToolFailed(failure)
             self.calls += 1
             if name in REUSABLE_TOOLS and signature in self._cache:
                 cached = self._cache[signature]
@@ -203,6 +238,8 @@ class ToolFailureBudget:
                 retried = signature in self._failed_signatures
                 try:
                     self.executed += 1
+                    if name == SUBMIT_REPORT_TOOL:
+                        self.submit_attempts += 1
                     restored_before = ledger.restored_count if ledger is not None else 0
                     result = await operation()
                 except Exception as exc:
@@ -218,6 +255,8 @@ class ToolFailureBudget:
                 else:
                     if retried:
                         self._failed_signatures[signature] = False
+                    if name == SUBMIT_REPORT_TOOL:
+                        self.submit_succeeded = True
                     serialized = json.dumps(result, sort_keys=True, ensure_ascii=False, default=str)
                     self.result_chars += len(serialized)
                     observed_result = (
@@ -338,7 +377,13 @@ class BudgetedToolset(WrapperToolset[Any]):
     async def get_tools(self, ctx: RunContext[Any]) -> dict[str, ToolsetTool[Any]]:
         if self.budget.exhausted:
             return {}
-        return await self.wrapped.get_tools(ctx)
+        tools = await self.wrapped.get_tools(ctx)
+        if self.budget.finalize_only:
+            # 收尾阶段从工具表只留 submit:模型不会再看到普通工具,配合 call() 的
+            # 拦截(应对已发出的在途调用)构成双保险。budget_notice 预警已提前
+            # 多轮提示,此处收敛不会构成「突然清空工具表」。
+            return {key: tool for key, tool in tools.items() if key == SUBMIT_REPORT_TOOL}
+        return tools
 
     async def call_tool(
         self, name: str, tool_args: dict[str, Any], ctx: RunContext[Any], tool: ToolsetTool[Any]

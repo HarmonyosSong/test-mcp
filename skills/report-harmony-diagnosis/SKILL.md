@@ -21,9 +21,11 @@ report drafts into the chat text. Choose exactly one verdict:
 Every `located` or `probable` candidate must reference at least one evidence ID included in the same
 report. Calibrate confidence to evidence quality, not answer fluency. State the likely location only
 when a path, symbol, module, or configuration area was observed.
-Use only IDs from precollected evidence or tool `evidence_refs`. Copy kind, source and location
-exactly, and quote an exact observed excerpt. The submission tool rejects unobserved or altered
-evidence; fix the report and resubmit when validation fails. Evidence observed in earlier turns of
+Evidence is cited by reference: each item takes only `id` (a tool `evidence_refs` ID, or an
+`ev-user-*` ID from the `user_evidence` list in the instructions state block), `excerpt` (a verbatim
+substring of that observation or user message), and `supports`. Never fill in kind, source, or
+location — the system assembles them from the ledger. The submission tool rejects unknown, expired,
+or misquoted citations with an error code; fix and resubmit. Evidence observed in earlier turns of
 this conversation remains citable.
 Every positive candidate needs observed source or log evidence; knowledge and repository context
 alone cannot establish the current cause. This structural check does not prove the causal argument.

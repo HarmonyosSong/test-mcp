@@ -203,6 +203,9 @@ class HarmonyChatAgent:
         holder = ReportHolder()
         toolsets.append(build_report_submission_toolset(ledger, holder))
         locator_registry = CodeLocatorRegistry()
+        # 用户输入登记为可引用证据(ev-user-*,内容哈希确定性派生):报告引用用户
+        # 原话时用这些 ID,出处由账本组装,模型不得自造 ID。
+        user_evidence_refs = ledger.register_user_texts()
 
         request_metrics = CountModelRequests()
         agent = Agent(
@@ -216,6 +219,8 @@ class HarmonyChatAgent:
                     "repository": conversation.repository_name,
                     "branch": conversation.requested_ref,
                     "commit": conversation.resolved_commit,
+                    # 可引用的用户输入清单:报告 evidence 引用用户原话时用这里的 id。
+                    "user_evidence": user_evidence_refs,
                 },
                 ensure_ascii=False,
             ),

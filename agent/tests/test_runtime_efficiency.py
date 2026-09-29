@@ -25,8 +25,8 @@ from harmony_agent.agents import Completed, Failed, HarmonyChatAgent
 from harmony_agent.config import Settings
 from harmony_agent.domain import (
     Conversation,
-    DiagnosisReport,
-    Evidence,
+    DiagnosisReportDraft,
+    EvidenceCitation,
     EvidenceKind,
     RootCauseCandidate,
 )
@@ -36,6 +36,7 @@ from harmony_agent.runtimes.history import prepare_history
 from harmony_agent.runtimes.model_gateway import ModelGateway
 from harmony_agent.skill_runtime import SkillRegistry
 from harmony_agent.toolsets.failure_budget import BudgetedToolset, ToolFailureBudget
+from harmony_agent.toolsets.report_submission import SUBMIT_REPORT_TOOL
 from harmony_agent.toolsets.skill_loader import build_skill_toolset
 
 
@@ -168,9 +169,16 @@ async def test_empty_searches_stop_and_new_turn_has_fresh_budget() -> None:
     empty = AsyncMock(return_value=[])
     await budget.call("search_knowledge", {"query": "one"}, empty)
     await budget.call("search_knowledge", {"query": "two"}, empty)
-    with pytest.raises(ToolFailed, match="没有新增信息"):
+    # no_progress 打满不再全停:进入收尾阶段,普通工具被拒绝并引导 submit
+    with pytest.raises(ToolFailed, match="收尾"):
         await budget.call("search_knowledge", {"query": "three"}, empty)
     assert empty.await_count == 2
+    assert budget.finalize_only and not budget.exhausted
+    # submit 放行;新一轮预算全新
+    await budget.call(
+        SUBMIT_REPORT_TOOL, {"draft": {}}, AsyncMock(return_value={"status": "submitted"})
+    )
+    assert budget.submit_succeeded
     fresh = ToolFailureBudget()
     assert await fresh.call("search_knowledge", {"query": "one"}, empty) == []
 
@@ -205,12 +213,13 @@ async def test_identical_results_under_different_queries_count_as_no_progress() 
     operation = AsyncMock(return_value=[{"path": "a.ets", "line": 1, "excerpt": "same line"}])
     for query in ("first", "second", "third"):
         await budget.call("search_project_text", {"query": query}, operation)
-    assert budget.exhausted
+    # 相同结果集不算新信息:no_progress 打满进入收尾阶段(不再是全停)
     assert budget.no_progress == 2
+    assert budget.finalize_only and not budget.exhausted
 
 
 async def test_successful_calls_hit_total_budget_then_allow_final_answer() -> None:
-    budget = ToolFailureBudget(call_limit=2)
+    budget = ToolFailureBudget(call_limit=4)
     tools = FunctionToolset()
 
     @tools.tool_plain
@@ -236,19 +245,25 @@ async def test_successful_calls_hit_total_budget_then_allow_final_answer() -> No
     assert budget.executed == 2
 
 
-def observed_report(ledger: EvidenceLedger) -> DiagnosisReport:
+def observed_draft(ledger: EvidenceLedger) -> DiagnosisReportDraft:
     ledger.capture(
         "read_project_file",
         {"relative_path": "a.ets"},
         {"path": "a.ets", "start_line": 1, "content": "1: throw Error('boom');"},
     )
     evidence = next(iter(ledger.entries.values()))
-    return DiagnosisReport(
+    return DiagnosisReportDraft(
         verdict="probable",
         summary="Candidate",
         issue_category="runtime",
         confidence=0.6,
-        evidence=[evidence],
+        evidence=[
+            EvidenceCitation(
+                id=evidence.id,
+                excerpt="throw Error('boom')",
+                supports="抛出点观测",
+            )
+        ],
         root_cause_candidates=[
             RootCauseCandidate(
                 title="Candidate",
@@ -265,69 +280,103 @@ def observed_report(ledger: EvidenceLedger) -> DiagnosisReport:
     [
         ("id", "invented"),
         ("excerpt", "invented source"),
-        ("location", "other.ets:99"),
     ],
 )
 def test_runtime_rejects_forged_evidence(field, value) -> None:
     ledger = EvidenceLedger()
-    report = observed_report(ledger)
-    report.evidence[0] = report.evidence[0].model_copy(update={field: value})
+    draft = observed_draft(ledger)
+    draft.evidence[0] = draft.evidence[0].model_copy(update={field: value})
     with pytest.raises(ModelRetry):
-        ledger.validate(report)
+        ledger.resolve_draft(draft)
+
+
+def test_draft_forbids_provenance_fields() -> None:
+    """引用式草稿只收 id/excerpt/supports:模型填 kind/source/location 会被 schema
+    直接拒绝(extra=forbid)——出处由账本组装,模型无从伪造,也就不存在
+    「出处与账本不一致」这一类失败往返。"""
+    with pytest.raises(ValidationError):
+        DiagnosisReportDraft.model_validate(
+            {
+                "verdict": "probable",
+                "summary": "s",
+                "issue_category": "c",
+                "confidence": 0.5,
+                "evidence": [
+                    {"id": "ev-x", "excerpt": "y", "supports": "z", "location": "a.ets:1"}
+                ],
+            }
+        )
+
+
+def test_resolve_draft_assembles_provenance_from_ledger() -> None:
+    """解析成功路径:kind/source/location 由账本组装,摘录取模型提交的逐字子串。"""
+    ledger = EvidenceLedger()
+    draft = observed_draft(ledger)
+    report = ledger.resolve_draft(draft)
+    observed = next(iter(ledger.entries.values()))
+    item = report.evidence[0]
+    assert item.kind is EvidenceKind.SOURCE
+    assert item.source == observed.source and item.location == observed.location
+    assert item.excerpt == "throw Error('boom')"
+    assert report.verdict == "probable"
 
 
 def test_rejection_lists_observed_ids_for_self_correction() -> None:
     """拦回伪造 ID 时必须给出已观测 ID 清单:只说一句 "use runtime IDs" 会让长上下文
     里的模型凭格式编造(实测 e1 → ev-短hex → ev-伪16hex 三连编),清单让它可直接照抄。"""
     ledger = EvidenceLedger()
-    report = observed_report(ledger)
-    observed_id = report.evidence[0].id
-    report.evidence[0] = report.evidence[0].model_copy(update={"id": "e1"})
+    draft = observed_draft(ledger)
+    observed_id = draft.evidence[0].id
+    draft.evidence[0] = draft.evidence[0].model_copy(update={"id": "e1"})
     with pytest.raises(ModelRetry, match=observed_id):
-        ledger.validate(report)
+        ledger.resolve_draft(draft)
 
 
 def test_user_evidence_must_quote_actual_user_words() -> None:
-    """kind=user 证据不进观测账本(提交时才有 ID),核的是摘录必须为用户原话——
-    既放行合法的现象登记,也防止编造"用户没说过的话"撑现象。"""
+    """用户引用走 register_user_texts 登记(ev-user-*,内容哈希):摘录必须逐字摘自
+    该条用户消息;解析成功时出处由账本组装为 kind=user。"""
     ledger = EvidenceLedger(input_texts=["家长反馈可选择PDF文件但点击完成后返回首页"])
-    report = observed_report(ledger)
-    report.evidence.append(
-        Evidence(
-            kind=EvidenceKind.USER,
-            source="user-message",
+    refs = ledger.register_user_texts()
+    draft = observed_draft(ledger)
+    draft.evidence.append(
+        EvidenceCitation(
+            id=refs[0]["id"],
             excerpt="可选择PDF文件但点击完成后返回首页",
             supports="用户报告的原始现象",
         )
     )
-    ledger.validate(report)
-    report.evidence[-1] = report.evidence[-1].model_copy(update={"excerpt": "用户说闪退黑屏"})
-    with pytest.raises(ModelRetry, match="verbatim"):
-        ledger.validate(report)
+    report = ledger.resolve_draft(draft)
+    user_item = report.evidence[-1]
+    assert user_item.kind is EvidenceKind.USER
+    assert user_item.source == "user-message"
+    draft.evidence[-1] = draft.evidence[-1].model_copy(update={"excerpt": "用户说闪退黑屏"})
+    with pytest.raises(ModelRetry, match="excerpt_mismatch"):
+        ledger.resolve_draft(draft)
 
 
 def test_user_only_positive_candidate_rejected_without_keyerror() -> None:
-    """正向候选只挂 USER 证据时必须明确拒绝(ModelRetry),不能因 USER 不进账本
-    而在 entries[eid] 处裸抛 KeyError。"""
+    """正向候选只挂用户引用时必须明确拒绝(positive_without_observed_source):
+    用户引用只支撑现象存在,不计入机制类根因的观测要求。"""
     ledger = EvidenceLedger(input_texts=["家长反馈可选择PDF文件但点击完成后返回首页"])
-    report = observed_report(ledger).model_dump()
-    user_evidence = Evidence(
-        kind=EvidenceKind.USER,
-        source="user-message",
-        excerpt="可选择PDF文件但点击完成后返回首页",
-        supports="用户报告的原始现象",
+    uid = ledger.register_user_texts()[0]["id"]
+    draft = DiagnosisReportDraft(
+        verdict="probable",
+        summary="s",
+        issue_category="c",
+        confidence=0.5,
+        evidence=[
+            EvidenceCitation(
+                id=uid,
+                excerpt="可选择PDF文件但点击完成后返回首页",
+                supports="用户报告的原始现象",
+            )
+        ],
+        root_cause_candidates=[
+            RootCauseCandidate(title="t", explanation="e", confidence=0.5, evidence_ids=[uid])
+        ],
     )
-    report["evidence"] = [user_evidence.model_dump(mode="json")]
-    report["root_cause_candidates"] = [
-        {
-            "title": "only user",
-            "explanation": "x",
-            "confidence": 0.5,
-            "evidence_ids": [user_evidence.id],
-        }
-    ]
-    with pytest.raises(ModelRetry, match="observed source or log"):
-        ledger.validate(DiagnosisReport.model_validate(report))
+    with pytest.raises(ModelRetry, match="positive_without_observed_source"):
+        ledger.resolve_draft(draft)
 
 
 def test_trim_annotates_truncation_with_original_size() -> None:
@@ -352,8 +401,8 @@ def test_trim_annotates_truncation_with_original_size() -> None:
 
 
 def test_every_positive_candidate_needs_valid_evidence() -> None:
-    report = observed_report(EvidenceLedger()).model_dump()
-    report["root_cause_candidates"].append(
+    draft = observed_draft(EvidenceLedger()).model_dump()
+    draft["root_cause_candidates"].append(
         {
             "title": "unsupported",
             "explanation": "guess",
@@ -362,7 +411,7 @@ def test_every_positive_candidate_needs_valid_evidence() -> None:
         }
     )
     with pytest.raises(ValidationError, match="every candidate"):
-        DiagnosisReport.model_validate(report)
+        DiagnosisReportDraft.model_validate(draft)
 
 
 def test_knowledge_and_fabricated_parser_inputs_do_not_register_evidence() -> None:
@@ -447,30 +496,18 @@ def test_evicted_id_reports_expired_and_unknown_lists_available() -> None:
         {"path": "b.ets", "start_line": 1, "content": "new"},
     )
     assert old_id not in round2.entries and old_id in round2._evicted
-    report = DiagnosisReport(
-        verdict="probable",
+    draft = DiagnosisReportDraft(
+        verdict="insufficient_evidence",
         summary="s",
         issue_category="c",
         confidence=0.5,
-        evidence=[
-            Evidence(
-                id=old_id,
-                kind=EvidenceKind.SOURCE,
-                source="mcp:read_project_file",
-                location="a.ets:1",
-                excerpt="old",
-                supports="x",
-            )
-        ],
-        root_cause_candidates=[
-            RootCauseCandidate(title="t", explanation="e", confidence=0.5, evidence_ids=[old_id])
-        ],
+        evidence=[EvidenceCitation(id=old_id, excerpt="old", supports="x")],
     )
-    with pytest.raises(ModelRetry, match="expired"):
-        round2.validate(report)
-    report.evidence[0] = report.evidence[0].model_copy(update={"id": "ev-forged"})
-    with pytest.raises(ModelRetry, match="unknown"):
-        round2.validate(report)
+    with pytest.raises(ModelRetry, match="evidence_expired"):
+        round2.resolve_draft(draft)
+    draft.evidence[0] = draft.evidence[0].model_copy(update={"id": "ev-forged"})
+    with pytest.raises(ModelRetry, match="unknown_evidence_id"):
+        round2.resolve_draft(draft)
 
 
 def test_rereading_identical_content_restores_evicted_id() -> None:
@@ -542,13 +579,17 @@ async def test_chat_records_usage_and_validates_report(
             return
         payload = messages[-1].parts[0].content
         reference = payload["evidence_refs"][0]
-        report = DiagnosisReport(
+        draft = DiagnosisReportDraft(
             verdict="probable",
             summary="Throwing branch",
             issue_category="runtime",
             confidence=0.6,
             evidence=[
-                Evidence(**reference, excerpt=payload["result"]["content"], supports="Throw")
+                EvidenceCitation(
+                    id=reference["id"],
+                    excerpt=payload["result"]["content"],
+                    supports="Throw",
+                )
             ],
             root_cause_candidates=[
                 RootCauseCandidate(
@@ -562,7 +603,7 @@ async def test_chat_records_usage_and_validates_report(
         yield {
             0: DeltaToolCall(
                 name="submit_diagnosis_report",
-                json_args=json.dumps({"report": report.model_dump(mode="json")}),
+                json_args=json.dumps({"draft": draft.model_dump(mode="json")}),
             )
         }
 
@@ -603,32 +644,29 @@ async def test_chat_rejects_forged_report_evidence(tmp_path: Path, monkeypatch) 
         nonlocal calls
         calls += 1
         if calls == 1:
-            forged_evidence = Evidence(
-                kind=EvidenceKind.SOURCE,
-                source="mcp:read_project_file",
-                location="a.ets:1",
-                excerpt="never observed",
-                supports="forged",
-            )
-            forged = DiagnosisReport(
+            # 伪造一个从未被观测的引用 ID:出处字段已无法填写(extra=forbid),
+            # 账本按 unknown_evidence_id 拦回并附可用清单。
+            forged = DiagnosisReportDraft(
                 verdict="probable",
                 summary="forged",
                 issue_category="runtime",
                 confidence=0.9,
-                evidence=[forged_evidence],
+                evidence=[
+                    EvidenceCitation(id="ev-forged", excerpt="never observed", supports="forged")
+                ],
                 root_cause_candidates=[
                     RootCauseCandidate(
                         title="forged",
                         explanation="forged",
                         confidence=0.9,
-                        evidence_ids=[forged_evidence.id],
+                        evidence_ids=["ev-forged"],
                     )
                 ],
             )
             yield {
                 0: DeltaToolCall(
                     name="submit_diagnosis_report",
-                    json_args=json.dumps({"report": forged.model_dump(mode="json")}),
+                    json_args=json.dumps({"draft": forged.model_dump(mode="json")}),
                 )
             }
             return
@@ -645,3 +683,68 @@ async def test_chat_rejects_forged_report_evidence(tmp_path: Path, monkeypatch) 
     completed = next(event for event in events if isinstance(event, Completed))
     assert completed.report is None
     assert "缺口" in completed.text
+
+
+async def test_no_progress_enters_finalize_only_instead_of_full_stop() -> None:
+    """no_progress 打满不再全停:进入收尾阶段,普通工具被拒绝并引导 submit,
+    submit 放行且成功后收尾。避免实测中「停止后拒绝 4 次」的纯消耗往返。"""
+    budget = ToolFailureBudget(call_limit=30, no_progress_limit=2)
+
+    async def empty_search() -> dict:
+        return {"hits": []}
+
+    async def submit_ok() -> dict:
+        return {"status": "submitted"}
+
+    await budget.call("search_project_text", {"query": "a"}, empty_search)
+    assert not budget.finalize_only
+    await budget.call("search_project_text", {"query": "b"}, empty_search)
+    assert budget.finalize_only
+    assert not budget.exhausted  # 不是停止,是收尾
+    with pytest.raises(ToolFailed, match="收尾"):
+        await budget.call("read_project_file", {"relative_path": "a.ets"}, empty_search)
+    await budget.call(SUBMIT_REPORT_TOOL, {"draft": {}}, submit_ok)
+    assert budget.submit_succeeded
+    assert "已提交" in (budget.stop_reason or "")
+    assert budget.exhausted
+
+
+async def test_finalize_submit_attempts_exhaustion_stops_turn() -> None:
+    """收尾阶段 submit 连续失败达到 finalize_attempt_limit 后全停:给修正机会,
+    但不允许无限提交。注意每次提交的 draft 不同(修正后重提),签名不同才真实执行。"""
+    budget = ToolFailureBudget(call_limit=30, no_progress_limit=1)
+
+    async def empty_search() -> dict:
+        return {"hits": []}
+
+    async def bad_submit() -> dict:
+        raise ToolFailed("报告校验未通过:unknown_evidence_id")
+
+    await budget.call("search_project_text", {"query": "a"}, empty_search)
+    assert budget.finalize_only
+    for attempt in range(3):
+        with pytest.raises(ToolFailed, match="unknown_evidence_id"):
+            await budget.call(SUBMIT_REPORT_TOOL, {"draft": {"attempt": attempt}}, bad_submit)
+    assert "收尾提交尝试已耗尽" in (budget.stop_reason or "")
+    assert budget.exhausted
+
+
+async def test_call_margin_enters_finalize_to_reserve_budget_for_submit() -> None:
+    """调用余量进入 finalize_reserved 范围即进入收尾:把最后的调用保留给报告提交,
+    防止预算耗尽瞬间连 submit 都发不出。"""
+    budget = ToolFailureBudget(call_limit=5, finalize_reserved=2)
+
+    async def ok() -> dict:
+        return {"content": "x"}
+
+    async def submit_ok() -> dict:
+        return {"status": "submitted"}
+
+    for i in range(3):
+        await budget.call("read_project_file", {"relative_path": f"{i}.ets"}, ok)
+    assert budget.calls == 3
+    assert budget.finalize_only
+    with pytest.raises(ToolFailed, match="收尾"):
+        await budget.call("read_project_file", {"relative_path": "d.ets"}, ok)
+    await budget.call(SUBMIT_REPORT_TOOL, {"draft": {}}, submit_ok)
+    assert budget.submit_succeeded

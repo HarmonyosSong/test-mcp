@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic_ai.exceptions import ModelRetry
 
-from ..domain import DiagnosisReport, Evidence, EvidenceKind, Verdict
+from ..domain import DiagnosisReport, DiagnosisReportDraft, Evidence, EvidenceKind, Verdict
 
 
 @dataclass
@@ -34,6 +34,19 @@ class EvidenceLedger:
     _current_turn_bytes: int = 0
     _evicted: dict[str, str] = field(default_factory=dict)
     restored_count: int = 0
+    # 用户输入引用:id → 原文。不进观测账本;每轮由 register_user_texts 从
+    # input_texts 确定性重建(内容哈希 ID 跨轮稳定),无需持久化。
+    user_refs: dict[str, str] = field(default_factory=dict)
+
+    def register_user_texts(self) -> list[dict[str, str]]:
+        """把用户输入登记为可引用证据,返回有界清单(id + 预览)供注入 instructions。"""
+        refs: list[dict[str, str]] = []
+        for text in self.input_texts:
+            digest = hashlib.sha256(text.encode()).hexdigest()[:12]
+            uid = f"ev-user-{digest}"
+            self.user_refs.setdefault(uid, text)
+            refs.append({"id": uid, "preview": text[:40]})
+        return refs
 
     def add(self, evidence: Evidence, text: str | None = None) -> bool:
         """登记观测;返回 False 表示达到当前轮硬上限、拒绝接纳(不得引用该 ID)。"""
@@ -165,52 +178,87 @@ class EvidenceLedger:
             }
         return {"evidence_refs": references, "result": result}
 
-    def validate(self, report: DiagnosisReport) -> DiagnosisReport:
-        for evidence in report.evidence:
-            if evidence.kind is EvidenceKind.USER:
-                # 用户证据不进观测账本(提交时才有 ID),核的是内容:摘录必须是用户
-                # 真实说过的原话,防止编造"用户没说过的话"来撑现象。
-                if not evidence.excerpt.strip() or not any(
-                    evidence.excerpt in text for text in self.input_texts
-                ):
+    def resolve_draft(self, draft: DiagnosisReportDraft) -> DiagnosisReport:
+        """把引用式草稿解析为完整报告:逐条核对摘录,出处字段由账本组装。
+
+        错误码(模型可据此行动):
+        - unknown_evidence_id:ID 从未被观测(附可用清单)
+        - evidence_expired:ID 曾被观测但已淘汰(附原位置;重读同内容恢复同 ID)
+        - excerpt_mismatch:摘录不是观测原文/用户消息的逐字子串
+        - positive_without_observed_source:正向候选缺源码/日志观测
+        """
+        resolved: list[Evidence] = []
+        for citation in draft.evidence:
+            user_text = self.user_refs.get(citation.id)
+            if user_text is not None:
+                if citation.excerpt.strip() not in user_text:
                     raise ModelRetry(
-                        f"Evidence {evidence.id} cites the user, but the excerpt does not "
-                        "appear in any user message. Quote the user's words verbatim."
+                        f"excerpt_mismatch: {citation.id} 是用户输入引用,"
+                        "摘录必须逐字摘自该条用户消息。"
                     )
+                resolved.append(
+                    Evidence(
+                        id=citation.id,
+                        kind=EvidenceKind.USER,
+                        source="user-message",
+                        location=user_text[:30] + ("…" if len(user_text) > 30 else ""),
+                        excerpt=citation.excerpt,
+                        supports=citation.supports,
+                    )
+                )
                 continue
-            observed = self.entries.get(evidence.id)
+            observed = self.entries.get(citation.id)
             if observed is None:
-                # 细分「过期」与「从未观测」:过期给原观测位置,重读同内容即可
-                # 恢复同一 ID(内容哈希);未知 ID 附可用清单,让模型直接照抄。
-                if evidence.id in self._evicted:
+                if citation.id in self._evicted:
                     raise ModelRetry(
-                        f"Evidence {evidence.id} expired: evicted from ledger; originally "
-                        f"observed at {self._evicted[evidence.id]}. Re-read that exact "
-                        "location; identical content restores the same ID."
+                        f"evidence_expired: {citation.id} 的观测已被淘汰;原位置 "
+                        f"{self._evicted[citation.id]},重读该位置同内容可恢复同一 ID。"
                     )
                 listing = ", ".join(
                     f"{eid}({item.location})" for eid, item in list(self.entries.items())[-20:]
                 )
                 raise ModelRetry(
-                    f"Evidence {evidence.id} unknown: no such observation. "
-                    f"Observed evidence IDs (latest 20): {listing or 'none'}. "
-                    "Copy an ID from this list, or make a new observation."
+                    f"unknown_evidence_id: {citation.id} 从未被观测。"
+                    f"可用 ID(最近 20):{listing or '无'}。请照抄清单 ID 或重新观测。"
                 )
-            if any(
-                getattr(evidence, key) != getattr(observed, key)
-                for key in ("kind", "source", "location")
-            ):
-                raise ModelRetry(f"Evidence {evidence.id} provenance differs from the observation.")
-            if not evidence.excerpt.strip() or evidence.excerpt not in self.texts[evidence.id]:
-                raise ModelRetry(f"Evidence {evidence.id} must quote an exact observed excerpt.")
+            if citation.excerpt.strip() not in self.texts[citation.id]:
+                raise ModelRetry(
+                    f"excerpt_mismatch: {citation.id} 的摘录必须是观测原文的逐字子串。"
+                )
+            resolved.append(
+                Evidence(
+                    id=observed.id,
+                    kind=observed.kind,
+                    source=observed.source,
+                    location=observed.location,
+                    excerpt=citation.excerpt,
+                    supports=citation.supports,
+                )
+            )
+        report = DiagnosisReport(
+            verdict=draft.verdict,
+            severity=draft.severity,
+            summary=draft.summary,
+            issue_category=draft.issue_category,
+            likely_location=draft.likely_location,
+            root_cause_candidates=draft.root_cause_candidates,
+            evidence=resolved,
+            ruled_out=draft.ruled_out,
+            missing_information=draft.missing_information,
+            checks_performed=draft.checks_performed,
+            limitations=draft.limitations,
+            confidence=draft.confidence,
+        )
         if report.verdict in {Verdict.LOCATED, Verdict.PROBABLE}:
+            resolved_by_id = {item.id: item for item in resolved}
             for candidate in report.root_cause_candidates:
-                # USER 证据不在观测账本:只能登记现象,不计入正向候选支撑。
-                # 必须用 entries.get——直接索引会对 USER ID 裸抛 KeyError。
+                # 用户引用只支撑现象存在,不计入正向候选的观测要求。
                 if not any(
-                    (obs := self.entries.get(eid)) is not None
-                    and obs.kind in {EvidenceKind.SOURCE, EvidenceKind.LOG}
+                    resolved_by_id[eid].kind in {EvidenceKind.SOURCE, EvidenceKind.LOG}
                     for eid in candidate.evidence_ids
                 ):
-                    raise ModelRetry("A positive candidate needs observed source or log evidence.")
+                    raise ModelRetry(
+                        "positive_without_observed_source: 正向根因候选必须引用至少一条"
+                        "源码或日志观测;用户输入引用只能支撑现象存在。"
+                    )
         return report

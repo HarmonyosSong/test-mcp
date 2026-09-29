@@ -318,7 +318,9 @@ async def test_no_progress_and_reuse_share_budget():
     upstream = AsyncMock(return_value={"result": {"status": "not_found"}})
     await budget.call("resolve_external_knowledge", {"query": "a"}, upstream)
     await budget.call("resolve_external_knowledge", {"query": "a"}, upstream)
-    assert budget.executed == 1 and budget.reused == 1 and budget.exhausted
+    # 复用与无进展共享计数:no_progress 打满进入收尾阶段(非全停),submit 仍放行
+    assert budget.executed == 1 and budget.reused == 1
+    assert budget.finalize_only and not budget.exhausted
     upstream.assert_awaited_once()
 
 

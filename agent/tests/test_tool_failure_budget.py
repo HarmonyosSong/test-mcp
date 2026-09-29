@@ -35,7 +35,8 @@ async def test_search_result_set_without_new_paths_counts_no_progress() -> None:
     assert budget.no_progress == 1
     await call("文件选择器", (("b.ets", 20),))  # 还是已知集合的子集
     assert budget.no_progress == 2
-    assert budget.stop_reason == "连续工具调用没有新增信息"
+    # no_progress 打满不再全停:进入收尾阶段,只放行 submit
+    assert budget.finalize_only and budget.stop_reason is None
 
     budget2 = ToolFailureBudget(call_limit=20, no_progress_limit=2)
     call2 = lambda query, rows: budget2.call(  # noqa: E731
