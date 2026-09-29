@@ -189,7 +189,7 @@ def test_trim_messages_state_truncates_tool_returns() -> None:
     trimmed = trim_messages_state(state, max_messages=40, max_chars=5_000)
     content = trimmed[1]["parts"][0]["content"]
     assert len(content) < 5_000
-    assert content.endswith("...(已截断)")
+    assert content.endswith("...(已截断,原文共 20000 字符,仅存前 4000)")
 
 
 class StubRepositoryManager:

@@ -37,6 +37,7 @@ from ..toolsets.chat_workspace import ChatDeps
 from ..toolsets.dev_knowledge import DEV_KNOWLEDGE_TOOLS, build_dev_knowledge_toolset
 from ..toolsets.failure_budget import BudgetedToolset, ToolFailureBudget
 from ..toolsets.knowledge_mcp import build_knowledge_toolset
+from ..toolsets.locator_guidance import CodeLocatorRegistry, LocatorGuidanceToolset
 from ..toolsets.report_submission import (
     SUBMIT_REPORT_TOOL,
     ReportHolder,
@@ -201,6 +202,7 @@ class HarmonyChatAgent:
         )
         holder = ReportHolder()
         toolsets.append(build_report_submission_toolset(ledger, holder))
+        locator_registry = CodeLocatorRegistry()
 
         request_metrics = CountModelRequests()
         agent = Agent(
@@ -217,7 +219,14 @@ class HarmonyChatAgent:
                 },
                 ensure_ascii=False,
             ),
-            toolsets=[BudgetedToolset(toolset, budget, ledger=ledger) for toolset in toolsets],
+            toolsets=[
+                BudgetedToolset(
+                    LocatorGuidanceToolset(toolset, registry=locator_registry),
+                    budget,
+                    ledger=ledger,
+                )
+                for toolset in toolsets
+            ],
             capabilities=[ProcessHistory(prepare_history), request_metrics],
             defer_model_check=True,
             retries=2,

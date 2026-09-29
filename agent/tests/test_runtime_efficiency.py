@@ -276,6 +276,81 @@ def test_runtime_rejects_forged_evidence(field, value) -> None:
         ledger.validate(report)
 
 
+def test_rejection_lists_observed_ids_for_self_correction() -> None:
+    """拦回伪造 ID 时必须给出已观测 ID 清单:只说一句 "use runtime IDs" 会让长上下文
+    里的模型凭格式编造(实测 e1 → ev-短hex → ev-伪16hex 三连编),清单让它可直接照抄。"""
+    ledger = EvidenceLedger()
+    report = observed_report(ledger)
+    observed_id = report.evidence[0].id
+    report.evidence[0] = report.evidence[0].model_copy(update={"id": "e1"})
+    with pytest.raises(ModelRetry, match=observed_id):
+        ledger.validate(report)
+
+
+def test_user_evidence_must_quote_actual_user_words() -> None:
+    """kind=user 证据不进观测账本(提交时才有 ID),核的是摘录必须为用户原话——
+    既放行合法的现象登记,也防止编造"用户没说过的话"撑现象。"""
+    ledger = EvidenceLedger(input_texts=["家长反馈可选择PDF文件但点击完成后返回首页"])
+    report = observed_report(ledger)
+    report.evidence.append(
+        Evidence(
+            kind=EvidenceKind.USER,
+            source="user-message",
+            excerpt="可选择PDF文件但点击完成后返回首页",
+            supports="用户报告的原始现象",
+        )
+    )
+    ledger.validate(report)
+    report.evidence[-1] = report.evidence[-1].model_copy(update={"excerpt": "用户说闪退黑屏"})
+    with pytest.raises(ModelRetry, match="verbatim"):
+        ledger.validate(report)
+
+
+def test_user_only_positive_candidate_rejected_without_keyerror() -> None:
+    """正向候选只挂 USER 证据时必须明确拒绝(ModelRetry),不能因 USER 不进账本
+    而在 entries[eid] 处裸抛 KeyError。"""
+    ledger = EvidenceLedger(input_texts=["家长反馈可选择PDF文件但点击完成后返回首页"])
+    report = observed_report(ledger).model_dump()
+    user_evidence = Evidence(
+        kind=EvidenceKind.USER,
+        source="user-message",
+        excerpt="可选择PDF文件但点击完成后返回首页",
+        supports="用户报告的原始现象",
+    )
+    report["evidence"] = [user_evidence.model_dump(mode="json")]
+    report["root_cause_candidates"] = [
+        {
+            "title": "only user",
+            "explanation": "x",
+            "confidence": 0.5,
+            "evidence_ids": [user_evidence.id],
+        }
+    ]
+    with pytest.raises(ModelRetry, match="observed source or log"):
+        ledger.validate(DiagnosisReport.model_validate(report))
+
+
+def test_trim_annotates_truncation_with_original_size() -> None:
+    """截断必须附原始长度:模型要知道丢了多少,才能判断是否需要按行号精准补读,
+    而不是把残文当全部(实测因此反复通读文件头)。"""
+    state = [
+        {"role": "user", "parts": [{"part_kind": "user-prompt", "content": "q"}]},
+        {
+            "role": "model",
+            "parts": [
+                {
+                    "part_kind": "tool-return",
+                    "tool_name": "read_project_file",
+                    "content": "x" * 9000,
+                }
+            ],
+        },
+    ]
+    trimmed = trim_messages_state(state)
+    content = trimmed[1]["parts"][0]["content"]
+    assert "原文共 9000 字符" in content
+
+
 def test_every_positive_candidate_needs_valid_evidence() -> None:
     report = observed_report(EvidenceLedger()).model_dump()
     report["root_cause_candidates"].append(
@@ -329,6 +404,8 @@ def test_pasted_log_registers_with_line_locations() -> None:
 
 
 def test_ledger_snapshot_round_trip_and_cap() -> None:
+    """新生命周期(替代旧的单纯 FIFO):本轮观测受保护不被历史容量淘汰;
+    跨轮 restore 后保护集清空,旧观测才可淘汰,淘汰者留墓碑。"""
     ledger = EvidenceLedger(max_entries=2)
     for index in range(3):
         ledger.capture(
@@ -336,11 +413,101 @@ def test_ledger_snapshot_round_trip_and_cap() -> None:
             {"relative_path": f"{index}.ets"},
             {"path": f"{index}.ets", "start_line": 1, "content": f"line {index}"},
         )
-    assert len(ledger.entries) == 2
+    # 本轮三条全受保护:不淘汰
+    assert len(ledger.entries) == 3
     restored = EvidenceLedger.restore(ledger.snapshot(), input_texts=[])
     assert set(restored.entries) == set(ledger.entries)
     assert restored.texts == ledger.texts
+    # 新一轮:新增观测触发淘汰,最旧的历史先进先出
+    restored.capture(
+        "read_project_file",
+        {"relative_path": "3.ets"},
+        {"path": "3.ets", "start_line": 1, "content": "line 3"},
+    )
+    assert len(restored.entries) == 2
+    locations = [entry.location for entry in restored.entries.values()]
+    assert "0.ets:1" not in locations and "1.ets:1" not in locations
+    assert len(restored._evicted) == 2  # 淘汰者留墓碑
     assert EvidenceLedger.restore({"entries": [{"broken": True}]}, []).entries == {}
+
+
+def test_evicted_id_reports_expired_and_unknown_lists_available() -> None:
+    """过期 ID 报 expired + 原观测位置;从未出现的 ID 报 unknown + 可用清单。"""
+    ledger = EvidenceLedger(max_entries=1)
+    ledger.capture(
+        "read_project_file",
+        {"relative_path": "a.ets"},
+        {"path": "a.ets", "start_line": 1, "content": "old"},
+    )
+    old_id = next(iter(ledger.entries))
+    round2 = EvidenceLedger.restore(ledger.snapshot(), input_texts=[])
+    round2.capture(
+        "read_project_file",
+        {"relative_path": "b.ets"},
+        {"path": "b.ets", "start_line": 1, "content": "new"},
+    )
+    assert old_id not in round2.entries and old_id in round2._evicted
+    report = DiagnosisReport(
+        verdict="probable",
+        summary="s",
+        issue_category="c",
+        confidence=0.5,
+        evidence=[
+            Evidence(
+                id=old_id,
+                kind=EvidenceKind.SOURCE,
+                source="mcp:read_project_file",
+                location="a.ets:1",
+                excerpt="old",
+                supports="x",
+            )
+        ],
+        root_cause_candidates=[
+            RootCauseCandidate(title="t", explanation="e", confidence=0.5, evidence_ids=[old_id])
+        ],
+    )
+    with pytest.raises(ModelRetry, match="expired"):
+        round2.validate(report)
+    report.evidence[0] = report.evidence[0].model_copy(update={"id": "ev-forged"})
+    with pytest.raises(ModelRetry, match="unknown"):
+        round2.validate(report)
+
+
+def test_rereading_identical_content_restores_evicted_id() -> None:
+    """ID 是内容哈希:重读同内容恢复同一 ID,墓碑消除并计 restored。"""
+    ledger = EvidenceLedger(max_entries=1)
+    args = {"relative_path": "a.ets"}
+    row = {"path": "a.ets", "start_line": 1, "content": "same"}
+    ledger.capture("read_project_file", args, row)
+    old_id = next(iter(ledger.entries))
+    round2 = EvidenceLedger.restore(ledger.snapshot(), input_texts=[])
+    round2.capture(
+        "read_project_file",
+        {"relative_path": "b.ets"},
+        {"path": "b.ets", "start_line": 1, "content": "other"},
+    )
+    assert old_id in round2._evicted
+    round2.capture("read_project_file", args, row)
+    assert old_id in round2.entries and old_id not in round2._evicted
+    assert round2.restored_count == 1
+
+
+def test_current_turn_capacity_rejects_admission_without_ids() -> None:
+    """达到当前轮硬上限时拒绝接纳:该行不产出可引用 ID,并明确标记容量已满。"""
+    ledger = EvidenceLedger(max_current_turn=1)
+    first = ledger.capture(
+        "read_project_file",
+        {"relative_path": "a.ets"},
+        {"path": "a.ets", "start_line": 1, "content": "one"},
+    )
+    assert len(first["evidence_refs"]) == 1
+    second = ledger.capture(
+        "read_project_file",
+        {"relative_path": "b.ets"},
+        {"path": "b.ets", "start_line": 1, "content": "two"},
+    )
+    assert second["observation_capacity_reached"] is True
+    assert second["evidence_refs"] == []
 
 
 @pytest.mark.parametrize("model_fails", [False, True])

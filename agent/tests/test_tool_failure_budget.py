@@ -18,6 +18,126 @@ from pydantic_ai.toolsets import FunctionToolset
 from harmony_agent.toolsets.failure_budget import BudgetedToolset, ToolFailureBudget
 
 
+async def test_search_result_set_without_new_paths_counts_no_progress() -> None:
+    """换词搜索若返回的还是同一批文件,计入 no_progress——有结果不等于有进展。
+    (实测 wrongBook/cuotiben 式换词绕圈;只认空结果与重复指纹的旧判定抓不到。)"""
+
+    async def _hits(*rows: tuple[str, int]) -> list[dict]:
+        return [{"path": path, "line": line, "excerpt": "x"} for path, line in rows]
+
+    budget = ToolFailureBudget(call_limit=20, no_progress_limit=2)
+    call = lambda query, rows: budget.call(  # noqa: E731
+        "search_project_text", {"query": query}, lambda: _hits(*rows)
+    )
+    await call("onShowFileSelector", (("a.ets", 10), ("b.ets", 20)))
+    assert budget.no_progress == 0
+    await call("acceptType", (("a.ets", 10), ("b.ets", 20)))  # 换词但同一批文件同一批行
+    assert budget.no_progress == 1
+    await call("文件选择器", (("b.ets", 20),))  # 还是已知集合的子集
+    assert budget.no_progress == 2
+    assert budget.stop_reason == "连续工具调用没有新增信息"
+
+    budget2 = ToolFailureBudget(call_limit=20, no_progress_limit=2)
+    call2 = lambda query, rows: budget2.call(  # noqa: E731
+        "search_project_text", {"query": query}, lambda: _hits(*rows)
+    )
+    await call2("a", (("a.ets", 1),))
+    await call2("b", (("a.ets", 1),))
+    assert budget2.no_progress == 1
+    await call2("c", (("c.ets", 1),))  # 带来新路径 → 重置
+    assert budget2.no_progress == 0
+    # 同文件不同行号:新信息,不误计(同文件 140 行后新命中 317 行算新观测)
+    await call2("d", (("a.ets", 1),))
+    assert budget2.no_progress == 1
+    await call2("e", (("a.ets", 317),))
+    assert budget2.no_progress == 0
+
+
+async def test_stale_cache_falls_back_to_reread_and_restores_evidence() -> None:
+    """复用前核对证据依赖:引用已被淘汰时缓存失效,允许一次真实重读;
+    同内容恢复同一内容哈希 ID,计 evidence_restored 且不计无进展。"""
+    from harmony_agent.runtimes.evidence import EvidenceLedger
+
+    ledger = EvidenceLedger(max_entries=1)
+    budget = ToolFailureBudget(call_limit=20, no_progress_limit=2)
+    row = {"path": "a.ets", "start_line": 1, "content": "same line"}
+
+    async def op() -> dict:
+        return ledger.capture("read_project_file", {"relative_path": "a.ets"}, row)
+
+    first = await budget.call("read_project_file", {"relative_path": "a.ets"}, op, ledger=ledger)
+    old_id = first["evidence_refs"][0]["id"]
+    # 模拟跨轮:保护集清空,另一条观测把旧者挤出账本
+    ledger._current_turn_ids.clear()
+    ledger.capture(
+        "read_project_file",
+        {"relative_path": "b.ets"},
+        {"path": "b.ets", "start_line": 1, "content": "other"},
+    )
+    assert old_id not in ledger.entries
+    again = await budget.call("read_project_file", {"relative_path": "a.ets"}, op, ledger=ledger)
+    assert "reused_from_call" not in again
+    assert again["evidence_refs"][0]["id"] == old_id
+    assert budget.restored == 1
+    assert budget.no_progress == 0
+
+
+async def test_default_arguments_normalize_to_same_signature() -> None:
+    """省略默认参数与显式传同值是同一次调用:第二次直接复用,不重复执行。"""
+    budget = ToolFailureBudget()
+    op = AsyncMock(return_value=[{"path": "a.ets", "line": 1, "excerpt": "x"}])
+    await budget.call("search_project_text", {"query": "q"}, op)
+    again = await budget.call(
+        "search_project_text", {"query": "q", "file_glob": "**/*", "limit": 50}, op
+    )
+    assert again["reused_from_call"] == 1
+    assert op.await_count == 1
+
+
+async def test_rebinding_same_commit_keeps_cache_but_new_commit_invalidates() -> None:
+    """重绑同一 commit 幂等不清缓存;换 commit(或提取不到)才失效。"""
+    budget = ToolFailureBudget()
+    op = AsyncMock(return_value="source")
+    bound = "已绑定仓库 xesapp @ main(commit 6919c027f1d8),只读快照已就绪"
+    bind = AsyncMock(return_value=bound)
+    await budget.call("bind_repository", {"name_or_url": "xesapp"}, bind)
+    await budget.call("read_project_file", {"path": "a.ets"}, op)
+    # 同 commit 幂等重绑:缓存保留
+    await budget.call("bind_repository", {"name_or_url": "xesapp"}, bind)
+    again = await budget.call("read_project_file", {"path": "a.ets"}, op)
+    assert "reused_from_call" in again
+    assert op.await_count == 1
+    # 换 commit:缓存失效,真实重读
+    bind2 = AsyncMock(return_value=bound.replace("6919c027f1d8", "abcdef123456"))
+    await budget.call("bind_repository", {"name_or_url": "xesapp"}, bind2)
+    third = await budget.call("read_project_file", {"path": "a.ets"}, op)
+    assert "reused_from_call" not in third
+    assert op.await_count == 2
+
+
+async def test_reused_result_carries_evidence_refs() -> None:
+    """复用返回必须带回首次结果的 evidence_refs:只说"请复用已有结果"时模型拿不回
+    证据 ID,只能换参数重读来恢复(实测因此烧掉收尾预算并触发停止)。"""
+    budget = ToolFailureBudget(call_limit=10)
+    refs = [
+        {
+            "id": "ev-0123456789abcdef",
+            "kind": "source",
+            "source": "mcp:read_project_file",
+            "location": "a.ets:1",
+        }
+    ]
+
+    async def op() -> dict:
+        return {"evidence_refs": refs, "result": {"content": "1: code"}}
+
+    first = await budget.call("read_project_file", {"relative_path": "a.ets"}, op)
+    assert first["evidence_refs"] == refs
+    again = await budget.call("read_project_file", {"relative_path": "a.ets"}, op)
+    assert again["reused_from_call"] == 1
+    assert again["evidence_refs"] == refs
+
+
 async def test_failed_signature_is_canonical_and_other_parameters_can_recover() -> None:
     budget = ToolFailureBudget()
     broken = AsyncMock(side_effect=OSError("missing"))

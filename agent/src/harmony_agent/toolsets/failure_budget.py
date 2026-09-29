@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from time import perf_counter
@@ -32,6 +33,45 @@ REUSABLE_TOOLS = frozenset(
         "read_external_knowledge",
     }
 )
+
+# 搜索类工具:结果路径集无新增时计入 no_progress(见下方判定注释)。
+_SEARCH_TOOLS = frozenset({"search_project_text", "search_knowledge"})
+
+# 工具默认参数表:签名规范化时先补默认再序列化,避免「省略默认 limit」与
+# 「显式传同值」被当成两次不同调用。与 chat_workspace.py / mcp_server 的
+# 工具定义同步维护——工具默认值变更时必须更新本表。
+_DEFAULT_ARGS: dict[str, dict[str, Any]] = {
+    "search_project_text": {"file_glob": "**/*", "limit": 50},
+    "read_project_file": {"start_line": 1, "end_line": 200},
+    "list_project_files": {"pattern": "**/*", "limit": 100},
+    "search_knowledge": {"scope": "symptom", "limit": 3},
+    "get_knowledge_entry": {"offset": 0, "limit": 2000},
+}
+
+# bind_repository 返回文本里的 commit 段("…(commit 6919c027f1d8),…")。
+_BIND_COMMIT = re.compile(r"commit ([0-9a-f]{7,40})")
+
+
+def _canonical_signature(name: str, arguments: dict[str, Any]) -> str:
+    merged = {**_DEFAULT_ARGS.get(name, {}), **arguments}
+    return json.dumps([name, merged], sort_keys=True, ensure_ascii=False, default=str)
+
+
+@dataclass(slots=True)
+class CachedCall:
+    """成功调用的缓存记录:不止调用序号,还带快照代次与证据引用。
+
+    snapshot_generation 用于「换快照才失效」:重绑同一 commit 是幂等的,
+    不该清掉仍有效的缓存;换了 commit 后旧缓存不得再复用。
+    evidence_refs 让复用响应能带回当时的证据 ID;复用前会核对这些 ID
+    仍在本轮账本里,已淘汰则缓存失效、允许一次真实重读(重读同内容
+    会得到同一内容哈希 ID,观测随之恢复)。
+    """
+
+    call_index: int
+    snapshot_generation: int
+    evidence_refs: list[dict[str, Any]] = field(default_factory=list)
+
 
 # 预算将尽阈值:剩余调用不超过此值时,在成功结果里附收尾提示。
 # 让模型主动收敛(停止开新线索、用已有证据写结论),而不是耗尽瞬间被
@@ -71,9 +111,18 @@ class ToolFailureBudget:
     reused: int = 0
     result_chars: int = 0
     no_progress: int = 0
-    _successes: dict[str, int] = field(default_factory=dict)
     _result_signatures: set[str] = field(default_factory=set)
     _failed_signatures: dict[str, bool] = field(default_factory=dict)
+    # 成功调用缓存(签名 → 记录);替代旧的「序号 + 载荷」两张表。
+    _cache: dict[str, CachedCall] = field(default_factory=dict)
+    # 每个搜索工具累计见过的「文件:行」集合,用于「换词绕圈」判定。
+    _search_seen: dict[str, set[str]] = field(default_factory=dict)
+    # 快照代次与当前绑定 commit:bind_repository 成功且 commit 变化时递增,
+    # 轮内重绑同一 commit 是幂等操作,不清缓存。
+    _snapshot_generation: int = 0
+    _bound_commit: str | None = None
+    # 缓存失效后真实重读并成功恢复观测的次数(指标 evidence_restored)。
+    restored: int = 0
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def __post_init__(self) -> None:
@@ -100,6 +149,7 @@ class ToolFailureBudget:
             "executed": self.executed,
             "reused": self.reused,
             "result_chars": self.result_chars,
+            "evidence_restored": self.restored,
             "stop_reason": self.stop_reason,
         }
 
@@ -109,28 +159,43 @@ class ToolFailureBudget:
         arguments: dict[str, Any],
         operation: Callable[[], Awaitable[Any]],
         events: list[ToolEvent] | None = None,
+        ledger: EvidenceLedger | None = None,
     ) -> Any:
         # Serialize dispatch so concurrent identical calls cannot race the failure record,
         # and a batch cannot execute beyond the remaining budget.
         async with self._lock:
             started = perf_counter()
-            signature = json.dumps(
-                [name, arguments], sort_keys=True, ensure_ascii=False, default=str
-            )
+            signature = _canonical_signature(name, arguments)
             failure: str | None = None
             if self.exhausted:
                 raise ToolFailed(f"{self.stop_reason}；按已有证据报告缺口或追问。")
             self.calls += 1
-            if name in REUSABLE_TOOLS and signature in self._successes:
-                self.reused += 1
-                self.no_progress += 1
-                result = {
-                    "reused_from_call": self._successes[signature],
-                    "message": "相同调用已完成，请复用本轮已有结果；没有重新执行。",
-                }
-                self.result_chars += len(json.dumps(result, ensure_ascii=False))
-                self._audit(events, name, started, None)
-                return result
+            if name in REUSABLE_TOOLS and signature in self._cache:
+                cached = self._cache[signature]
+                # 复用前核对依赖:快照代次须一致,且当时的证据引用仍在账本里。
+                # 证据已被淘汰时缓存失效、落到下方真实重读——不能既阻止重读
+                # 又要求引用失效 ID;重读同内容得到同一内容哈希 ID,观测即恢复。
+                stale_evidence = (
+                    ledger is not None
+                    and cached.evidence_refs
+                    and any(ref.get("id") not in ledger.entries for ref in cached.evidence_refs)
+                )
+                if cached.snapshot_generation == self._snapshot_generation and not stale_evidence:
+                    self.reused += 1
+                    self.no_progress += 1
+                    result = {
+                        "reused_from_call": cached.call_index,
+                        "message": "相同调用已完成，请复用本轮已有结果；没有重新执行。",
+                    }
+                    if cached.evidence_refs:
+                        result["evidence_refs"] = cached.evidence_refs
+                    self.result_chars += len(json.dumps(result, ensure_ascii=False))
+                    self._audit(events, name, started, None)
+                    return result
+                del self._cache[signature]
+                cache_invalidated = True
+            else:
+                cache_invalidated = False
             if signature in self._failed_signatures and not self._failed_signatures[signature]:
                 failure = "同一调用签名已失败，禁止原样重试；请更换有依据的参数或报告证据缺口。"
                 self.failures.append(f"{name}: {failure}")
@@ -138,6 +203,7 @@ class ToolFailureBudget:
                 retried = signature in self._failed_signatures
                 try:
                     self.executed += 1
+                    restored_before = ledger.restored_count if ledger is not None else 0
                     result = await operation()
                 except Exception as exc:
                     self._failed_signatures[signature] = not retried and _transient(exc)
@@ -173,18 +239,63 @@ class ToolFailureBudget:
                                 "needs_clarification",
                                 "response_too_large",
                             }
-                    self.no_progress = (
-                        self.no_progress + 1
-                        if empty or fingerprint in self._result_signatures
-                        else 0
-                    )
+                    # 搜索结果集无新增同样是无进展:「换个词再搜」若返回的还是同一批
+                    # 文件,等于没有新信息(实测 wrongBook/cuotiben 式换词绕圈;只认
+                    # 空结果与重复指纹的旧判定永远抓不到有结果但不相关的搜索)。
+                    search_stale = False
+                    if name in _SEARCH_TOOLS and isinstance(observed_result, list):
+                        # 信息单位是「文件+行」,不是文件:同文件 140 行外新命中 317 行
+                        # 算新信息;知识检索无行号,退回条目名。
+                        observed_keys = {
+                            (
+                                f"{row['path']}:{row.get('line', '')}"
+                                if row.get("path")
+                                else str(row.get("name") or "")
+                            )
+                            for row in observed_result
+                            if isinstance(row, dict)
+                        } - {""}
+                        if observed_keys:
+                            seen = self._search_seen.setdefault(name, set())
+                            if seen and not (observed_keys - seen):
+                                search_stale = True
+                            seen.update(observed_keys)
+                    # 判定必须先于 fingerprint 登记:重复指纹指「与历史结果相同」,
+                    # 登记后再查会永远命中自己。
+                    if empty or fingerprint in self._result_signatures or search_stale:
+                        self.no_progress += 1
+                    else:
+                        self.no_progress = 0
                     self._result_signatures.add(fingerprint)
                     if name in REUSABLE_TOOLS:
-                        self._successes[signature] = self.calls
+                        refs = result.get("evidence_refs") if isinstance(result, dict) else None
+                        self._cache[signature] = CachedCall(
+                            call_index=self.calls,
+                            snapshot_generation=self._snapshot_generation,
+                            evidence_refs=list(refs) if refs else [],
+                        )
                     if name == "bind_repository":
-                        self._successes.clear()
-                        self._result_signatures.clear()
-                        self._failed_signatures.clear()
+                        # 只有确实换了快照才失效缓存与进度状态;重绑同一 commit
+                        # 是幂等的,有效缓存保留。提取不到 commit 时无法证明
+                        # 同快照,按保守策略视为已切换。
+                        matched = _BIND_COMMIT.search(result) if isinstance(result, str) else None
+                        commit = matched.group(1) if matched else None
+                        if commit is None or commit != self._bound_commit:
+                            self._cache.clear()
+                            self._result_signatures.clear()
+                            self._failed_signatures.clear()
+                            self._search_seen.clear()
+                            self.no_progress = 0
+                            self._snapshot_generation += 1
+                            self._bound_commit = commit
+                    # 缓存失效触发的真实重读若恢复了被淘汰的观测(同内容同 ID),
+                    # 这是一次有效修复而非绕圈:单独计量,不计入无进展。
+                    if (
+                        cache_invalidated
+                        and ledger is not None
+                        and ledger.restored_count > restored_before
+                    ):
+                        self.restored += 1
                         self.no_progress = 0
                     # 将尽预警:在真实执行成功的结果上附收尾提示(fingerprint/empty
                     # 判定均在附加前完成,不受影响;复用返回保持固定格式不附加)。
@@ -243,4 +354,5 @@ class BudgetedToolset(WrapperToolset[Any]):
             tool_args,
             execute,
             self.events,
+            ledger=self.ledger,
         )

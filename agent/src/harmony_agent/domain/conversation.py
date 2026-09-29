@@ -213,7 +213,12 @@ def trim_messages_state(
                 else json.dumps(content, ensure_ascii=False, default=str)
             )
             if len(text) > tool_return_max_chars:
-                part["content"] = text[:tool_return_max_chars] + "\n...(已截断)"
+                # 截断必须附原始长度:模型要知道丢了多少,才能判断是否需要按行号
+                # 精准补读,而不是把残文当全部(实测因此反复通读文件头)。
+                part["content"] = (
+                    text[:tool_return_max_chars]
+                    + f"\n...(已截断,原文共 {len(text)} 字符,仅存前 {tool_return_max_chars})"
+                )
 
     def over_budget() -> bool:
         return len(trimmed) > max_messages or _state_size(trimmed) > max_chars
