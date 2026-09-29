@@ -120,6 +120,20 @@ class ToolFailureBudget:
     # submit 尝试计数与成功标记:收尾阶段的生命周期。
     submit_attempts: int = 0
     submit_succeeded: bool = False
+    # —— 指标口径 v2 新增计数(方案 §8 E)——
+    # 预算前置拦截:到达预算但先于 accepted 计数就被拒绝(exhausted 拦截、
+    # finalize_only 收尾拦截)。这是 blocked 的「预算包装器部分」;参数校验失败、
+    # 工具不可用等根本到不了预算的拒绝由 chat 事件层归集,两边相加才是完整
+    # blocked——只统计本字段会漏掉 pydantic-ai 层的拒绝。
+    blocked_before_budget: int = 0
+    # submit 真实执行(进入 operation)但校验不过抛 ToolFailed 的次数。
+    # 重签名拦截/收尾拦截的 submit 不在此列——它们根本没有执行。
+    report_validation_failures: int = 0
+    # 「无新增观测」调用的单调累计:复用、空结果、重复指纹、搜索无新行都计入。
+    # 与 no_progress 不同,它不随新进展清零,用于衡量一整轮的绕圈总量。
+    no_new_observation: int = 0
+    # 源码分页截断计数:分页协议(方案 B 阶段)落地后由读取路径写入,本轮仅占位。
+    source_pages_truncated: int = 0
     _result_signatures: set[str] = field(default_factory=set)
     _failed_signatures: dict[str, bool] = field(default_factory=dict)
     # 成功调用缓存(签名 → 记录);替代旧的「序号 + 载荷」两张表。
@@ -132,6 +146,9 @@ class ToolFailureBudget:
     _bound_commit: str | None = None
     # 缓存失效后真实重读并成功恢复观测的次数(指标 evidence_restored)。
     restored: int = 0
+    # 到达过预算入口的 tool_call_id:chat 事件层据此把「预算前拒绝」
+    # (未见于此集合的失败结果)与「预算内失败/拒绝」分开,避免同一拒绝双计。
+    _seen_call_ids: set[str] = field(default_factory=set)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def __post_init__(self) -> None:
@@ -168,14 +185,30 @@ class ToolFailureBudget:
 
     def metrics(self) -> dict[str, Any]:
         return {
+            # 口径版本:v2 起新增 attempted/accepted/blocked 等独立计数(方案 §8 E);
+            # attempted 与完整 blocked 由 chat 事件层在汇总时补入(见 agents/chat.py)。
+            "schema_version": 2,
+            # 旧口径保留用于历史对比:calls == accepted(预算入口计数)。
             "calls": self.calls,
+            "accepted": self.calls,
             "executed": self.executed,
             "reused": self.reused,
+            # 预算包装器的前置拦截(耗尽/收尾);事件层汇总时叠加预算前拒绝。
+            "blocked": self.blocked_before_budget,
             "result_chars": self.result_chars,
             "evidence_restored": self.restored,
+            # 旧键保留;report_attempts 与之同值,是 v2 口径名。
             "submit_attempts": self.submit_attempts,
+            "report_attempts": self.submit_attempts,
+            "report_validation_failures": self.report_validation_failures,
+            "no_new_observation_calls": self.no_new_observation,
+            "source_pages_truncated": self.source_pages_truncated,
             "stop_reason": self.stop_reason,
         }
+
+    def has_seen(self, tool_call_id: str) -> bool:
+        """该 tool_call_id 是否到达过预算入口(含被前置拦截的)。"""
+        return tool_call_id in self._seen_call_ids
 
     async def call(
         self,
@@ -184,14 +217,22 @@ class ToolFailureBudget:
         operation: Callable[[], Awaitable[Any]],
         events: list[ToolEvent] | None = None,
         ledger: EvidenceLedger | None = None,
+        tool_call_id: str | None = None,
     ) -> Any:
         # Serialize dispatch so concurrent identical calls cannot race the failure record,
         # and a batch cannot execute beyond the remaining budget.
         async with self._lock:
             started = perf_counter()
+            # 预算入口登记:无论后续是被拦截还是放行,到达过预算的事实先记下,
+            # 供事件层区分「预算前拒绝」与「预算内拒绝」(见 metrics 口径注释)。
+            if tool_call_id is not None:
+                self._seen_call_ids.add(tool_call_id)
             signature = _canonical_signature(name, arguments)
             failure: str | None = None
             if self.exhausted:
+                # 停止后的拒绝:计 blocked(预算侧),不计 accepted——保持
+                # calls 旧口径兼容(旧实现里这类拒绝也不进 calls)。
+                self.blocked_before_budget += 1
                 raise ToolFailed(f"{self.stop_reason}；按已有证据报告缺口或追问。")
             # 收尾阶段拦截(判定基于已消耗计数,先于本次计数):非 submit 调用一律
             # 拒绝并引导收尾——被拒绝的调用没有执行,不占调用预算,只计入失败预算
@@ -201,6 +242,7 @@ class ToolFailureBudget:
                     "已进入收尾阶段:停止开启新线索,请基于已有证据调用 "
                     f"{SUBMIT_REPORT_TOOL} 提交结论;证据不足就在报告中如实说明缺口。"
                 )
+                self.blocked_before_budget += 1
                 self.failures.append(f"{name}: {failure}")
                 self._audit(events, name, started, failure)
                 raise ToolFailed(failure)
@@ -218,6 +260,7 @@ class ToolFailureBudget:
                 if cached.snapshot_generation == self._snapshot_generation and not stale_evidence:
                     self.reused += 1
                     self.no_progress += 1
+                    self.no_new_observation += 1
                     result = {
                         "reused_from_call": cached.call_index,
                         "message": "相同调用已完成，请复用本轮已有结果；没有重新执行。",
@@ -243,6 +286,10 @@ class ToolFailureBudget:
                     restored_before = ledger.restored_count if ledger is not None else 0
                     result = await operation()
                 except Exception as exc:
+                    # submit 真实执行后抛 ToolFailed 即校验未通过(重签名拦截的
+                    # submit 走不到这里);其他工具的执行失败不在此指标内。
+                    if name == SUBMIT_REPORT_TOOL and isinstance(exc, ToolFailed):
+                        self.report_validation_failures += 1
                     self._failed_signatures[signature] = not retried and _transient(exc)
                     reason = f"{type(exc).__name__}: {exc}"
                     self.failures.append(f"{name}: {reason}")
@@ -303,6 +350,7 @@ class ToolFailureBudget:
                     # 登记后再查会永远命中自己。
                     if empty or fingerprint in self._result_signatures or search_stale:
                         self.no_progress += 1
+                        self.no_new_observation += 1
                     else:
                         self.no_progress = 0
                     self._result_signatures.add(fingerprint)
@@ -400,4 +448,5 @@ class BudgetedToolset(WrapperToolset[Any]):
             execute,
             self.events,
             ledger=self.ledger,
+            tool_call_id=ctx.tool_call_id,
         )

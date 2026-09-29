@@ -34,6 +34,9 @@ class EvidenceLedger:
     _current_turn_bytes: int = 0
     _evicted: dict[str, str] = field(default_factory=dict)
     restored_count: int = 0
+    # 命中墓碑(resolve_draft 抛 evidence_expired)的次数:每轮指标,
+    # 与 restored_count 一样不随快照持久化,restore 后从 0 起计。
+    expired_count: int = 0
     # 用户输入引用:id → 原文。不进观测账本;每轮由 register_user_texts 从
     # input_texts 确定性重建(内容哈希 ID 跨轮稳定),无需持久化。
     user_refs: dict[str, str] = field(default_factory=dict)
@@ -210,6 +213,7 @@ class EvidenceLedger:
             observed = self.entries.get(citation.id)
             if observed is None:
                 if citation.id in self._evicted:
+                    self.expired_count += 1
                     raise ModelRetry(
                         f"evidence_expired: {citation.id} 的观测已被淘汰;原位置 "
                         f"{self._evicted[citation.id]},重读该位置同内容可恢复同一 ID。"
