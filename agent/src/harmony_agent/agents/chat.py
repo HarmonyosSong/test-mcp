@@ -113,6 +113,38 @@ def _render_result(content: Any) -> str:
         return _truncate(str(content))
 
 
+def merge_tool_usage(
+    budget: ToolFailureBudget,
+    *,
+    attempted: int,
+    rejected_before_budget: int,
+    pending: int,
+    evidence_expired: int,
+    model_requests: int,
+    elapsed_ms: int,
+) -> dict[str, int | str | None]:
+    """汇总一轮的工具指标(方案 §8 E 口径)。
+
+    blocked 在统一事件层归集,由两个互斥来源相加:
+    - 预算包装器的前置拦截(budget 自计的 blocked:耗尽/收尾拦截);
+    - 预算前拒绝(rejected_before_budget:参数校验失败、工具不可用等
+      从未到达预算的调用,事件层按「失败结果且预算未曾见过」识别)。
+    同一调用只落其中一边,不双计。稳定终态(pending=0)满足
+    attempted = accepted + blocked;取消/异常留下在途请求时计入 pending,
+    一般恒等式为 attempted = accepted + blocked + pending,不硬套终态等式。
+    """
+    merged = budget.metrics()
+    merged["blocked"] += rejected_before_budget
+    return {
+        **merged,
+        "attempted": attempted,
+        "pending": pending,
+        "evidence_expired": evidence_expired,
+        "model_requests": model_requests,
+        "elapsed_ms": elapsed_ms,
+    }
+
+
 class HarmonyChatAgent:
     """多轮聊天 Agent：逐字流式输出 + 工具/Skill 调用步骤可见。"""
 
@@ -240,6 +272,10 @@ class HarmonyChatAgent:
 
         collected: list[str] = []
         inflight: dict[str, tuple[ToolEvent, float]] = {}
+        # 指标口径 v2(方案 §8 E):事件入口计 attempted;预算前拒绝(从未到达
+        # 预算的失败,如参数校验失败/工具不可用)由事件层归集为 rejected_before_budget。
+        attempted_calls = 0
+        rejected_before_budget = 0
         final_text = ""
         all_messages: list[Any] = []
         input_tokens: int | None = None
@@ -247,11 +283,15 @@ class HarmonyChatAgent:
         run_started = perf_counter()
 
         def metrics() -> dict[str, int | str | None]:
-            return {
-                **budget.metrics(),
-                "model_requests": request_metrics.requests,
-                "elapsed_ms": round((perf_counter() - run_started) * 1000),
-            }
+            return merge_tool_usage(
+                budget,
+                attempted=attempted_calls,
+                rejected_before_budget=rejected_before_budget,
+                pending=len(inflight),
+                evidence_expired=ledger.expired_count,
+                model_requests=request_metrics.requests,
+                elapsed_ms=round((perf_counter() - run_started) * 1000),
+            )
 
         try:
             async with agent.run_stream_events(
@@ -262,6 +302,8 @@ class HarmonyChatAgent:
                         collected.append(event.delta.content_delta)
                         yield TextDelta(event.delta.content_delta)
                     elif isinstance(event, FunctionToolCallEvent):
+                        # 模型发起的每个工具调用都计 attempted(含将被拒绝的)。
+                        attempted_calls += 1
                         started = perf_counter()
                         tool_event = ToolEvent(
                             tool=event.part.tool_name,
@@ -276,6 +318,11 @@ class HarmonyChatAgent:
                         failed = isinstance(part, RetryPromptPart) or (
                             getattr(part, "outcome", None) == "failed"
                         )
+                        if failed and not budget.has_seen(part.tool_call_id):
+                            # 失败结果且预算从未见过该调用:参数校验失败或工具
+                            # 不可用,在 pydantic-ai 层就被拒(预算内失败/拦截
+                            # 已由预算侧计数,这里不能再计,否则双计)。
+                            rejected_before_budget += 1
                         entry = inflight.pop(part.tool_call_id, None)
                         duration_ms = (
                             max(1, round((perf_counter() - entry[1]) * 1_000)) if entry else None
