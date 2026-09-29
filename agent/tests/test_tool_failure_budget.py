@@ -89,10 +89,51 @@ async def test_default_arguments_normalize_to_same_signature() -> None:
     op = AsyncMock(return_value=[{"path": "a.ets", "line": 1, "excerpt": "x"}])
     await budget.call("search_project_text", {"query": "q"}, op)
     again = await budget.call(
-        "search_project_text", {"query": "q", "file_glob": "**/*", "limit": 50}, op
+        "search_project_text", {"query": "q", "file_glob": "**/*", "limit": 10, "cursor": None}, op
     )
     assert again["reused_from_call"] == 1
     assert op.await_count == 1
+
+
+async def _search_page(*rows: tuple[str, int]) -> dict:
+    """SearchPage 形态的最小桩:命中在 matches 字段。"""
+    return {
+        "query": "q",
+        "file_glob": "**/*",
+        "matches": [{"path": path, "line": line, "excerpt": "x"} for path, line in rows],
+        "truncated": False,
+        "scanned_files": 3,
+        "scan_limit_reached": False,
+        "next_cursor": None,
+    }
+
+
+async def test_search_page_stale_detection_uses_matches() -> None:
+    """SearchPage 形态:换词返回同一批「文件:行」计无进展;同文件新行号算新信息。"""
+    budget = ToolFailureBudget(call_limit=20, no_progress_limit=2)
+    await budget.call(
+        "search_project_text", {"query": "a"}, lambda: _search_page(("a.ets", 1), ("b.ets", 2))
+    )
+    assert budget.no_progress == 0
+    # 换词但同一批命中:无进展
+    await budget.call(
+        "search_project_text", {"query": "b"}, lambda: _search_page(("a.ets", 1), ("b.ets", 2))
+    )
+    assert budget.no_progress == 1
+    # 同文件不同行号:新信息,重置
+    await budget.call("search_project_text", {"query": "c"}, lambda: _search_page(("a.ets", 317)))
+    assert budget.no_progress == 0
+
+
+async def test_empty_search_page_counts_no_progress() -> None:
+    """空 SearchPage(无命中交付)与旧版空列表同义:计无进展,不重置计数。"""
+    budget = ToolFailureBudget(call_limit=20, no_progress_limit=3)
+    await budget.call("search_project_text", {"query": "a"}, lambda: _search_page(("a.ets", 1)))
+    assert budget.no_progress == 0
+    await budget.call("search_project_text", {"query": "b"}, lambda: _search_page())
+    assert budget.no_progress == 1
+    await budget.call("search_project_text", {"query": "c"}, lambda: _search_page())
+    assert budget.no_progress == 2
 
 
 async def test_rebinding_same_commit_keeps_cache_but_new_commit_invalidates() -> None:

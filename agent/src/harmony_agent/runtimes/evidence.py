@@ -139,6 +139,14 @@ class EvidenceLedger:
             }
         if name == "parse_hilog" and isinstance(result, dict):
             rows = result.get("error_lines", [])
+        elif (
+            name == "search_project_text"
+            and isinstance(result, dict)
+            and isinstance(result.get("matches"), list)
+        ):
+            # SearchPage:只有实际交付的命中正文进账本;
+            # locator_hint/next_cursor 等元数据不是观测,不登记。
+            rows = result["matches"]
         else:
             rows = result if isinstance(result, list) else [result]
         references: list[dict] = []

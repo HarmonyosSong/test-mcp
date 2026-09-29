@@ -118,20 +118,32 @@ class LocatorGuidanceToolset(WrapperToolset[Any]):
         if name == "read_project_file":
             path = tool_args.get("relative_path")
             if isinstance(path, str):
-                # end_line 缺省时与 chat_workspace 的工具默认(200)保持一致。
-                start = int(tool_args.get("start_line") or 1)
-                end = int(tool_args.get("end_line") or start + 199)
-                self.registry.mark_read(path, start, end)
+                # 按实际交付的行区间标记已读:字符预算可能只交付了请求范围的前半段,
+                # 用请求区间会误消未交付部分的锚点提示;空交付(如超长单行被跳过)不记。
+                page = result if isinstance(result, dict) else None
+                if (
+                    page is not None
+                    and isinstance(page.get("start_line"), int)
+                    and isinstance(page.get("end_line"), int)
+                ):
+                    if page["end_line"] >= page["start_line"]:
+                        self.registry.mark_read(path, page["start_line"], page["end_line"])
+                else:
+                    # 旧版结果无分页字段:退回按请求参数记(end_line 缺省与工具默认一致)
+                    start = int(tool_args.get("start_line") or 1)
+                    end = int(tool_args.get("end_line") or start + 199)
+                    self.registry.mark_read(path, start, end)
             return result
         if name == "search_project_text":
             hint = self.registry.hint_for(str(tool_args.get("query", "")))
             if hint is None:
                 return result
-            # 列表结果追加一项而不是包层:外层 evidence ledger 依赖列表结构
-            # 逐行登记观测,包层会让证据丢失;hint 行无 content/excerpt,不会被误登记。
-            if isinstance(result, list):
-                return [*result, {"locator_hint": hint}]
+            # hint 是 SearchPage 上的独立元数据字段,不再混入 matches:
+            # 证据账本只登记实际交付的命中正文,提示不是观测。
+            # 旧版 list 返回(测试替身等)包成页形字典,保持 matches 语义一致。
             if isinstance(result, dict):
                 return {**result, "locator_hint": hint}
+            if isinstance(result, list):
+                return {"matches": result, "locator_hint": hint}
             return {"result": result, "locator_hint": hint}
         return result

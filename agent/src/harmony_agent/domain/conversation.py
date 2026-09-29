@@ -172,6 +172,49 @@ COMPLETE_TOOL_RETURNS = {
     "read_external_knowledge",
 }
 
+# 有界页协议(方案 §5):读取层已按字符预算/结果上限裁剪的源码页(FileContent)与
+# 搜索页(SearchPage)通过 schema + 大小复核后完整保留,runtime 不再二次截坏。
+# 判定只看结构与大小,不给任意同名工具结果无条件免裁剪。
+_FILE_PAGE_KEYS = {
+    "path",
+    "start_line",
+    "end_line",
+    "requested_end_line",
+    "total_lines",
+    "content",
+    "truncated",
+    "next_line",
+    "has_more_in_file",
+    "truncation_reason",
+}
+_SEARCH_PAGE_KEYS = {
+    "query",
+    "file_glob",
+    "matches",
+    "truncated",
+    "scanned_files",
+    "scan_limit_reached",
+    "next_cursor",
+}
+# 协议硬上限 12000 字符正文 + 行号/字段/引用元数据开销;超过即视为不受控返回。
+_BOUNDED_PAGE_MAX_CHARS = 16_000
+
+
+def _is_bounded_page(content: object) -> bool:
+    """识别通过 schema 与大小检查的源码页/搜索页(含证据账本包装)。
+
+    包装形态 {"evidence_refs": [...], "result": <页>} 时引用元数据随页一起
+    按总大小复核;结构缺字段或超过协议硬上限的返回不豁免裁剪。
+    """
+    if not isinstance(content, dict):
+        return False
+    payload = content
+    if isinstance(content.get("result"), dict) and isinstance(content.get("evidence_refs"), list):
+        payload = content["result"]
+    if not (payload.keys() >= _FILE_PAGE_KEYS or payload.keys() >= _SEARCH_PAGE_KEYS):
+        return False
+    return len(json.dumps(content, ensure_ascii=False, default=str)) <= _BOUNDED_PAGE_MAX_CHARS
+
 
 def _turn_excerpt(messages: list[dict]) -> str:
     excerpts: list[str] = []
@@ -207,6 +250,9 @@ def trim_messages_state(
             if part.get("tool_name") in COMPLETE_TOOL_RETURNS:
                 continue
             content = part.get("content")
+            if _is_bounded_page(content):
+                # 有界页在读取层已按协议限制大小,完整保留,不二次截坏
+                continue
             text = (
                 content
                 if isinstance(content, str)
@@ -215,10 +261,20 @@ def trim_messages_state(
             if len(text) > tool_return_max_chars:
                 # 截断必须附原始长度:模型要知道丢了多少,才能判断是否需要按行号
                 # 精准补读,而不是把残文当全部(实测因此反复通读文件头)。
-                part["content"] = (
-                    text[:tool_return_max_chars]
-                    + f"\n...(已截断,原文共 {len(text)} 字符,仅存前 {tool_return_max_chars})"
-                )
+                if isinstance(content, str):
+                    part["content"] = (
+                        text[:tool_return_max_chars]
+                        + f"\n...(已截断,原文共 {len(text)} 字符,仅存前 {tool_return_max_chars})"
+                    )
+                else:
+                    # 旧版/不受控的结构化返回:不再把 JSON 字符串拦腰切成无效结构,
+                    # 改为有效的结构化说明 + 可读摘录。
+                    part["content"] = {
+                        "runtime_truncated": True,
+                        "original_chars": len(text),
+                        "content_preview": text[:tool_return_max_chars],
+                        "note": f"已截断,原文共 {len(text)} 字符,仅存前 {tool_return_max_chars}",
+                    }
 
     def over_budget() -> bool:
         return len(trimmed) > max_messages or _state_size(trimmed) > max_chars

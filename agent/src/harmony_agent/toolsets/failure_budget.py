@@ -42,8 +42,8 @@ _SEARCH_TOOLS = frozenset({"search_project_text", "search_knowledge"})
 # 「显式传同值」被当成两次不同调用。与 chat_workspace.py / mcp_server 的
 # 工具定义同步维护——工具默认值变更时必须更新本表。
 _DEFAULT_ARGS: dict[str, dict[str, Any]] = {
-    "search_project_text": {"file_glob": "**/*", "limit": 50},
-    "read_project_file": {"start_line": 1, "end_line": 200},
+    "search_project_text": {"file_glob": "**/*", "limit": 10, "cursor": None},
+    "read_project_file": {"start_line": 1, "end_line": 200, "max_chars": 6000},
     "list_project_files": {"pattern": "**/*", "limit": 100},
     "search_knowledge": {"scope": "symptom", "limit": 3},
     "get_knowledge_entry": {"offset": 0, "limit": 2000},
@@ -282,23 +282,32 @@ class ToolFailureBudget:
                     # 文件,等于没有新信息(实测 wrongBook/cuotiben 式换词绕圈;只认
                     # 空结果与重复指纹的旧判定永远抓不到有结果但不相关的搜索)。
                     search_stale = False
-                    if name in _SEARCH_TOOLS and isinstance(observed_result, list):
-                        # 信息单位是「文件+行」,不是文件:同文件 140 行外新命中 317 行
-                        # 算新信息;知识检索无行号,退回条目名。
-                        observed_keys = {
-                            (
-                                f"{row['path']}:{row.get('line', '')}"
-                                if row.get("path")
-                                else str(row.get("name") or "")
-                            )
-                            for row in observed_result
-                            if isinstance(row, dict)
-                        } - {""}
-                        if observed_keys:
-                            seen = self._search_seen.setdefault(name, set())
-                            if seen and not (observed_keys - seen):
-                                search_stale = True
-                            seen.update(observed_keys)
+                    if name in _SEARCH_TOOLS:
+                        # SearchPage 的命中在 matches 字段;旧版 list 形态继续识别。
+                        rows = observed_result
+                        if isinstance(observed_result, dict) and isinstance(
+                            observed_result.get("matches"), list
+                        ):
+                            rows = observed_result["matches"]
+                            # 空搜索页与旧版空列表同义:无命中交付,计无进展
+                            search_stale = not rows
+                        if isinstance(rows, list):
+                            # 信息单位是「文件+行」,不是文件:同文件 140 行外新命中 317 行
+                            # 算新信息;知识检索无行号,退回条目名。
+                            observed_keys = {
+                                (
+                                    f"{row['path']}:{row.get('line', '')}"
+                                    if row.get("path")
+                                    else str(row.get("name") or "")
+                                )
+                                for row in rows
+                                if isinstance(row, dict)
+                            } - {""}
+                            if observed_keys:
+                                seen = self._search_seen.setdefault(name, set())
+                                if seen and not (observed_keys - seen):
+                                    search_stale = True
+                                seen.update(observed_keys)
                     # 判定必须先于 fingerprint 登记:重复指纹指「与历史结果相同」,
                     # 登记后再查会永远命中自己。
                     if empty or fingerprint in self._result_signatures or search_stale:
