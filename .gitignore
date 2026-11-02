@@ -13,3 +13,6 @@ coverage/
 playwright-report/
 test-results/
 
+# Generated knowledge-audit result dumps; keep reproducible cases and reports tracked.
+experiments/knowledge_audit/results-*.json
+

@@ -29,8 +29,8 @@ def select_previews(
 ) -> list[tuple[str, str]]:
     """从最终 hits 与其一跳直接事实引用中确定预览,返回 [(规范 ID, 入选原因)]。
 
-    槽位一固定 hits[0](保持首个候选可解释);槽位二优先给剩余 hits 中分数最高的
-    事实,没有则给过门槛引用中相关性最高的事实;剩余槽位先放剩余直接 hits,
+    槽位一固定 hits[0](保持首个候选可解释);槽位二由剩余直接事实与过门槛引用
+    按相关性竞争,同分优先直接事实;剩余槽位先放剩余直接 hits,
     再放过门槛引用;仍有余位才用 hits[0] 的一跳引用补足,标 reference_only——
     纯图关系只说明「可以查看」,不声称直接命中(文档 8.1)。
     """
@@ -65,13 +65,18 @@ def select_previews(
             reference_scores[ref] = score_reference(entry)
     eligible_refs = {ref: score for ref, score in reference_scores.items() if score >= threshold}
 
-    # 槽位二:剩余 hits 中分数最高的事实;没有则给相关性最高的过门槛引用事实。
+    # 槽位二:直接事实与合格的一跳引用按同一相关性口径竞争。
+    # 更相关的引用不能因一个较弱事实恰好进入 hits 就被遮蔽;同分优先直接命中。
     fact_hits = [hit for hit in remaining if hit.kind is not KnowledgeKind.SYMPTOM]
-    if fact_hits:
-        put(fact_hits[0].name, DIRECT_HIT)
-    elif eligible_refs:
-        best_ref = min(eligible_refs, key=lambda name: (-eligible_refs[name], name))
-        put(best_ref, RELEVANT_REFERENCE)
+    fact_candidates = [
+        (-hit.score, 0, index, hit.name, DIRECT_HIT) for index, hit in enumerate(fact_hits)
+    ]
+    fact_candidates.extend(
+        (-score, 1, 0, name, RELEVANT_REFERENCE) for name, score in eligible_refs.items()
+    )
+    if fact_candidates:
+        _, _, _, name, reason = min(fact_candidates)
+        put(name, reason)
 
     # 槽位三:先剩余直接 hits,再过门槛引用(相关性降序、ID 字典序)。
     for hit in remaining:

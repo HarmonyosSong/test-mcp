@@ -13,7 +13,7 @@ from .concepts import CONCEPTS
 from .loader import KnowledgeBase
 from .preview_selection import select_previews
 from .query_log import QueryLogger, logged_tool, resolve_query_log_path, summarize_hits
-from .retrieval_rules import rules_digest as v2_rules_digest
+from .retrieval_rules import external_subject_hint, rules_digest as v2_rules_digest
 from .retrieval_v2 import (
     RETRIEVAL_VERSION_V1,
     RETRIEVAL_VERSION_V2,
@@ -78,8 +78,16 @@ def create_knowledge_server(
     query_log_path: str | Path | None = None,
     query_context: dict[str, str] | None = None,
     retrieval_mode: str | None = None,
+    preview_strategy: str | None = None,
 ) -> FastMCP:
     mode = resolve_mode(retrieval_mode)
+    strategy = (
+        preview_strategy
+        if preview_strategy is not None
+        else os.environ.get("HARMONY_AGENT_KNOWLEDGE_PREVIEW_STRATEGY", "")
+    ).strip().lower() or ("ranked" if mode is RetrievalMode.V2 else "legacy")
+    if strategy not in {"legacy", "ranked"}:
+        raise RetrievalConfigError("preview_strategy 必须是 legacy 或 ranked")
     if mode is RetrievalMode.SHADOW:
         # shadow 属阶段四交付;在此之前显式启动失败,不静默降级(文档第 4 节)。
         raise RetrievalConfigError(
@@ -93,10 +101,18 @@ def create_knowledge_server(
         rules_digest = v2_rules_digest()
     else:
         rules_digest = hashlib.sha256(
-            json.dumps(CONCEPTS, sort_keys=True, ensure_ascii=False).encode()
+            json.dumps(
+                {"concepts": CONCEPTS, "context_rules": v2_rules_digest()},
+                sort_keys=True,
+                ensure_ascii=False,
+            ).encode()
         ).hexdigest()
     snapshot_id = build_snapshot_id(
-        base.all(), root=base.root, rules_digest=rules_digest, config=RetrievalConfig()
+        base.all(),
+        root=base.root,
+        rules_digest=rules_digest,
+        config=RetrievalConfig(),
+        response_policy=f"{mode.value}:{strategy}",
     )
     retrieval_version = RETRIEVAL_VERSION_V2 if engine is not None else RETRIEVAL_VERSION_V1
     score_kind = SCORE_KIND_V2 if engine is not None else SCORE_KIND_V1
@@ -115,11 +131,14 @@ def create_knowledge_server(
     ) -> KnowledgeLookup:
         """Locate a business issue in one call, with bounded context and reference expansion.
 
-        Try symptoms first; on missing, weak or mismatched hits, search symptoms and facts globally.
+        Legacy tries symptoms then falls back globally; V2 compares symptoms and facts together.
         Domain preferences only break ties. Return up to three candidates and at most three preview
-        documents (1500 body characters each), including direct references of the first candidate.
+        documents (1500 body characters each). Ranked previews reserve a slot for relevant facts.
         All previews are leads, never current-case evidence. Read body pages only when a needed
         criterion or exception is missing/truncated; do not re-read documents already sufficient.
+        On zero hits, reason_codes may include possible-external-subject: the query names a
+        registered external product. Treat it as a hint that the topic may be outside this
+        project (tell the user, stop broadening the search) — never as confirmed exclusion.
         """
 
         def lookup() -> KnowledgeLookup:
@@ -127,13 +146,34 @@ def create_knowledge_server(
             if engine is not None:
                 # V2 主流程(文档 12.2):统一候选竞争,scope_used 恒为 all(文档 9.2)。
                 result = engine.lookup(query, **options)
-                selected = select_previews(
-                    result.hits,
-                    query=query,
-                    resolve=base.get,
-                    score_reference=lambda entry: engine.evaluate(entry, result.features).raw_score,
-                    threshold=engine.config.min_raw_score,
-                )
+                if strategy == "ranked":
+                    selected = select_previews(
+                        result.hits,
+                        query=query,
+                        resolve=base.get,
+                        score_reference=lambda entry: engine.reference_score(
+                            entry,
+                            result.features,
+                            end=options["end"],
+                            version=version,
+                        ),
+                        threshold=engine.config.min_raw_score,
+                    )
+                else:
+                    names = (
+                        list(
+                            dict.fromkeys(
+                                [
+                                    result.hits[0].name,
+                                    *result.hits[0].references,
+                                    *(hit.name for hit in result.hits[1:]),
+                                ]
+                            )
+                        )
+                        if result.hits
+                        else []
+                    )
+                    selected = [(name, "legacy_unclassified") for name in names[:3]]
                 documents = []
                 for name, reason in selected:
                     entry = base.get(name)
@@ -163,6 +203,7 @@ def create_knowledge_server(
                     retrieval_status=result.status,
                     reason_codes=result.reason_codes,
                     snapshot_id=snapshot_id,
+                    preview_strategy=strategy,
                 )
             scope = SearchScope.SYMPTOM
             hits = search(base.all(), query, scope=scope, **options)
@@ -180,22 +221,50 @@ def create_knowledge_server(
                         [hits[0].name, *hits[0].references, *(hit.name for hit in hits[1:])]
                     )
                 )
+            if strategy == "ranked":
+
+                def reference_score(entry: KnowledgeEntry) -> float:
+                    # 引用与直接命中使用相同的端/版本降权,不能靠图关系绕过适用性。
+                    candidates = search([entry], query, scope=SearchScope.ALL, **options)
+                    return candidates[0].score if candidates else 0.0
+
+                preview_selection = select_previews(
+                    hits, query=query, resolve=base.get, score_reference=reference_score
+                )
+                selected = list(
+                    dict.fromkeys(
+                        [name for name, _ in preview_selection]
+                        + [hit.name for hit in hits]
+                        + [ref for hit in hits for ref in hit.references]
+                    )
+                )
+            else:
+                preview_selection = [(name, "legacy_unclassified") for name in selected[:3]]
             documents = []
-            for name in selected[:3]:
+            for name, reason in preview_selection:
                 entry = base.get(name)
                 document = _to_document(entry)
                 documents.append(
                     KnowledgePreview(
                         **{**document.model_dump(), "body": document.body[:1500]},
                         truncated=len(document.body) > 1500,
+                        selection_reason=reason,
                     )
                 )
             return KnowledgeLookup(
                 scope_used=scope,
                 hits=hits,
                 documents=documents,
-                omitted_references=selected[3:],
+                omitted_references=[
+                    name for name in selected if name not in {d.name for d in documents}
+                ],
+                reason_codes=(
+                    ["possible-external-subject"]
+                    if not hits and external_subject_hint(query)
+                    else []
+                ),
                 snapshot_id=snapshot_id,
+                preview_strategy=strategy,
             )
 
         return logged_tool(
@@ -209,6 +278,7 @@ def create_knowledge_server(
                 "score_kind": score_kind,
                 "retrieval_status": result.retrieval_status,
                 "snapshot_id": result.snapshot_id,
+                "preview_strategy": strategy,
             },
         )
 

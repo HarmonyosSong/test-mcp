@@ -6,6 +6,9 @@ to retrieve a missing part of a knowledge entry, not an identical call. With an 
 stack, file, symbol, or interface error, inspect that evidence directly. Repository business
 context is needed only when the relevant contract or business meaning is unclear.
 Knowledge matches are leads, never evidence that the current incident has that cause.
+If lookup_issue returns no hits with reason code possible-external-subject, the query names an
+external product: state that the topic looks outside this project and ask which product or entry
+it concerns, instead of broadening or repeating knowledge searches.
 When lookup_issue supplies discriminating questions and the symptom still has multiple routes,
 ask the next 1-2 route-separating questions BEFORE inspecting speculative source paths.
 For example, an unavailable feature can mean a missing entry or a blank page after opening it;

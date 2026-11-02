@@ -1,0 +1,25 @@
+{
+  "description": "针对新增错题录入条目的开发回归探针；在本轮查询前冻结，不是盲测。expected 是相关事实，不是已确认根因。ambiguous 项只检查返回行为，不计入负例准确率。",
+  "positive": [
+    ["错题录入选了PDF，点完成后回到了应用首页", "error-book-upload-file-types"],
+    ["错题本上传一份扫描文档没有成功，应该先核实文件类型吗", "error-book-upload-file-types"],
+    ["孩子在错题本选中pdf以后没有新增题目", "error-book-upload-file-types"],
+    ["鸿蒙错题本能选到PDF，这代表业务允许录入PDF吗", "error-book-upload-file-types"],
+    ["错题本上传照片提示文件过大，单张限制是多少", "error-book-upload-file-types"],
+    ["错题本一次选九张照片，是否超过录入数量上限", "error-book-upload-file-types"],
+    ["错题本可以导出PDF，是不是也可以导入PDF", "error-book-upload-file-types"],
+    ["错题本的图片录入也失败了，能直接判定是PDF过滤造成的吗", "error-book-upload-file-types"],
+    ["我的学习服务里没有错题本入口，是否与报课资格有关", "error-book-entry-picai-only"],
+    ["没有报过彼芯课程，错题本按钮会显示吗", "error-book-entry-picai-only"]
+  ],
+  "negative": [
+    ["微信发送PDF文件后聊天窗口回到首页", "非本产品的文件发送"],
+    ["Windows扫描仪生成的PDF打不开", "桌面扫描软件"],
+    ["公司报销系统上传发票PDF失败", "库外财务系统，发票不代表本产品"],
+    ["邮箱上传附件点完成后退回收件箱", "库外邮箱附件"]
+  ],
+  "ambiguous": [
+    ["选择PDF点完成后返回首页", "缺少产品与入口，不足以确认错题录入"],
+    ["上传图片失败了", "缺少产品与入口，不足以确认错题录入"]
+  ]
+}

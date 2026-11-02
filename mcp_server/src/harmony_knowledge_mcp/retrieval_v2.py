@@ -2,7 +2,7 @@
 
 对应 docs/knowledge-retrieval-v2-design.md。阶段一交付双模式框架;阶段三落地引擎:
 特征抽取(retrieval_rules.py)→ 候选生成(完整符号/意图短语/业务对象倒排)→
-资格门槛(E/P/O,与分数分离)→ 统一评分与确定性排序 → 结果状态。
+资格门槛(E/P/O/C,与分数分离)→ 统一评分与确定性排序 → 结果状态。
 分数是相关性排序量,不是概率;初始参数只是可复现的实验起点。
 """
 
@@ -34,7 +34,7 @@ STATUS_AMBIGUOUS = "ambiguous"
 STATUS_LEADS = "leads_found"
 
 # 引擎行为(词表/资格/评分语义)变化时必须更新:它进入快照标识,让历史日志可按版本归因。
-ENGINE_VERSION = "v2-stage3"
+ENGINE_VERSION = "v2-transfer-context-1"
 
 RETRIEVAL_MODE_ENV = "HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE"
 
@@ -109,6 +109,7 @@ def build_snapshot_id(
     root: Path,
     rules_digest: str,
     config: RetrievalConfig,
+    response_policy: str = "",
 ) -> str:
     """快照标识:内容文件 + 词表规则 + 打分配置 + 引擎版本的联合摘要(文档 11.1)。
 
@@ -124,6 +125,7 @@ def build_snapshot_id(
         "rules": rules_digest,
         "config": asdict(config),
         "engine": ENGINE_VERSION,
+        "response_policy": response_policy,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
@@ -138,8 +140,9 @@ from .retrieval_rules import (  # noqa: E402
     QueryFeatures,
     analyze_entry_text,
     analyze_query,
+    contexts_in,
     extract_facets,
-    normalize_human_text,
+    external_subject_hint,
     registered_symbols_in,
 )
 from .retriever import version_matches  # noqa: E402
@@ -155,7 +158,7 @@ class CandidateTrace:
 
     name: str
     qualified: bool
-    qualify_path: str  # "E" 完整符号 / "P" 意图短语 / "O" 对象覆盖 / "" 不合格
+    qualify_path: str  # E 完整符号 / P 意图短语 / O 对象 / C 场景+限定 / 空为不合格
     object_coverage: float
     phrase_hit: bool
     action_coverage: float
@@ -177,7 +180,7 @@ class LookupResult:
 class RetrievalEngine:
     """不可变快照上的纯检索函数(文档 11.1):构建后只读,可安全用于线程池。
 
-    89 条规模对全库逐条评分(文档 6.2 允许初版全扫);资格(E/P/O)先于分数,
+    89 条规模对全库逐条评分(文档 6.2 允许初版全扫);资格(E/P/O/C)先于分数,
     任何 IDF 或字段叠加都不能让「只有通用片段」的候选越过门槛(文档 7.1)。
     """
 
@@ -192,6 +195,7 @@ class RetrievalEngine:
         self._intents: dict[str, frozenset[str]] = {}
         self._symbols: dict[str, frozenset[str]] = {}
         self._facets: dict[str, frozenset[tuple[str, str]]] = {}
+        self._contexts: dict[str, frozenset[str]] = {}
         for entry in entries:
             text = " ".join([entry.title, entry.summary, *entry.aliases])
             concepts = analyze_entry_text(text)
@@ -206,7 +210,8 @@ class RetrievalEngine:
                 concept for concept in concepts if _KIND_OF[concept] is ConceptKind.INTENT
             )
             self._symbols[entry.name] = registered_symbols_in(text) | {entry.name}
-            self._facets[entry.name] = extract_facets(normalize_human_text(text).replace(" ", ""))
+            self._facets[entry.name] = extract_facets(text)
+            self._contexts[entry.name] = contexts_in(text)
         # df 按不同条目数(跨字段去重);N 为快照全部条目数,不按域或 scope 重算(文档 6.1)。
         entry_count = max(1, len(entries))
         df: dict[str, int] = {}
@@ -234,16 +239,40 @@ class RetrievalEngine:
             if query_action_weight
             else 0.0
         )
-        shared_facets = features.facets & self._facets[entry.name]
-        facet_coverage = len(shared_facets) / len(features.facets) if features.facets else 0.0
+        # 单独的「家长」只是说话人的身份,不让它把购课单故障抬到一对一购课。
+        # 同时提及多个角色时才比较角色差异(例如家长 vs 顾问的名额口径)。
+        roles = {value for kind, value in features.facets if kind == "role"}
+        scoring_facets = frozenset(
+            facet for facet in features.facets if facet[0] != "role" or len(roles) > 1
+        )
+        shared_facets = scoring_facets & self._facets[entry.name]
+        facet_coverage = len(shared_facets) / len(scoring_facets) if scoring_facets else 0.0
         phrase_hit = bool(features.intents & self._intents[entry.name])
         symbol_hit = bool(features.symbols & self._symbols[entry.name])
 
         qualified_o = bool(shared_objects) and object_coverage >= cfg.object_coverage_threshold
-        qualified = symbol_hit or phrase_hit or qualified_o
-        qualify_path = "E" if symbol_hit else "P" if phrase_hit else "O" if qualified_o else ""
+        shared_contexts = features.contexts & self._contexts[entry.name]
+        # 附近/地域/界面形态不能单独创建候选;只有同一明确业务场景内才允许。
+        # 查询已有业务对象时不走此通路,避免用限定条件绕过对象覆盖门槛。
+        qualified_c = (
+            not features.objects
+            and bool(shared_contexts)
+            and any(kind in {"topic", "region"} for kind, _ in shared_facets)
+        )
+        qualified = symbol_hit or phrase_hit or qualified_o or qualified_c
+        qualify_path = (
+            "E"
+            if symbol_hit
+            else "P"
+            if phrase_hit
+            else "O"
+            if qualified_o
+            else "C"
+            if qualified_c
+            else ""
+        )
         s_business = (
-            cfg.weight_object * object_coverage
+            cfg.weight_object * max(object_coverage, float(qualified_c))
             + cfg.weight_phrase * phrase_hit
             + cfg.weight_action * action_coverage
             + cfg.weight_facet * facet_coverage
@@ -262,6 +291,8 @@ class RetrievalEngine:
             reasons.append("intent-phrase")
         if symbol_hit:
             reasons.append("exact-symbol")
+        if qualified_c:
+            reasons.append("context:" + ",".join(sorted(shared_contexts)))
         if not qualified:
             reasons.append("rejected:no-anchor")
         return CandidateTrace(
@@ -276,6 +307,25 @@ class RetrievalEngine:
             raw_score=round(raw_score, 6),
             reasons=tuple(reasons[:6]),
         )
+
+    def reference_score(
+        self,
+        entry: KnowledgeEntry,
+        features: QueryFeatures,
+        *,
+        end: End | None = None,
+        version: str | None = None,
+    ) -> float:
+        """正文相关性不能绕过候选资格;不适用的引用降权后仍可作为图线索。"""
+        trace = self.evaluate(entry, features)
+        if not trace.qualified or trace.raw_score < self.config.min_raw_score:
+            return 0.0
+        score = trace.raw_score
+        if end is not None and end not in entry.applies_to:
+            score *= self.config.context_penalty
+        if not version_matches(entry.applicable_versions, version):
+            score *= self.config.context_penalty
+        return score
 
     def lookup(
         self,
@@ -292,7 +342,7 @@ class RetrievalEngine:
             raise ValueError(
                 f"query 长度超过 {MAX_QUERY_CHARS} 字符上限;请提取技术锚点或改用日志工具"
             )
-        features = analyze_query(query)
+        features = analyze_query(query, canonical_ids=self.entries)
         if unified:
             hits, traces = self._rank(features, self.entries.values(), end, version, domains, limit)
         else:
@@ -324,7 +374,7 @@ class RetrievalEngine:
             raise ValueError(
                 f"query 长度超过 {MAX_QUERY_CHARS} 字符上限;请提取技术锚点或改用日志工具"
             )
-        features = analyze_query(query)
+        features = analyze_query(query, canonical_ids=self.entries)
         if scope is SearchScope.SYMPTOM:
             pool = [entry for entry in self.entries.values() if entry.kind is KnowledgeKind.SYMPTOM]
         elif scope is SearchScope.FACT:
@@ -399,10 +449,15 @@ class RetrievalEngine:
     def _classify(self, features: QueryFeatures, hits: list[SearchHit]) -> tuple[str, list[str]]:
         """结果状态(文档 7.5):检索相关性状态,不是诊断结论。"""
         if not hits:
-            if features.generic_only or not features.normalized_text.strip():
-                return STATUS_INSUFFICIENT, ["empty-or-generic-only"]
-            return STATUS_NO_MATCH, ["no-qualified-candidate"]
+            insufficient = features.generic_only or not features.normalized_text.strip()
+            codes = ["empty-or-generic-only" if insufficient else "no-qualified-candidate"]
+            # 外部主体词只是「项目外」提示,不是排除依据;有命中时绝不附加。
+            if external_subject_hint(features.raw_query):
+                codes.append("possible-external-subject")
+            return (STATUS_INSUFFICIENT if insufficient else STATUS_NO_MATCH), codes
         codes: list[str] = []
+        if not (features.objects or features.symbols or features.intents):
+            codes.append("contextual-qualifier-only")
         if features.objects and not (
             features.actions or features.facets or features.symbols or features.intents
         ):

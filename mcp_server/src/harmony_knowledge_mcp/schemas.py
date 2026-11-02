@@ -136,6 +136,7 @@ class KnowledgePage(KnowledgeDocument):
 
 
 class KnowledgeLookup(BaseModel):
+    preview_strategy: str = "legacy"
     scope_used: SearchScope
     hits: list[SearchHit]
     documents: list[KnowledgePreview]
@@ -151,7 +152,8 @@ class KnowledgeLookup(BaseModel):
     )
     reason_codes: list[str] = Field(
         default_factory=list,
-        description="检索层状态原因（最多 6 项）；V1 恒为空。",
+        description="检索层状态原因（最多 6 项）；possible-external-subject 仅是「项目外」"
+        "提示（零命中 + 查询含已登记外部主体词），不是排除结论。",
     )
     snapshot_id: str = Field(
         default="",

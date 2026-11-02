@@ -10,6 +10,7 @@ F(E + 审核新词表)属人工词表审核后的复跑,不在本脚本。
 
 输出到 .data/knowledge-audit-ablation/ablation.json,并对照 14.5 发布门槛。
 """
+
 from __future__ import annotations
 
 import json
@@ -19,12 +20,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from run import build_cases  # noqa: E402
-from harmony_knowledge_mcp.loader import KnowledgeBase  # noqa: E402
-from harmony_knowledge_mcp.preview_selection import select_previews  # noqa: E402
-from harmony_knowledge_mcp.retrieval_v2 import RetrievalEngine  # noqa: E402
-from harmony_knowledge_mcp.retriever import CONTAINMENT_SCORE, search  # noqa: E402
-from harmony_knowledge_mcp.schemas import SearchScope  # noqa: E402
+from harmony_knowledge_mcp.loader import KnowledgeBase
+from harmony_knowledge_mcp.preview_selection import select_previews
+from harmony_knowledge_mcp.retrieval_v2 import RetrievalEngine
+from harmony_knowledge_mcp.retriever import CONTAINMENT_SCORE, search
+from harmony_knowledge_mcp.schemas import SearchScope
+from run import build_cases
 
 OUT = ROOT / ".data/knowledge-audit-ablation"
 
@@ -42,7 +43,9 @@ def variant_a(hits, by_id, limit=3):
     if not hits:
         return []
     selected = list(
-        dict.fromkeys([hits[0].name, *hits[0].references, *(hit.name for hit in hits[1:])])
+        dict.fromkeys(
+            [hits[0].name, *hits[0].references, *(hit.name for hit in hits[1:])]
+        )
     )
     return [name for name in selected[:limit] if name in by_id]
 
@@ -77,9 +80,9 @@ def main():
                 result_e.hits,
                 query=query,
                 resolve=by_id.get,
-                score_reference=lambda entry: engine.evaluate(
-                    entry, result_e.features
-                ).raw_score,
+                score_reference=lambda entry, features=result_e.features: (
+                    engine.reference_score(entry, features)
+                ),
                 threshold=engine.config.min_raw_score,
             )
         ]
@@ -122,7 +125,9 @@ def main():
             negative = [row for row in group if not row["expected"]]
 
             def direct3(row):
-                return bool(set(row["expected"]) & set(row["variants"][variant]["hits"]))
+                return bool(
+                    set(row["expected"]) & set(row["variants"][variant]["hits"])
+                )
 
             def route3(row):
                 reached = set(row["variants"][variant]["hits"])
@@ -131,7 +136,9 @@ def main():
                 return bool(set(row["expected"]) & reached)
 
             def preview(row):
-                return bool(set(row["expected"]) & set(row["variants"][variant]["previews"]))
+                return bool(
+                    set(row["expected"]) & set(row["variants"][variant]["previews"])
+                )
 
             summary[split] = {
                 "positive_n": len(positive),
@@ -157,13 +164,15 @@ def main():
         "challenge 直接召回 direct_hit3 ≥ 25/38": challenge.get("direct_hit3", 0) >= 25,
         "challenge 引用可达 route_hit3 ≥ 30/38": challenge.get("route_hit3", 0) >= 30,
         "challenge 目标预览 ≥ 28/38": challenge.get("target_preview", 0) >= 28,
-        "新负例误放 ≤ 4/16": e.get("challenge_negative", {}).get("negative_with_hits", 99) <= 4,
-        "旧负例误放 = 0": all(
-            stat.get("negative_with_hits", 0) == 0
-            for split, stat in e.items()
-            if split.startswith("existing") and stat.get("negative_with_hits") is not None
-        ),
-        "pilot direct_hit3 ≥ 3/10": e.get("pilot_rewrite", {}).get("direct_hit3", 0) >= 3,
+        "新负例误放 ≤ 4/16": e.get("challenge_negative", {}).get(
+            "negative_with_hits", 99
+        )
+        <= 4,
+        # build_cases 的旧负例 split 是 negative；existing-* 是 case ID，不能当 split。
+        # 缺分组必须失败，避免 all([]) 把没有检查的门槛误报为通过。
+        "旧负例误放 = 0": e.get("negative", {}).get("negative_with_hits") == 0,
+        "pilot direct_hit3 ≥ 3/10": e.get("pilot_rewrite", {}).get("direct_hit3", 0)
+        >= 3,
     }
 
     header = f"{'split':<22}" + "".join(f"{v:>28}" for v in ("A", "B", "C", "D", "E"))

@@ -67,6 +67,7 @@ class QueryLogEntry(BaseModel):
     score_kind: str | None = None
     retrieval_status: str | None = None
     snapshot_id: str | None = None
+    preview_strategy: str | None = None
 
 
 def resolve_query_log_path(value: str | Path | None = None) -> Path | None:

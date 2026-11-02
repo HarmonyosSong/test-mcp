@@ -1,0 +1,163 @@
+{
+  "generated_at": "2026-09-28T06:56:57.836203+00:00",
+  "commit": "6eed7df7f8824520340e57530ac1cf12fd8f3c3e",
+  "dataset_sha256": "45e9d1d782dc8101da8be0c5faf3f22ecb0ea71256fb8b82bf589eb0d3ee8f31",
+  "source_hashes": {
+    "__init__.py": "387cb28160e6a55697acdf692f48e0dc6ff413e1654c6bf08bc29497493cb287",
+    "concepts.py": "30574caa2ecca62e561b9b46f334c89e8a699ce6426de05f5cb5e0e4363e7439",
+    "loader.py": "93f26e96e8fc8e3c1f924f686a29b626191f62c557fa5eeb301e12b4de404a11",
+    "preview_selection.py": "a33e02d255aa393e109eb847e0ab67b857bb53c1851035b2ecec43face031c19",
+    "query_log.py": "08f4016720711cade46ab2c300be3499a323a310ec5647f79bcd1628c0eff60a",
+    "retrieval_rules.py": "86fae2a30ce690e5005673ee312cc7e597bad18d13f0f18059c4917d6b1b452c",
+    "retrieval_v2.py": "3ba52b6e7ac3f5ce33fc4077cfa7e361a0458a51ce0056c2d3ac098e19674ea9",
+    "retriever.py": "b0e65338eb065bb79db8830e6072bb0eb748ce17f7972da484755781dffdf662",
+    "schemas.py": "cfe84e3b9aec5503e9d28f77fd86d335de2c9c61f5d2da8bcb943776b962803f",
+    "server.py": "9097edc9f83f843b2fc0e497ee1378e06486ca600ee81fe656ea3d34a3530d64",
+    "validate.py": "f3e56de5b5b67689fc5893c5d1a0fb9772676926c25701864b1f94e57e9c6663"
+  },
+  "unchanged_sources": true,
+  "unchanged_knowledge": true,
+  "default_mode": "legacy",
+  "semantic_changes": [],
+  "summary": {
+    "legacy": {
+      "contract_negative": {
+        "n": 8,
+        "positive_n": 0,
+        "negative_n": 8,
+        "direct1": 0,
+        "direct3": 0,
+        "route3": 0,
+        "preview": 0,
+        "negative_with_hits": 8,
+        "status_counts": {
+          "legacy_unclassified": 8
+        }
+      },
+      "contract_positive": {
+        "n": 4,
+        "positive_n": 4,
+        "negative_n": 0,
+        "direct1": 2,
+        "direct3": 3,
+        "route3": 3,
+        "preview": 3,
+        "negative_with_hits": 0,
+        "status_counts": {
+          "legacy_unclassified": 4
+        }
+      },
+      "negative": {
+        "n": 24,
+        "positive_n": 0,
+        "negative_n": 24,
+        "direct1": 0,
+        "direct3": 0,
+        "route3": 0,
+        "preview": 0,
+        "negative_with_hits": 14,
+        "status_counts": {
+          "legacy_unclassified": 24
+        }
+      },
+      "positive": {
+        "n": 32,
+        "positive_n": 32,
+        "negative_n": 0,
+        "direct1": 15,
+        "direct3": 22,
+        "route3": 27,
+        "preview": 21,
+        "negative_with_hits": 0,
+        "status_counts": {
+          "legacy_unclassified": 32
+        }
+      }
+    },
+    "v2": {
+      "contract_negative": {
+        "n": 8,
+        "positive_n": 0,
+        "negative_n": 8,
+        "direct1": 0,
+        "direct3": 0,
+        "route3": 0,
+        "preview": 0,
+        "negative_with_hits": 4,
+        "status_counts": {
+          "ambiguous": 4,
+          "no_match": 4
+        }
+      },
+      "contract_positive": {
+        "n": 4,
+        "positive_n": 4,
+        "negative_n": 0,
+        "direct1": 0,
+        "direct3": 2,
+        "route3": 2,
+        "preview": 2,
+        "negative_with_hits": 0,
+        "status_counts": {
+          "no_match": 2,
+          "ambiguous": 2
+        }
+      },
+      "negative": {
+        "n": 24,
+        "positive_n": 0,
+        "negative_n": 24,
+        "direct1": 0,
+        "direct3": 0,
+        "route3": 0,
+        "preview": 0,
+        "negative_with_hits": 19,
+        "status_counts": {
+          "ambiguous": 15,
+          "leads_found": 4,
+          "no_match": 4,
+          "insufficient_query": 1
+        }
+      },
+      "positive": {
+        "n": 32,
+        "positive_n": 32,
+        "negative_n": 0,
+        "direct1": 13,
+        "direct3": 28,
+        "route3": 29,
+        "preview": 28,
+        "negative_with_hits": 0,
+        "status_counts": {
+          "no_match": 3,
+          "ambiguous": 13,
+          "leads_found": 16
+        }
+      }
+    }
+  },
+  "performance": {
+    "legacy": {
+      "requests": 280,
+      "p50_ms": 30.74283349997131,
+      "p95_ms": 37.03733299994383,
+      "initialization_p50_ms": 62.48737499981871,
+      "payload_chars_p50": 5507.0,
+      "payload_chars_p95": 7491
+    },
+    "v2": {
+      "requests": 280,
+      "p50_ms": 16.972666500009836,
+      "p95_ms": 18.538000000035026,
+      "initialization_p50_ms": 69.47870800013334,
+      "payload_chars_p50": 5167.0,
+      "payload_chars_p95": 6865
+    }
+  },
+  "digest_probe": {
+    "facets_changed": true,
+    "digest_changed": false,
+    "meaning": "Facet-rule mutation should change rules digest; isolated in-memory probe only."
+  },
+  "raw_results": ".data/knowledge-v2-retry-2026-09-28/results.json"
+}

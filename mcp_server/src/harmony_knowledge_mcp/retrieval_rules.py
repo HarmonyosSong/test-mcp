@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -23,6 +24,7 @@ class ConceptKind(StrEnum):
     RELATED = "related"  # 相关但不同的对象:保留各自 ID,只作相关候选线索
     INTENT = "intent-phrase"  # 受审核意图短语:可独立召回
     PLATFORM = "platform"  # 平台/通用名词:不能独立召回
+    FACET = "facet"  # 地点、界面形态等限定条件,不能独立充当业务对象
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +42,7 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     Concept(
         "error-book",
         ConceptKind.OBJECT,
-        ("错题本", "错题集", "错题整理", "课中错题"),
+        ("错题本", "错题集", "错题整理", "课中错题", "错题录入", "上传错题"),
         note="同一对象叫法,V1 error-book 组",
     ),
     Concept(
@@ -137,7 +139,9 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     Concept("one-on-one", ConceptKind.OBJECT, ("1对1", "一对一"), note="已审核同义"),
     Concept("self-study", ConceptKind.OBJECT, ("自学课", "自主学习课程"), note="同一对象叫法"),
     Concept("scan", ConceptKind.OBJECT, ("扫一扫", "扫码", "扫描二维码"), note="同一功能叫法"),
-    Concept("app-search", ConceptKind.OBJECT, ("ai搜索", "智能搜索"), note="同一功能叫法"),
+    Concept(
+        "app-search", ConceptKind.FACET, ("ai搜索", "智能搜索"), note="跨产品通用功能,需业务场景"
+    ),
     Concept(
         "search-state",
         ConceptKind.STATE,
@@ -172,6 +176,18 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     Concept("cancel", ConceptKind.ACTION, ("取消", "撤销", "撤回"), note="动作"),
     Concept("delete", ConceptKind.ACTION, ("删除",), note="动作"),
     Concept("download", ConceptKind.ACTION, ("下载", "存成文件", "保存"), note="动作"),
+    Concept(
+        "transfer-in",
+        ConceptKind.ACTION,
+        ("上传", "录入", "导入"),
+        note="输入方向动作,只区分已匹配对象的任务,不独立召回",
+    ),
+    Concept(
+        "transfer-out",
+        ConceptKind.ACTION,
+        ("导出",),
+        note="输出方向动作,与录入分开;不能由导出能力推断支持导入",
+    ),
     Concept("enroll", ConceptKind.ACTION, ("报名", "报班"), note="动作"),
     Concept(
         "combine",
@@ -221,8 +237,8 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     Concept(
         "small-stove",
         ConceptKind.OBJECT,
-        ("小灶课", "第0课", "第零课", "腾讯会议"),
-        note="small-stove-class;腾讯会议是该条目明示的上课工具",
+        ("小灶课", "第0课", "第零课"),
+        note="课程对象;腾讯会议是工具限定,不能与小灶课等价",
     ),
     Concept("renewal", ConceptKind.OBJECT, ("续报",), note="业务术语;renewal-cross-business-line"),
     Concept(
@@ -318,9 +334,9 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     ),
     Concept(
         "nearby",
-        ConceptKind.OBJECT,
+        ConceptKind.FACET,
         ("附近",),
-        note="nearby-teaching-point-filter;库外「附近的X」有碰撞面,负例验证通过",
+        note="位置限定,需与条目共享明确业务场景才可召回",
     ),
     Concept(
         "full-care",
@@ -338,9 +354,8 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     Concept(
         "resource-slot",
         ConceptKind.OBJECT,
-        ("资源位", "弹窗"),
-        note="resource-slot-class-expiry;「弹窗」F 二轮补:INTENT 枚举覆盖不了"
-        "「弹窗也不见了」类说法,改 OBJECT 以负例验证",
+        ("资源位",),
+        note="资源投放对象;弹窗仅表示界面形态",
     ),
     Concept(
         "verification-code",
@@ -358,10 +373,9 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     ),
     Concept(
         "region",
-        ConceptKind.OBJECT,
-        ("地区", "区域", "香港", "澳门", "台湾"),
-        note="registration-option-limits;港澳台仅限注册地区场景,库外地理查询有碰撞面,"
-        "其他城市名单字不补",
+        ConceptKind.FACET,
+        ("地区", "区域"),
+        note="地点限定;港澳台使用各自 region 值,不当作等价对象",
     ),
     Concept(
         "sensitive-word",
@@ -374,8 +388,8 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     Concept(
         "search-teacher-intent",
         ConceptKind.INTENT,
-        ("搜不到老师", "搜索不出来", "搜不到结果"),
-        note="app-search-behavior;「老师」太通用,不补 OBJECT",
+        ("搜不到老师",),
+        note="保留带对象的短语;泛搜索失败移入 STATE",
     ),
     Concept(
         "message-missed-intent",
@@ -386,15 +400,19 @@ CONCEPT_REGISTRY: tuple[Concept, ...] = (
     Concept(
         "bridge-native-intent",
         ConceptKind.INTENT,
-        ("调起原生录音", "h5调用原生", "h5调原生失败"),
-        note="classlearn-h5-bridge-contract;handler 是编程通用词,不补",
+        ("调起原生录音", "h5调用原生", "h5 调用原生", "h5调原生失败", "h5 调原生失败"),
+        note="classlearn-h5-bridge-contract;保留现有条目中 H5 后有空格的写法;"
+        "handler 是编程通用词,不补",
     ),
     Concept(
         "popup-missed-intent",
-        ConceptKind.INTENT,
+        ConceptKind.STATE,
         ("弹窗不显示了", "首页活动没了"),
-        note="resource-slot-class-expiry;「弹窗」通用,不补 OBJECT",
+        note="通用现象不独立召回,由 popup 限定与业务场景共同判断",
     ),
+    Concept("popup", ConceptKind.FACET, ("弹窗",), note="界面形态,不是资源位的同义词"),
+    Concept("meeting-tool", ConceptKind.FACET, ("腾讯会议",), note="上课工具,不是课程对象"),
+    Concept("generic-search-failure", ConceptKind.STATE, ("搜索不出来", "搜不到结果")),
     Concept(
         "quota",
         ConceptKind.OBJECT,
@@ -451,19 +469,65 @@ UNIT_FACETS: tuple[tuple[tuple[str, ...], tuple[str, str]], ...] = (
     (("五公里", "5公里", "5km", "5KM"), ("distance", "5km")),
     (("顾问",), ("role", "advisor")),
     (("家长",), ("role", "parent")),
+    (("香港",), ("region", "hong-kong")),
+    (("澳门",), ("region", "macao")),
+    (("台湾",), ("region", "taiwan")),
+    (("pdf",), ("file_media", "pdf")),
+    (("图片", "照片", "jpg", "jpeg", "png"), ("file_media", "image")),
 )
 
 _ASCII_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[._:/#@-]+[A-Za-z0-9]+)+|[A-Za-z0-9]+")
 
 
-def extract_facets(compact_text: str) -> frozenset[tuple[str, str]]:
-    """白名单单位归一化(文档 5.2.6):只转换登记过的等价,查询与条目共用。"""
+def _term_spans(text: str, term: str):
+    """字面连续匹配;Latin 词不能从另一个标识符或路径内部切出。"""
+    ascii_spans = (
+        [match.span() for match in _ASCII_TOKEN_RE.finditer(text)]
+        if term[0].isascii() or term[-1].isascii()
+        else []
+    )
+    start = 0
+    while (index := text.find(term, start)) >= 0:
+        end = index + len(term)
+        if not any(a < index < b or a < end < b for a, b in ascii_spans):
+            yield index, end
+        start = index + 1
+
+
+def extract_facets(text: str) -> frozenset[tuple[str, str]]:
+    """不跨边界拼接单位/限定词;角色和地域不进入业务对象分母。"""
+    normalized = normalize_human_text(text)
     found: set[tuple[str, str]] = set()
     for variants, facet in UNIT_FACETS:
         for variant in variants:
-            if unicodedata.normalize("NFKC", variant).casefold() in compact_text:
+            if any(_term_spans(normalized, normalize_human_text(variant))):
                 found.add(facet)
+    # 限定词即使与长意图短语重叠也保留;但不增加对象数量。
+    for term, concept in _TERM_INDEX:
+        if concept.kind is ConceptKind.FACET and any(_term_spans(normalized, term)):
+            found.add(("topic", concept.concept_id))
     return frozenset(found)
+
+
+TRANSFER_ACTIONS = frozenset({"transfer-in", "transfer-out"})
+
+
+def transfer_context(text: str) -> frozenset[str]:
+    """文件输入/输出与介质限定;可用于同对象排序,不能用作召回锚点。
+
+    单独抽取以保留「错题录入」对象内部的录入动作,不受最长对象匹配遮蔽。
+    不解析否定或文件支持关系,匹配仅表示该条目谈到了查询涉及的任务/格式。
+    """
+    normalized = normalize_human_text(text)
+    actions = {
+        concept.concept_id
+        for term, concept in _TERM_INDEX
+        if concept.concept_id in TRANSFER_ACTIONS and any(_term_spans(normalized, term))
+    }
+    media = {
+        f"file_media:{value}" for kind, value in extract_facets(normalized) if kind == "file_media"
+    }
+    return frozenset(actions | media)
 
 
 # 预编译:term -> concept,按 term 长度降序实现最长匹配优先(文档 5.2.5)。
@@ -476,7 +540,64 @@ _TERM_INDEX: list[tuple[str, Concept]] = sorted(
     key=lambda item: (-len(item[0]), item[0], item[1].concept_id),
 )
 
-_PUNCT_BOUNDARY_RE = re.compile(r"[\s,。!?、;:,;.!?;:~·\-—_()\"'“”【】\[\]（）]+")
+# 保留技术片段内部的 ._/:#@-+, 以便边界检查识别 foo_xnote 与 libnative.so。
+_PUNCT_BOUNDARY_RE = re.compile(r"[\s,。!?、;~·—()\"'“”【】\[\]（）]+")
+
+# 场景来自查询与条目实际文本,不从业务域/目录或来源权威推断。
+# 只有双方共享场景时,附近/弹窗/地域等弱限定才能提供候选。
+CONTEXT_CUES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("registration", ("注册", "添加学生", "添加学员")),
+    ("course", ("课程", "班级", "教学点", "选课", "课时", "上课", "购课")),
+    ("learning", ("课堂", "讲义", "学习", "学情")),
+)
+
+
+def contexts_in(text: str) -> frozenset[str]:
+    normalized = normalize_human_text(text)
+    return frozenset(
+        context
+        for context, terms in CONTEXT_CUES
+        if any(any(_term_spans(normalized, term)) for term in terms)
+    )
+
+
+# 外部主体词表:只用于零命中时的「项目外」软提示(reason code),不参与资格、排序或排除。
+# 刻意不收:微信(常作 H5 环境而非主体)、腾讯会议(已登记为小灶课上课工具 FACET)、
+# 学校/高考(教育邻近词,误提示风险高)。词表变化进入 rules_digest。
+EXTERNAL_SUBJECT_TERMS: tuple[str, ...] = (
+    "淘宝",
+    "天猫",
+    "京东",
+    "拼多多",
+    "银行",
+    "酒店",
+    "宾馆",
+    "王者荣耀",
+    "b站",
+    "哔哩哔哩",
+    "抖音",
+    "小红书",
+    "百度",
+    "github",
+    "windows",
+    "打印机",
+    "冰箱",
+    "路由器",
+    "耳机",
+    "记事本",
+    "劳动合同",
+)
+
+
+def external_subject_hint(text: str) -> bool:
+    """查询含已登记外部主体词;边界感知,标识符/路径内部的片段不算。
+
+    命中不证明问题在库外(外部词可作环境/对照),只允许作为零命中时的提示。
+    """
+    normalized = normalize_human_text(text)
+    return any(
+        any(_term_spans(normalized, term)) for term in EXTERNAL_SUBJECT_TERMS
+    )
 
 
 def normalize_human_text(value: str) -> str:
@@ -497,11 +618,12 @@ class QueryFeatures:
     intents: frozenset[str] = frozenset()
     symbols: frozenset[str] = frozenset()
     facets: frozenset[tuple[str, str]] = frozenset()
+    contexts: frozenset[str] = frozenset()
     generic_only: bool = False  # 去空白后只剩套话/通用症状/平台词
-    matched_spans: tuple[tuple[int, int], ...] = ()
+    matched_spans: tuple[tuple[int, int], ...] = ()  # normalized_text 中的区间,非原文偏移
 
 
-def analyze_query(query: str) -> QueryFeatures:
+def analyze_query(query: str, *, canonical_ids: Collection[str] = ()) -> QueryFeatures:
     """特征抽取:先完整技术片段,再在人类语言片段上做最长词表匹配(文档 5.2 边界)。
 
     不做自然语言解析;重叠区间按区间长度降序、起点升序、概念 ID 字典序确定性选择。
@@ -510,26 +632,19 @@ def analyze_query(query: str) -> QueryFeatures:
     symbols = {
         match.group()
         for match in _ASCII_TOKEN_RE.finditer(nfkc)
-        if match.group() in REGISTERED_SYMBOLS
+        if match.group() in REGISTERED_SYMBOLS or match.group() in canonical_ids
     }
     normalized = normalize_human_text(query)
-    compact = normalized.replace(" ", "")
-    facets = set(extract_facets(compact))
+    facets = extract_facets(normalized)
 
     hits: list[tuple[int, int, Concept]] = []  # (start, end, concept) 区间不重叠
-    occupied = [False] * len(compact)
+    occupied = [False] * len(normalized)
     for term, concept in _TERM_INDEX:
-        start = 0
-        while True:
-            index = compact.find(term, start)
-            if index < 0:
-                break
-            end = index + len(term)
+        for index, end in _term_spans(normalized, term):
             if not any(occupied[index:end]):
                 hits.append((index, end, concept))
                 for position in range(index, end):
                     occupied[position] = True
-            start = index + 1
 
     objects: set[str] = set()
     actions: set[str] = set()
@@ -545,7 +660,8 @@ def analyze_query(query: str) -> QueryFeatures:
         elif concept.kind is ConceptKind.INTENT:
             intents.add(concept.concept_id)
         # RELATED/PLATFORM 命中不进入任何召回桶,只留在 matched_spans 供诊断。
-    scaffolded = QUESTION_SCAFFOLD_RE.sub("", compact)
+    actions.update(transfer_context(normalized) & TRANSFER_ACTIONS)
+    scaffolded = QUESTION_SCAFFOLD_RE.sub("", normalized)
     generic_only = not (objects or actions or intents or symbols) and (
         not scaffolded.strip() or bool(states)
     )
@@ -557,7 +673,8 @@ def analyze_query(query: str) -> QueryFeatures:
         states=frozenset(states),
         intents=frozenset(intents),
         symbols=frozenset(symbols),
-        facets=frozenset(facets),
+        facets=facets,
+        contexts=contexts_in(normalized),
         generic_only=generic_only,
         matched_spans=tuple(sorted((start, end) for start, end, _ in hits)),
     )
@@ -565,10 +682,10 @@ def analyze_query(query: str) -> QueryFeatures:
 
 def analyze_entry_text(text: str) -> frozenset[str]:
     """条目侧词表抽取:返回命中的概念 ID 全集(含 RELATED,关联声明用)。"""
-    compact = normalize_human_text(text).replace(" ", "")
+    normalized = normalize_human_text(text)
     found: set[str] = set()
     for term, concept in _TERM_INDEX:
-        if term in compact:
+        if any(_term_spans(normalized, term)):
             found.add(concept.concept_id)
     return frozenset(found)
 
@@ -597,5 +714,19 @@ def rules_digest() -> str:
         for concept in CONCEPT_REGISTRY
     ]
     return hashlib.sha256(
-        json.dumps({"concepts": payload, "symbols": REGISTERED_SYMBOLS}, sort_keys=True).encode()
+        json.dumps(
+            {
+                "concepts": payload,
+                "symbols": REGISTERED_SYMBOLS,
+                "facets": UNIT_FACETS,
+                "transfer_actions": sorted(TRANSFER_ACTIONS),
+                "contexts": CONTEXT_CUES,
+                "external_subjects": EXTERNAL_SUBJECT_TERMS,
+                "normalizer": "boundary-v2",
+                "punctuation": _PUNCT_BOUNDARY_RE.pattern,
+                "ascii_tokens": _ASCII_TOKEN_RE.pattern,
+                "scaffold": QUESTION_SCAFFOLD_RE.pattern,
+            },
+            sort_keys=True,
+        ).encode()
     ).hexdigest()

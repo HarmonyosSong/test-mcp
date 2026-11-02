@@ -128,6 +128,11 @@ async def main():
         help="检索模式,默认 legacy(基线)",
     )
     parser.add_argument(
+        "--preview-strategy",
+        choices=["legacy", "ranked"],
+        help="独立选择正文策略;省略时沿用对应检索模式的默认值",
+    )
+    parser.add_argument(
         "--out",
         default=str(OUT),
         help="输出目录,默认 .data/knowledge-audit-2026-09-28",
@@ -154,6 +159,8 @@ async def main():
         ).strip(),
         "date": "2026-09-28",
         "mode": args.mode,
+        "preview_strategy": args.preview_strategy
+        or ("ranked" if args.mode == "v2" else "legacy"),
         "errors": errors,
         "warnings": warnings,
         "inventory": {
@@ -184,7 +191,10 @@ async def main():
     }
     async with Client(
         create_knowledge_server(
-            ROOT / "knowledge", query_log_path="off", retrieval_mode=args.mode
+            ROOT / "knowledge",
+            query_log_path="off",
+            retrieval_mode=args.mode,
+            preview_strategy=args.preview_strategy,
         )
     ) as client:
         for item in cases:
@@ -256,7 +266,9 @@ async def main():
                 }
             )
     audit["summary"] = summarize(audit["rows"])
-    (out_dir / "results.json").write_text(json.dumps(audit, ensure_ascii=False, indent=2))
+    (out_dir / "results.json").write_text(
+        json.dumps(audit, ensure_ascii=False, indent=2)
+    )
     print(
         json.dumps(
             {"counts": audit["counts"], "summary": audit["summary"]},

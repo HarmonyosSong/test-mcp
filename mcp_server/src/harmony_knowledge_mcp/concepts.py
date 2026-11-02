@@ -5,7 +5,7 @@ This is bounded semantic expansion, not a claim of general embedding-based under
 """
 
 CONCEPTS: dict[str, tuple[str, ...]] = {
-    "error-book": ("错题本", "错题集", "错题整理", "课中错题"),
+    "error-book": ("错题本", "错题集", "错题整理", "课中错题", "错题录入", "上传错题"),
     "combo-addon": ("组合加购", "搭配购课", "班课渗透", "加购", "买正课送体验课"),
     "cart": ("购课单", "购物车"),
     "contract": ("合同", "签约", "签字", "协议", "签署"),

@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-from .concepts import concept_score
+from .concepts import concept_score, concepts_in
+from .retrieval_rules import transfer_context
 from .schemas import End, KnowledgeEntry, KnowledgeKind, SearchHit, SearchScope
 
 # 归一化时丢弃标点与空白：中文查询没有词边界，靠短语包含与字符二元组重合度打分。
@@ -122,6 +123,9 @@ def search(
     normalized_query = normalize(query)
     safe_limit = max(1, min(limit, MAX_LIMIT))
     preferred_domains = set(domains or [])
+    query_objects = concepts_in(query)
+    query_context = transfer_context(query)
+    context_coverage: dict[str, float] = {}
     hits: list[SearchHit] = []
     for entry in entries:
         if scope is SearchScope.SYMPTOM and entry.kind is not KnowledgeKind.SYMPTOM:
@@ -132,6 +136,14 @@ def search(
         # 阈值只作用于原始分数：端/版本不匹配是降权，不是丢弃。
         if raw_score < MIN_SCORE:
             continue
+        # 不打开新的召回路径、不改变原分数;仅让同分且共享对象的候选按任务/介质区分。
+        # 域偏好仍排在实际文本相关性之后。无业务对象的「上传 PDF」不因这段产生候选。
+        entry_text = "\n".join(entry.match_terms)
+        context_coverage[entry.name] = (
+            len(query_context & transfer_context(entry_text)) / len(query_context)
+            if query_context and query_objects & concepts_in(entry_text)
+            else 0.0
+        )
         end_match = end is None or end in entry.applies_to
         version_match = version_matches(entry.applicable_versions, version)
         score = raw_score
@@ -163,6 +175,7 @@ def search(
     hits.sort(
         key=lambda hit: (
             -hit.score,
+            -context_coverage[hit.name],
             hit.domain_match is False,
             hit.kind is not KnowledgeKind.SYMPTOM,
             hit.name,
