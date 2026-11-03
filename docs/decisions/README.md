@@ -1,5 +1,7 @@
 # 技术决策记录
 
+当前用户-facing Agent 与 HTTP runtime 已迁移到 Mastra。下列 ADR 仍定义证据、知识和成本策略，但其中引用的 Python `agent/`/`server/` 路径是决策形成时的实现上下文；当前实现映射和未完成的 parity 以 [`../mastra-runtime-migration-spec.md`](../mastra-runtime-migration-spec.md) 为准。
+
 一个决策一篇，ADR 轻量格式：背景 → 考察过的选项 → 决策 → 触发条件 → 验收。
 决策一旦记录不删改；被推翻时新写一篇并在旧篇标注 superseded。
 

@@ -12,12 +12,12 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 
 ## 功能
 
-- 多轮对话、SSE 流式回复和中断后可恢复的会话状态。
+- 多轮对话和 SSE 流式回复；中断/重启恢复仍在迁移验收中，当前状态见迁移规格。
 - 证据账本：正向根因只能引用本轮或历史工具实际观测到的源码/日志证据。
 - 本地 Markdown 知识库和声明式 `skills/*/SKILL.md`。
 - 本地工作区检查、Git 分支查询和 detached Commit 快照。
-- OpenAI、DeepSeek、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 接口。
-- 模型、会话、仓库和快照数据保存在 LibSQL；旧 `.data` JSON 可通过迁移命令导入。
+- 提供 OpenAI、DeepSeek、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 配置入口；各供应商的 Mastra 实际调用兼容性尚未全部验收。
+- 会话、仓库、快照和证据状态保存在 runtime 的 LibSQL；模型配置仍保存在 owner-only 的 `.data/model-config.json`，旧 `.data` JSON 可通过迁移命令导入。
 
 ## 技术栈
 
@@ -29,13 +29,13 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 | 能力协议 | MCP、`@mastra/mcp`、Python FastMCP 服务 |
 | 网页 | React 19、TypeScript、Vite |
 
-`agent/` 和 `server/` 保留用于知识/MCP 领域服务、历史测试和评估资料；产品 Agent 与 HTTP runtime 由 `runtime/` 负责。
+`agent/` 和 `server/` 保留旧 Python Agent/FastAPI、历史测试和评估入口；产品 Agent 与 HTTP runtime 已由 `runtime/` 承载，但 Mastra 迁移和旧 runtime 清理尚未全部验收。阶段状态见 [`docs/mastra-runtime-migration-spec.md`](docs/mastra-runtime-migration-spec.md)。
 
 ## 环境要求
 
 - Node.js `>=22.13.0`
 - npm
-- Python `>=3.11` 和 uv，仅在启动 `mcp_server/` 时需要
+- Python `>=3.11` 和 uv：Mastra runtime 通过它启动 `mcp_server/` MCP 能力；仅运行网页/API 不需要 MCP，但知识检索和仓库代码检查依赖 Python/uv
 
 ## 启动网页（开发模式）
 
@@ -45,6 +45,8 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 make setup
 cp .env.example .env
 ```
+
+`make setup` 会一次安装 MCP、网页和 Mastra runtime 的依赖；如果只需要先打开网页/API，可分别执行 `npm --prefix web install` 和 `npm --prefix runtime ci`，不启动 MCP 时不要求 Python/uv。
 
 编辑 `.env`，至少配置一个模型。例如：
 
@@ -65,7 +67,7 @@ make dev-api
 make dev-web
 ```
 
-浏览器访问 `http://localhost:5174`。Vite 会把 `/api` 请求代理到 `127.0.0.1:8000`。没有模型配置时网页仍可打开，但发送诊断消息会返回配置提示。
+浏览器访问 `http://localhost:5174`。Vite 会把 `/api` 请求代理到 `127.0.0.1:8000`。没有模型配置时网页仍可打开，但发送诊断消息会返回配置提示。未安装 Python/uv 时，Mastra API 仍可启动；知识 MCP 会降级为空能力，仓库代码检查不可用。
 
 停止服务时，在对应终端按 `Ctrl+C`。
 
@@ -99,14 +101,21 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_MASTRA_PORT` | `8000` | API/网页端口 |
 | `HARMONY_MASTRA_SERVE_WEB` | `false` | 是否托管 `web/dist` |
 | `HARMONY_MASTRA_DATA_DIR` | `.data/mastra` | LibSQL 数据目录 |
+| `HARMONY_MASTRA_DATABASE_URL` | `file:<data-dir>/runtime.db` | 自定义 LibSQL URL |
+| `HARMONY_MASTRA_WEB_DIST` | `web/dist` | 生产静态网页目录 |
 | `HARMONY_MASTRA_PROJECT_ROOT` | 仓库根目录 | MCP 项目根目录 |
-| `HARMONY_AGENT_ALLOWED_ROOTS` | 当前工作目录 | 允许读取的本地目录，逗号分隔 |
+| `HARMONY_AGENT_ALLOWED_ROOTS` | 仓库根目录 | 允许读取的本地目录，逗号分隔 |
 | `HARMONY_MASTRA_MCP_COMMAND` | `uv` | 启动 Python MCP 的命令 |
+| `HARMONY_MASTRA_SKILLS_DIR` | `skills` | Skill Markdown 目录 |
+| `HARMONY_MASTRA_GIT_MIRROR_DIR` | `.data/git-mirrors` | Git mirror 目录 |
+| `HARMONY_MASTRA_SNAPSHOT_DIR` | `.data/workspaces` | detached snapshot 目录 |
+| `HARMONY_MASTRA_GIT_TIMEOUT_MS` | `120000` | Git 操作超时 |
+| `HARMONY_AGENT_KNOWLEDGE_ROOT` | `knowledge` | 知识 MCP 根目录 |
 | `HARMONY_AGENT_MODEL_CONFIG_FILE` | `.data/model-config.json` | 本地模型配置文件 |
 
-网页设置写入 `.data/model-config.json`，文件权限为 `0600`。API Key 不会返回到状态接口、会话、报告、SSE 事件或日志；环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
+网页设置写入 `.data/model-config.json`，文件权限为 `0600`。API Key 在状态、会话、报告和 SSE 响应中会脱敏；日志路径应避免记录凭据，完整泄漏面仍需随 provider 集成验收。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
 
-知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续；仓库 MCP 在绑定仓库会话时按不可变快照单独启动。
+知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续；仓库 MCP 在绑定仓库会话时按不可变快照单独启动。知识检索和仓库代码检查需要 Python/uv 已安装，并已通过 `make setup` 安装 `mcp_server/` 依赖。
 
 ## 仓库与快照
 
@@ -138,7 +147,7 @@ make lint
 make build
 ```
 
-配置真实模型后再运行 live evaluation；模型调用可能产生费用。默认离线测试不会访问模型供应商。
+默认离线测试不会访问模型供应商。`make live-eval` 仍是旧 Python 评测入口，不能作为 Mastra Agent 已完成真实模型验收的证明；当前 Mastra provider-backed diagnosis 和评测迁移状态见 [`docs/mastra-runtime-migration-spec.md`](docs/mastra-runtime-migration-spec.md)。真实模型调用可能产生费用。
 
 ## 目录
 
@@ -148,7 +157,7 @@ web/          React/Vite 工作台
 mcp_server/   Python FastMCP 仓库与知识服务
 knowledge/    Markdown 知识库
 skills/       声明式诊断 Skill
-docs/         架构、迁移规格和运维文档
+docs/         当前架构、迁移规格、运维文档和历史设计记录
 ```
 
 设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 和 [`docs/mastra-runtime-migration-spec.md`](docs/mastra-runtime-migration-spec.md)。

@@ -25,11 +25,12 @@ dry-run 只读取源数据并输出报告。apply 会先创建带时间戳的备
 ## 验证
 
 ```bash
-npm --prefix runtime test
+make test-runtime
+make build
 HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 ```
 
-启动后检查 `GET /api/health`、`GET /api/conversations`，再打开网页确认会话、报告和仓库绑定可读。迁移演练应优先使用 `/tmp` 中的数据副本和临时 LibSQL 文件。
+启动后检查 `GET /api/health`、`GET /api/conversations`，再打开网页确认会话、报告和仓库绑定可读。runtime 启动诊断所需 MCP 时会调用 `uv`，因此演练环境也必须安装 Python/uv。迁移演练应优先使用 `/tmp` 中的数据副本和临时 LibSQL 文件。
 
 ## 回滚
 

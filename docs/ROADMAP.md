@@ -1,12 +1,14 @@
 # 演进路线：从鸿蒙诊断脚手架到多端排查 Agent
 
+> **历史路线图说明（2026-11-03）**：本文记录早期 PydanticAI/Agent runtime 的产品演进思路，保留其知识库、证据和多端产品目标。当前用户-facing Agent 与 HTTP 服务已经迁移到 `runtime/` 的 Mastra 实现；本文的阶段状态、规模数据、`agent/`/`server/` 路径和旧测试数字不是当前状态或验收依据。当前阶段、实现路径和未完成项以 [`mastra-runtime-migration-spec.md`](mastra-runtime-migration-spec.md) 为准。
+
 2026-09-17。这份文档给动手的人看：现在做什么，后面每个阶段做什么、做到什么算完。全局原则三条：最小改动，不动无关文件；证据门禁 `require_evidence_for_positive_verdict` 任何阶段不许破；领域概念（端、业务线、阶段名）不写死进枚举、提示词或包名。每个阶段的验收都落到 `agent/evals/datasets/diagnosis_cases.jsonl` 的扩充上，它是验收标准，不是事后补的作业。
 
 约束一条：工单数据拿不到。知识库冷启动只靠代码可核实的事实（`authority: code`），积累走「排查 → 案例 → 提炼条目」的自举闭环。没有统计先验，追问收窄就是核心机制，所以它在第一阶段。
 
-## 现状
+## 2026-09-17 历史快照
 
-已跑通：PydanticAI 鸿蒙只读诊断 Agent（描述问题 → 定位范围 → 排查证据 → 输出诊断）；Skill 声明式加载（`agent/src/harmony_agent/skill_runtime/`）；两个 MCP server（仓库、知识库），进程内与 stdio 共用同一份定义；AG-UI 工作台与回归集。知识库 1 条现象 + 9 条事实（5 条接缝层事实锚在 xesapp 真实代码上），检索服务 3 个工具 + CI 校验，77 项测试。
+截至 2026-09-17 已跑通：PydanticAI 鸿蒙只读诊断 Agent（描述问题 → 定位范围 → 排查证据 → 输出诊断）；Skill 声明式加载（`agent/src/harmony_agent/skill_runtime/`）；两个 MCP server（仓库、知识库），进程内与 stdio 共用同一份定义；AG-UI 工作台与回归集。知识库 1 条现象 + 9 条事实（5 条接缝层事实锚在 xesapp 真实代码上），检索服务 3 个工具 + CI 校验，77 项测试。此为历史快照，不代表当前 Mastra 迁移状态。
 
 已知天花板两处：`agents/prompts.py` 写死「HarmonyOS 只读诊断助手」；`EvidenceKind` 没有 `knowledge` 类型。这两处在阶段 4 一并解开，之前不要绕道修。（原第三处 `StageKey`/`STAGE_ORDER` 四阶段枚举已随 2026-09-24 案例队列移除而消失：诊断统一为多轮对话单一路径，报告经 `submit_diagnosis_report` 提交并接受证据校验。）
 

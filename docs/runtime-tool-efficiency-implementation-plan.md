@@ -1,5 +1,7 @@
 # 工具调用浪费修复实施方案
 
+> **历史实施记录说明（2026-11-03）**：本文记录 2026-09 的 Python runtime 优化方案和实验结果，保留为产品策略与回归依据。当前实现已迁移到 Mastra；文中的 `agent/src/...`、Python 类名、旧提交号和旧测试命令不代表当前产品 runtime 的实现路径。当前 TypeScript 映射、已完成项和剩余差异见 [`mastra-runtime-migration-spec.md`](mastra-runtime-migration-spec.md) 及 `runtime/src/diagnosis/`。
+
 日期：2026-09-29。状态：**实施建议，未因本文而修改运行时或部署配置**。
 依据：[2026-09-28 会话审计](../experiments/runtime_audit/REPORT-2026-09-28-conv-1d1e339323.md)。
 代码基线：`39a8882` 加当前未提交工作区；部分补丁已在工作区存在，下面分别标注已见改动与仍需解决的问题。

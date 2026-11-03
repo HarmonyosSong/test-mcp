@@ -1,5 +1,7 @@
 # 0002：Runtime、Skill 与知识检索的成本和证据约束
 
+> 本 ADR 的策略仍生效；文中 Python Agent、`ToolFailed` 和旧评测命令是历史实现上下文。当前策略由 `runtime/src/diagnosis/agent.ts`、`runtime/src/diagnosis/evidence.ts` 和 Mastra tool wrappers 承载，剩余差异见 [`mastra-runtime-migration-spec.md`](../mastra-runtime-migration-spec.md)。
+
 2026-09-23。目标是在保持排查质量的前提下减少工具往返与重复上下文。
 2026-09-24 修订：单次结构化诊断路径（HarmonyDiagnosisAgent / 四阶段案例队列）已移除，
 统一为多轮对话单一路径；结构化报告经 `submit_diagnosis_report` 工具在对话中提交并接受同一套证据校验。
@@ -70,6 +72,8 @@
 make knowledge-validate
 uv run --project server pytest -q agent/tests agent/evals mcp_server/tests server/tests
 ```
+
+上述 Python Agent/Server 测试命令是本 ADR 形成时的历史验证入口；目前不要用它们验收 Mastra runtime。当前 runtime 检查命令见根目录 `Makefile`，迁移验收状态见 [`mastra-runtime-migration-spec.md`](../mastra-runtime-migration-spec.md)。
 
 ## 2026-09-24 验证与反馈入口补充
 

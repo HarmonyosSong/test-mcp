@@ -1,5 +1,7 @@
 # 非向量知识检索 V2 技术设计
 
+> **实现边界说明（2026-11-03）**：本文是知识检索算法设计提案，保留检索规则、评测口径和 MCP 服务约束。文中引用的 `agent/` 调用路径属于旧 Python runtime；当前产品由 Mastra `runtime/` 通过 `runtime/src/capabilities/mcp.ts` 消费知识 MCP。本文的提案状态不能证明 Mastra Agent 已完成对应能力迁移。
+
 状态：**设计提案，尚未实现或验证收益**  
 日期：2026-09-28  
 代码基线：`2a56238b33a74a19d221cda6f8de3e509ea3ebe8`  

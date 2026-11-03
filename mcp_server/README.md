@@ -1,8 +1,10 @@
 # Harmony Repository MCP Server
 
-This package is the read-only tool boundary between the diagnosis agent and a
-repository snapshot. It does not orchestrate diagnosis runs and does not expose
-the web application's AG-UI stream.
+This package is the read-only MCP capability boundary between the Mastra
+diagnosis runtime and a repository snapshot or the Markdown knowledge base. It
+does not orchestrate diagnosis runs and does not expose the web application's
+AG-UI stream. The product runtime starts these servers on demand; this README
+also documents their standalone stdio entry points.
 
 ## Responsibilities
 
@@ -26,14 +28,14 @@ mcp_server/
 
 ## Run
 
-Set the immutable repository snapshot and start the stdio server:
+From the repository root, install the MCP dependencies with `make setup`. Then set the immutable repository snapshot and start the standalone stdio server:
 
 ```bash
 HARMONY_AGENT_MCP_WORKSPACE=/absolute/path/to/snapshot \
   uv run --project mcp_server harmony-repository-mcp
 ```
 
-The root [`mcp.json`](../mcp.json) contains the equivalent client configuration.
+The root [`mcp.json`](../mcp.json) contains a standalone repository-server client configuration. The Mastra runtime uses the same `uv run --project mcp_server ...` entry points and creates its own per-conversation repository client.
 
 ## Tools
 
@@ -63,3 +65,11 @@ Entry IDs are globally unique and references resolve across domains.
 Run `make knowledge-validate` from the repository root after editing content. See
 [`knowledge/_schema.md`](../knowledge/_schema.md) for layout and metadata constraints.
 Domain preferences and matched domains are included in query logs for retrieval evaluation.
+
+## Product runtime
+
+For the complete application flow, start `runtime/` through `make dev-api` or
+`make start` from the repository root. Do not start the old `server/` FastAPI
+application to run the product; `server/` and `agent/` remain legacy tests,
+evaluation tools, and domain references while the user-facing Agent and HTTP
+runtime are owned by Mastra.

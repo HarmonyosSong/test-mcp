@@ -1,5 +1,7 @@
 # 诊断反馈与评估入口
 
+> **Legacy 评估工具说明（2026-11-03）**：本文描述旧 Python Agent 的案例归档、反馈和 live evaluation 入口。它们仍可用于历史知识运营，但不是当前 Mastra 产品 runtime 的启动或全量切换验收命令；当前 Mastra 的查询日志、诊断案例归档和 provider-backed evaluation 仍记录在迁移规格的未完成项中。产品启动请看根目录 [`README.md`](../README.md)。
+
 2026-09-24。覆盖仓库绑定、检索召回、症状覆盖、案例提炼和真实模型验证。
 
 ## 行为变化

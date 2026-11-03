@@ -1,5 +1,7 @@
 # 0003:观测证据生命周期与工具缓存一致性
 
+> 本 ADR 的证据生命周期和缓存原则仍生效；文中 `agent/tests` 与 Python 类名是历史验收上下文。当前 TypeScript 实现位于 `runtime/src/diagnosis/evidence.ts` 和 `runtime/src/diagnosis/agent.ts`，当前测试位于 `runtime/test/`。
+
 2026-09-29。依据 [运行时工具效率实施方案](../runtime-tool-efficiency-implementation-plan.md)
 阶段 A,替代 [0002](0002-runtime-knowledge-budget.md) 中「上限 120 条 FIFO 淘汰」的
 单一约定(0002 第 32-33 行);0002 其余约束仍然有效。触发事件:53 步会话中早期证据被

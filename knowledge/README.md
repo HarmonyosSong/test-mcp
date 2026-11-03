@@ -1,5 +1,7 @@
 # 问题排查知识库
 
+> **运行时边界（2026-11-03）**：本文的知识结构、检索流程和 MCP 工具说明仍适用于当前 `mcp_server/`。聊天产品 runtime 已切换到 Mastra，但查询日志关联、诊断案例自动归档和 Mastra 评测入口尚未完成迁移；下文“诊断反馈与提炼”一节中基于 Python Agent 的自动化行为和命令属于旧 runtime 记录，不能作为当前产品能力。迁移状态见 [`docs/mastra-runtime-migration-spec.md`](../docs/mastra-runtime-migration-spec.md)。
+
 面向线上问题排查 Agent 的**纯内容仓库**。这里只有 Markdown，没有代码——目的是让懂业务的同学
 （一线支持、SOP 负责人）能直接改、直接提 PR，不需要碰 agent 代码。
 
@@ -158,9 +160,9 @@ V2 将这些信息作为动作、限定条件参与既有评分，不把“上�
 “上传/录入/导入”和“导出”分开登记；命中只表示条目讨论该任务，不能推出支持该格式或确认故障原因。
 
 召回维护先补同一条目的业务别名或概念同义表达，不复制事实、不调整域排序来制造命中。
-`agent/evals/datasets/knowledge_retrieval.jsonl` 保存已发现的漏召回、额外改写与无关查询；
-用 `uv run --project server pytest -q agent/evals/test_knowledge_retrieval.py` 执行生产内容评测。
-额外改写不得原样复制进 aliases；评测通过仅说明这些样本覆盖，不能宣称具备通用语义检索能力。
+`agent/evals/datasets/knowledge_retrieval.jsonl` 保存旧 Python Agent 阶段发现的漏召回、额外改写与无关查询；
+`uv run --project server pytest -q agent/evals/test_knowledge_retrieval.py` 是历史评测命令，不验证当前 Mastra Agent。
+额外改写不得原样复制进 aliases；旧评测通过仅说明这些样本覆盖，不能宣称具备通用语义检索能力。
 
 检索与正文预览可分别配置，修改环境变量后须重建工具实例或重启服务：
 
@@ -205,12 +207,11 @@ uv run --project mcp_server harmony-knowledge-validate
 
 ## 诊断反馈与提炼
 
-每个已结束的聊天轮自动归档到会话数据文件同目录的 `knowledge-cases/`，包含原始问题、报告、
-观测快照、失败状态和成本；删除会话不会删除案例。归档初始为待复核，不能把模型的 probable/located
-当成人工确认。查询日志记录 conversation_id/message_id，并追加 diagnosis_outcome 的报告 verdict；
-人工 confirmed/rejected/uncertain 保存在对应案例 review 中，历史无关联 ID 的日志不伪造回填。
-`harmony-knowledge-querylog` 同时统计 lookup_issue 和 search_knowledge 的未命中/弱命中，工具错误单列。
+当前 `mcp_server/` 提供知识查询日志和知识库校验入口，但 Mastra runtime 尚未完成查询日志的会话/消息关联、
+诊断案例归档和评测入口迁移。下列旧 Python Agent 资料可用于理解既有知识运营流程，不能视为当前聊天会自动
+归档案例或当前 Mastra 诊断质量已通过评估。
 
-操作见 [修复与验证说明](../docs/triage-feedback-and-evaluation.md)。确认根因后生成提案，先核对相似条目，
-优先更新规范 ID；编辑适用范围、判据与例外后 apply，在隔离副本校验全库再原子写入。新条目默认 auto，
-不自动提升来源权威，不自动生成 verified_at。新增事实还应补充或更新关联现象及区分问题。
+历史反馈与评估流程见 [修复与验证说明](../docs/triage-feedback-and-evaluation.md)，其中 `knowledge-cases/`、
+`harmony_agent.knowledge_feedback` 和 `make live-eval` 均属于旧 runtime。确认根因后再按知识维护规则提炼：
+先核对相似条目，优先更新规范 ID；编辑适用范围、判据与例外后校验全库。新条目默认 `auto`，不自动提升来源
+权威，不自动生成 `verified_at`。新增事实还应补充或更新关联现象及区分问题。
