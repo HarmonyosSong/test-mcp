@@ -14,6 +14,10 @@ export const runtimeConfigSchema = z.object({
   databaseUrl: z.string().default(''),
   webDist: z.string().default('web/dist'),
   serveWeb: booleanFromEnv,
+  legacyConversationsFile: z.string().default('.data/conversations.json'),
+  legacyRepositoriesFile: z.string().default('.data/repositories.json'),
+  legacySnapshotDir: z.string().default('.data/workspaces'),
+  modelConfigFile: z.string().default('.data/model-config.json'),
 });
 
 export type RuntimeConfig = z.infer<typeof runtimeConfigSchema>;
@@ -26,6 +30,10 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     databaseUrl: env.HARMONY_MASTRA_DATABASE_URL,
     webDist: env.HARMONY_MASTRA_WEB_DIST,
     serveWeb: env.HARMONY_MASTRA_SERVE_WEB,
+    legacyConversationsFile: env.HARMONY_MASTRA_LEGACY_CONVERSATIONS_FILE,
+    legacyRepositoriesFile: env.HARMONY_MASTRA_LEGACY_REPOSITORIES_FILE,
+    legacySnapshotDir: env.HARMONY_MASTRA_LEGACY_SNAPSHOT_DIR,
+    modelConfigFile: env.HARMONY_AGENT_MODEL_CONFIG_FILE,
   });
   return {
     ...config,
