@@ -93,30 +93,105 @@ experiments/    检索质量和知识库评估实验
 
 ## 快速启动
 
-在仓库根目录安装依赖：
+### 1. 安装依赖
 
 ```bash
 make setup
 ```
 
-启动 API：
+### 2. 配置模型和本地工作区
+
+复制环境变量模板：
+
+```bash
+cp .env.example .env
+```
+
+至少配置一个模型。下面以 OpenAI 为例：
+
+```dotenv
+HARMONY_AGENT_MODE=model
+HARMONY_AGENT_MODEL=openai:gpt-5.2
+OPENAI_API_KEY=your-api-key
+```
+
+如果需要分析本地 HarmonyOS 项目，还要配置允许读取的目录：
+
+```dotenv
+HARMONY_AGENT_ALLOWED_ROOTS=/absolute/path/to/your/HarmonyOS/project
+```
+
+也可以不配置 `.env`，先启动网页，再通过网页右上角的“模型设置”配置模型。没有模型时网页可以打开，但不能发送诊断消息。
+
+### 3. 启动后端服务
+
+在**终端一**执行：
 
 ```bash
 make dev-api
 ```
 
-另开一个终端启动前端：
+后端启动成功后默认监听：
+
+```text
+http://127.0.0.1:8000
+```
+
+API 文档地址：
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+保持这个终端运行，然后打开**终端二**。
+
+### 4. 启动网页
+
+在**终端二**执行：
 
 ```bash
 make dev-web
 ```
 
-然后访问：
+前端开发服务器启动成功后，打开：
 
-- 工作台：<http://localhost:5174>
-- API 文档：<http://127.0.0.1:8000/docs>
+```text
+http://localhost:5174
+```
 
-没有配置模型时，工作台可以打开，但聊天诊断不可用。
+如果 `5174` 端口被占用，Vite 会直接报错。请先关闭占用该端口的进程，再重新执行 `make dev-web`。
+
+### 启动流程速览
+
+以后再次启动项目，只需要打开两个终端：
+
+```text
+终端一：make dev-api
+终端二：make dev-web
+浏览器：打开 http://localhost:5174
+```
+
+### 5. 第一次使用
+
+1. 打开网页并完成模型配置。
+2. 点击“新建会话”。
+3. 直接描述 HarmonyOS 问题，可以粘贴日志或代码片段。
+4. 如需分析代码仓库，绑定本地工作区或登记 Git 仓库。
+5. 等待 Agent 检索知识、读取证据并生成诊断报告。
+
+示例问题：
+
+```text
+登录页启动白屏，hilog 中出现：
+TypeError: Cannot read property name
+```
+
+### 停止服务
+
+在运行服务的终端按 `Ctrl+C`：
+
+- 终端一停止 FastAPI 后端；
+- 终端二停止 Vite 前端。
 
 ## 配置模型
 
