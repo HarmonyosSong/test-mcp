@@ -1,0 +1,29 @@
+{
+  "name": "troubleshoot-odyssey-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/src/server.js",
+    "dev": "tsx src/server.ts",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.6",
+    "@mastra/core": "1.81.0",
+    "@mastra/hono": "1.7.23",
+    "@mastra/libsql": "1.28.0",
+    "@mastra/mcp": "2.7.0",
+    "hono": "4.13.16",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "tsx": "4.20.6",
+    "typescript": "5.7.2"
+  }
+}

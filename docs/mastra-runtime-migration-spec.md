@@ -43,7 +43,7 @@ No business-repository write, shell execution, build, device, emulator, or DevEc
 ### 3.1 Application composition
 
 - Add a dedicated TypeScript application package for Mastra runtime, custom HTTP routes, runtime/domain services, and runtime tests. Keep it separate from the Vite web package.
-- Set the minimum runtime to Node.js `22.13.0`, required by the currently resolved Mastra core package. Pin exact Mastra package versions in the lockfile; the initial compatibility candidate from the 2026-11-03 package registry is `@mastra/core@1.81.0`, `@mastra/memory@1.40.0`, and `@mastra/libsql@1.28.0`. Phase 1 must verify installation and peer compatibility, then record the exact committed versions here.
+- Set the minimum runtime to Node.js `22.13.0`, required by the currently resolved Mastra core package. Pin exact Mastra package versions in the lockfile. Phase 1 verified: `@mastra/core@1.81.0`, `@mastra/hono@1.7.23`, `@mastra/libsql@1.28.0`, `@mastra/mcp@2.7.0`, `@mastra/memory@1.40.0`, Hono `4.13.16`, Zod `4.6.7`; runtime adapter packages require Node `>=22.13.0`.
 - Mastra is the only Agent orchestration framework in the product. Do not run PydanticAI and Mastra as competing production paths or leave a feature flag that selects the old runtime after cutover.
 - Use Mastra custom API routes or a documented Mastra server adapter to implement the existing product API. The Mastra server listens on port `8000` by default to preserve local proxy and deployment conventions; the Vite development server remains on `5174`.
 - A production start command serves the built React assets and API from the Mastra application. A development mode runs Mastra and Vite separately, matching the current two-terminal workflow.
@@ -154,11 +154,15 @@ Status: complete.
 
 ### Phase 1: Mastra application foundation
 
+Status: complete.
+
 - Add TypeScript runtime package, pinned package manager/lockfile, supported Mastra version, server adapter, configuration validation, health endpoint, persistence adapter, and test harness.
 - Add architecture note for runtime ownership, storage, thread mapping, and Python MCP connectivity.
 - Gate: clean install, typecheck, unit test, health endpoint, persistent restart smoke test.
 
 ### Phase 2: Domain contracts and data migration
+
+Status: in progress.
 
 - Port product DTOs/schemas and evidence/report validation to Zod/TypeScript.
 - Implement dry-run, backup, idempotent migration and rollback for conversation/repository data.
@@ -201,8 +205,8 @@ At the end of each phase, update the phase status, actual file paths, tests run,
 | Phase | Status | Evidence |
 |---|---|---|
 | 0. Baseline and contract capture | Complete | `make test`: 375 passed, 2 skipped; `make build`: passed; `git diff --check`: passed. `make lint` has two pre-existing Ruff import-order failures in `retrieval_v2.py` and `harmony_knowledge_mcp/server.py`; remaining Agent/Server lint checks passed. Two independent read-only audits recorded runtime, API, persistence, deployment, and regression-test contracts. |
-| 1. Mastra application foundation | Not started | |
-| 2. Domain contracts and data migration | Not started | |
+| 1. Mastra application foundation | Complete | `runtime/` created with exact npm lockfile; Node 22.22.0 used for clean install; Mastra Hono adapter serves port 8000; `/api/health` and `/api/meta` returned 200; LibSQL thread survived runtime close/recreate; 2 foundation tests, typecheck, and build passed. `npm ci` reported 3 moderate advisories; dependency paths remain to be reviewed. |
+| 2. Domain contracts and data migration | In progress | Zod DTOs and safe legacy migration not started yet. |
 | 3. Capabilities and policy layer | Not started | |
 | 4. Agent, memory, and streaming | Not started | |
 | 5. API and frontend integration | Not started | |
