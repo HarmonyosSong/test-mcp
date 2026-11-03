@@ -15,8 +15,9 @@
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@libsql/client": "0.18.0",
+    "@ai-sdk/openai-compatible": "2.0.87",
     "@hono/node-server": "2.1.6",
+    "@libsql/client": "0.18.0",
     "@mastra/core": "1.81.0",
     "@mastra/hono": "1.7.21",
     "@mastra/libsql": "1.28.0",

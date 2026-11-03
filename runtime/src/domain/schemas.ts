@@ -340,4 +340,5 @@ export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type ConversationRecord = z.infer<typeof ConversationRecordSchema>;
 export type ModelConfigRequest = z.infer<typeof ModelConfigRequestSchema>;
 export type RepositoryRecord = z.infer<typeof RepositoryRecordSchema>;
+export type RepositoryBranch = z.infer<typeof RepositoryBranchSchema>;
 export type RepositorySnapshot = z.infer<typeof RepositorySnapshotSchema>;

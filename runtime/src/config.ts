@@ -1,11 +1,38 @@
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { z } from 'zod';
 
 const booleanFromEnv = z
   .string()
   .optional()
-  .transform((value) => value === undefined || value === 'true');
+  .transform((value) => value === 'true');
+
+function findRepositoryRoot(): string {
+  let directory = resolve(fileURLToPath(new URL('.', import.meta.url)));
+  while (true) {
+    if (existsSync(resolve(directory, 'skills')) && existsSync(resolve(directory, 'mcp_server'))) return directory;
+    const parent = resolve(directory, '..');
+    if (parent === directory) return process.cwd();
+    directory = parent;
+  }
+}
+
+const repositoryRoot = findRepositoryRoot();
+
+function loadProjectEnv(): void {
+  const path = resolve(repositoryRoot, '.env');
+  if (!existsSync(path)) return;
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (!match || process.env[match[1]] !== undefined) continue;
+    const value = match[2].replace(/^(['"])(.*)\1$/, '$2');
+    process.env[match[1]] = value;
+  }
+}
+
+loadProjectEnv();
 
 export const runtimeConfigSchema = z.object({
   host: z.string().default('127.0.0.1'),
@@ -18,6 +45,14 @@ export const runtimeConfigSchema = z.object({
   legacyRepositoriesFile: z.string().default('.data/repositories.json'),
   legacySnapshotDir: z.string().default('.data/workspaces'),
   modelConfigFile: z.string().default('.data/model-config.json'),
+  projectRoot: z.string().default(repositoryRoot),
+  knowledgeRoot: z.string().default('knowledge'),
+  allowedRoots: z.array(z.string()).default([repositoryRoot]),
+  mcpCommand: z.string().default('uv'),
+  skillsDir: z.string().default(resolve(repositoryRoot, 'skills')),
+  gitMirrorDir: z.string().default('.data/git-mirrors'),
+  snapshotDir: z.string().default('.data/workspaces'),
+  gitTimeoutMs: z.coerce.number().int().min(1_000).max(600_000).default(120_000),
 });
 
 export type RuntimeConfig = z.infer<typeof runtimeConfigSchema>;
@@ -34,9 +69,32 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     legacyRepositoriesFile: env.HARMONY_MASTRA_LEGACY_REPOSITORIES_FILE,
     legacySnapshotDir: env.HARMONY_MASTRA_LEGACY_SNAPSHOT_DIR,
     modelConfigFile: env.HARMONY_AGENT_MODEL_CONFIG_FILE,
+    projectRoot: env.HARMONY_MASTRA_PROJECT_ROOT,
+    knowledgeRoot: env.HARMONY_AGENT_KNOWLEDGE_ROOT,
+    allowedRoots: env.HARMONY_AGENT_ALLOWED_ROOTS?.split(',').map((value) => value.trim()).filter(Boolean),
+    mcpCommand: env.HARMONY_MASTRA_MCP_COMMAND,
+    skillsDir: env.HARMONY_MASTRA_SKILLS_DIR,
+    gitMirrorDir: env.HARMONY_MASTRA_GIT_MIRROR_DIR,
+    snapshotDir: env.HARMONY_MASTRA_SNAPSHOT_DIR,
+    gitTimeoutMs: env.HARMONY_MASTRA_GIT_TIMEOUT_MS,
   });
+  const projectRoot = resolve(repositoryRoot, config.projectRoot);
+  const fromRoot = (path: string) => resolve(projectRoot, path);
+  const dataDir = fromRoot(config.dataDir);
   return {
     ...config,
-    databaseUrl: config.databaseUrl || `file:${resolve(config.dataDir, 'runtime.db')}`,
+    projectRoot,
+    dataDir,
+    webDist: fromRoot(config.webDist),
+    legacyConversationsFile: fromRoot(config.legacyConversationsFile),
+    legacyRepositoriesFile: fromRoot(config.legacyRepositoriesFile),
+    legacySnapshotDir: fromRoot(config.legacySnapshotDir),
+    modelConfigFile: fromRoot(config.modelConfigFile),
+    knowledgeRoot: fromRoot(config.knowledgeRoot),
+    allowedRoots: config.allowedRoots.map(fromRoot),
+    skillsDir: fromRoot(config.skillsDir),
+    gitMirrorDir: fromRoot(config.gitMirrorDir),
+    snapshotDir: fromRoot(config.snapshotDir),
+    databaseUrl: config.databaseUrl || `file:${resolve(dataDir, 'runtime.db')}`,
   };
 }

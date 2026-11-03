@@ -11,14 +11,14 @@ test('loads safe defaults and exposes health metadata', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'troubleshoot-odyssey-'));
   try {
     const config = loadRuntimeConfig({ HARMONY_MASTRA_DATA_DIR: dataDir });
+    assert.equal(config.projectRoot, process.cwd().replace(/\/runtime$/, ''));
+    assert.equal(config.skillsDir.endsWith('/skills'), true);
     const { app, mastra } = await createRuntimeApp(config);
     const response = await app.request('/api/health');
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), {
-      status: 'ok',
-      runtime: 'mastra',
-      version: '0.1.0',
-    });
+    const health = await response.json() as { status: string; mode: string; model: string | null; provider: string | null };
+    assert.equal(health.status, 'ok');
+    assert.ok(health.mode === 'demo' || health.mode === 'model');
 
     const memory = await mastra.getStorage()?.getStore('memory');
     assert.ok(memory);

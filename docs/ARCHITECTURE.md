@@ -1,84 +1,56 @@
 # 架构图
 
-单路径对话诊断链路：`描述问题 -> 多轮排查 -> 提交证据校验的诊断报告`。
-本图标“已实现”为仓库内代码，“外部依赖”为仓库外服务或配置。
-
-## 总览
+## 运行时边界
 
 ```text
-┌─────────────────────────────── 接入层（已实现）──────────────────────────────┐
-│ web/  React 工作台（会话列表、多轮聊天、工具步骤、诊断报告卡片）                │
-│ server/ FastAPI：SSE/AG-UI 流式网关、会话持久化、中断恢复                      │
-└──────────────────────────────────┬──────────────────────────────────────────┘
-                                   │
-┌──────────────────────────────────▼── Agent 层（已实现，PydanticAI）─────────┐
-│ HarmonyChatAgent（唯一诊断路径）                                             │
-│  多轮对话排查；结论经 submit_diagnosis_report 工具提交结构化报告              │
-│  入口规则：业务现象先查知识，技术线索直查证据                                  │
-└──────────────────────────────────┬──────────────────────────────────────────┘
-                                   │
-┌──────────────────────────────────▼── Runtime 约束层（已实现）───────────────┐
-│ ToolFailureBudget  失败预算 / 总调用上限 / 连续无进展停止 / 成功结果复用      │
-│ EvidenceLedger     证据登记与报告校验（知识命中 ≠ 本次故障证据）              │
-│                    快照随会话持久化，跨轮引用；上限 120 条 FIFO               │
-│ 历史压缩           保留工具调用配对与最近问答摘录                             │
-│ request_metrics    模型请求数与耗时（含失败请求）                             │
-│ ModelGateway       模型配置与密钥（外部依赖：模型供应商）                     │
-└──────────────────────────────────┬──────────────────────────────────────────┘
-                                   │
-┌──────────────────────────────────▼── 能力层─────────────────────────────────┐
-│ Skill（已实现）        skills/ SKILL.md：定位、取证、报告、绑定               │
-│                        按运行模式（chat）与必需工具过滤；正文完整注入不截断   │
-│                                                                            │
-│ 本地知识库（已实现）   knowledge/ 现象 + 8 个业务域事实                       │
-│                        mcp_server/ 检索服务：lookup_issue 统一入口            │
-│                        业务域偏好排序，跨域结果保留；查询日志驱动条目建设     │
-│                                                                            │
-│ 外部知识库（适配已实现） toolsets/dev_knowledge.py：覆盖判断 -> 术语改写      │
-│   ↑ 外部依赖            -> wiki_resolve/wiki_read -> 契约与来源校验           │
-│   dev-knowledge MCP     stdio/HTTP；未配置不暴露工具；静态知识不进证据账本    │
-│   （云学习团队维护）    配置：HARMONY_AGENT_DEV_KNOWLEDGE_CONFIG              │
-│                                                                            │
-│ 仓库只读工具（已实现）  列文件 / 搜文本 / 读片段 / 解析 hilog                 │
-│                        绑定工作区或会话仓库；复用已有绑定，不覆盖分支快照     │
-└─────────────────────────────────────────────────────────────────────────────┘
+浏览器
+  | REST + AG-UI 兼容 SSE
+  v
+runtime/src/server.ts
+  |
+runtime/src/app.ts                  MastraServer + Hono 路由
+  |-- ProductStore                  LibSQL 产品数据
+  |-- ModelConfiguration             provider/model/API Key 解析
+  |-- DiagnosisAgent                Mastra Agent + 流事件适配
+  |     |-- EvidenceLedger           证据 ID、逐字引用、报告门禁
+  |     |-- SkillRegistry             Markdown SKILL.md
+  |     `-- MCP toolsets              知识和仓库只读能力
+  |-- RepositoryCapability            Git mirror + detached snapshot
+  `-- migration/legacy.ts             JSON -> LibSQL 幂等迁移
+          |
+          `-- mcp_server/              Python FastMCP domain services
 ```
 
-## 一次排查的调用流
+Mastra 负责 Agent 编排和 runtime 生命周期；Hono 保持现有 REST/SSE 合同；LibSQL 保存产品数据和 Mastra storage。Python 进程只承担 MCP 能力，不拥有产品 HTTP 服务或诊断 Agent。
 
-```text
-用户描述（+ 已知产品、端、版本）
-  │
-  ├─ 明确堆栈/文件/接口错误 ──────────────► 仓库工具直接取证
-  │
-  └─ 业务现象
-       │  lookup_issue（本地知识：术语映射、候选、区分问题、代码锚点）
-       ▼
-  覆盖的外部产品？（配置判断，不猜）
-       │  是：resolve_external_knowledge（verbatim 症状 + 术语改写）
-       │      -> 复核 Topic 语义 -> read_external_knowledge（1-3 个推荐章节）
-       │  否/未配置/失败：返回缺口，继续本地链路
-       ▼
-  仓库工具核实当前代码、日志（实际证据进 EvidenceLedger，跨轮可引用）
-       │
-       ▼
-  submit_diagnosis_report：每个正向候选引用真实观测证据 -> 分级结论 / 证据缺口
-  （校验失败返回可行动的修改要求；报告随消息持久化，前端渲染为报告卡片）
-```
+## 一轮诊断
 
-约束贯穿全程：每次工具调用经过预算与复用检查；外部内容与 Skill 正文按来源区分信任级别；
-预算或无进展停止后仍可输出“已确认事实 + 最小缺口”，不允许为省调用而假报成功。
+1. `POST /api/conversations/{id}/messages` 先落盘用户消息和 `streaming` assistant 占位，防止并发轮次绕过锁。
+2. runtime 按会话快照创建仓库 MCP client，并发现可用知识 toolset。知识服务不可用时降级为空 toolset。
+3. `DiagnosisAgent` 使用安全的产品级文本历史；旧框架内部消息不会直接交给 Mastra。未完成的 assistant 消息和不完整工具对不重放。
+4. Mastra stream chunk 在 `diagnosis/agent.ts` 统一转换为文本、工具开始/结束、完成或失败事件。工具结果只有在实际来源工具返回后才进入 `EvidenceLedger`。
+5. Hono 将内部事件转换成前端已有的 `RUN_STARTED`、`TEXT_MESSAGE_*`、`TOOL_CALL_*`、`STATE_SNAPSHOT`、`RUN_FINISHED` 和 `RUN_ERROR` SSE 事件。
+6. 成功、模型错误、工具错误、取消和客户端断开都会把 assistant 从 `streaming` 更新为可恢复的终态。
 
-## 外部依赖清单
+## 持久化
 
-| 依赖 | 状态 | 说明 |
-|---|---|---|
-| 模型供应商 | 必须（未配置时聊天不可用） | ModelGateway 按配置接入 |
-| dev-knowledge MCP | 适配已实现，部署未连接 | stdio 冒烟通过；生产地址、鉴权、发布产品范围待确认 |
+- `product_conversations`：会话、展示消息、证据快照和安全历史。
+- `product_repositories`：仓库登记信息。
+- `product_snapshots`：仓库 Commit 与 detached 工作区元数据。
+- `runtime_migrations`、`runtime_migration_items`、`runtime_schema`：迁移幂等、回滚和 schema 版本。
 
-## 设计约束指针
+模型配置仍保存在 `.data/model-config.json`，由 runtime 以 `0600` 权限写入。凭据不进入产品数据库、SSE、报告或日志。
 
-- 入口顺序、预算、证据校验：[0002-runtime-knowledge-budget](decisions/0002-runtime-knowledge-budget.md)
-- 知识库选型与维护边界：[0001-knowledge-base-selection](decisions/0001-knowledge-base-selection.md)
-- 知识条目约束：[knowledge/AGENTS.md](../knowledge/AGENTS.md)
-- 外部知识库接入流程：[LEADERSHIP_SHARE](LEADERSHIP_SHARE.md)
+## 能力与安全
+
+- RepositoryCapability 校验 URL、分支、允许根目录、真实路径和 snapshot identity；Git 不操作用户工作树。
+- MCP 仓库 client 按会话创建并绑定 immutable snapshot，避免长连接切换到新分支。
+- EvidenceLedger 区分用户描述、知识线索、工具观测和过期证据；正向诊断必须链接源码或日志观测。
+- Skill 正文从 `skills/` 动态读取，Markdown 是唯一权威来源。
+- runtime 不提供 shell、写文件、构建或设备工具。
+
+## 部署形态
+
+开发时 Vite 在 `5174` 提供网页，代理 API 到 runtime `8000`。生产时先构建 `web/dist`，再设置 `HARMONY_MASTRA_SERVE_WEB=true`，Mastra/Hono 单进程同时提供静态网页和 API。
+
+迁移规格、阶段状态和验收证据见 [`mastra-runtime-migration-spec.md`](mastra-runtime-migration-spec.md)。

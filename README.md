@@ -1,353 +1,154 @@
 # Troubleshoot Odyssey
 
-面向 HarmonyOS 开发问题的证据驱动诊断工作台。
-
-Troubleshoot Odyssey 将自然语言描述、代码仓库、hilog、知识库和大模型编排在同一条可追踪链路中：
+面向 HarmonyOS 开发问题的证据驱动诊断工作台。用户可以粘贴现象、hilog 或代码片段，也可以绑定本地工作区或 Git 仓库；系统通过只读 MCP 工具读取真实证据，并生成可复核的诊断报告。
 
 ```text
-描述现象
-  -> 定位相关知识与代码范围
-  -> 读取日志和源码证据
-  -> 多轮验证候选原因
-  -> 输出带证据引用的诊断报告
+React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应商
+                                      |
+                                      +-> LibSQL 产品数据与证据状态
 ```
 
-它的目标不是让模型“猜一个答案”，而是让诊断过程可观察、可约束、可复核。
+当前产品是只读诊断工具，不修改业务仓库、不执行 Shell、构建、设备操作或 DevEco CLI。
 
-> 当前版本是只读诊断工具：不会修改业务仓库、生成补丁、执行 Shell、构建或运行 HarmonyOS 应用，也不会调用 DevEco CLI。
+## 功能
 
-## 特性
-
-- **多轮 Agent 对话**：基于 PydanticAI，支持流式回复、上下文压缩和多轮追问。
-- **证据约束报告**：诊断结论必须引用运行时实际观测到的证据；知识库内容不能替代当前故障证据。
-- **只读仓库检查**：支持列文件、搜索文本、读取文件片段和解析 hilog。
-- **仓库快照**：按仓库分支解析 Commit，使用 detached 快照进行分析，避免会话受到后续分支变化影响。
-- **知识检索**：本地 Markdown 知识库提供统一的 `lookup_issue` 入口，并记录查询日志帮助发现知识缺口。
-- **Skill 机制**：通过声明式 `SKILL.md` 描述定位、取证、报告和仓库绑定流程，按需加载。
-- **运行时保护**：工具失败预算、总调用上限、无进展停止、成功结果复用和跨轮证据持久化。
-- **过程可见**：前端展示模型回复、工具调用步骤、耗时、上下文用量和诊断报告。
-- **模型可替换**：支持 OpenAI、DeepSeek、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包，以及任意 OpenAI-compatible 接口。
+- 多轮对话、SSE 流式回复和中断后可恢复的会话状态。
+- 证据账本：正向根因只能引用本轮或历史工具实际观测到的源码/日志证据。
+- 本地 Markdown 知识库和声明式 `skills/*/SKILL.md`。
+- 本地工作区检查、Git 分支查询和 detached Commit 快照。
+- OpenAI、DeepSeek、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 接口。
+- 模型、会话、仓库和快照数据保存在 LibSQL；旧 `.data` JSON 可通过迁移命令导入。
 
 ## 技术栈
 
 | 层 | 技术 |
 | --- | --- |
-| Agent 编排 | Python 3.11+、PydanticAI、Pydantic |
-| HTTP 网关 | FastAPI、Uvicorn、AG-UI、SSE |
-| 工具协议 | FastMCP、MCP |
-| 知识库 | Markdown、结构化元数据、规则检索、JSONL 查询日志 |
-| 前端 | React 19、TypeScript、Vite |
-| UI | Arco Design、Lucide React、GSAP、自定义 CSS |
-| 包管理 | Python 使用 uv，前端使用 npm |
+| Agent 与策略 | Mastra 1.81、TypeScript、Zod |
+| HTTP 与流式协议 | Hono、AG-UI 兼容 SSE |
+| 数据 | LibSQL、`@mastra/libsql` |
+| 能力协议 | MCP、`@mastra/mcp`、Python FastMCP 服务 |
+| 网页 | React 19、TypeScript、Vite |
 
-这不是 ArkUI/ArkTS 应用工程，而是用于分析 HarmonyOS 项目的独立诊断服务。
-
-## 架构
-
-```text
-web/
-  React/Vite 工作台
-      |
-      | REST + AG-UI/SSE
-      v
-server/
-  FastAPI 网关、会话管理、流式事件转换
-      |
-      v
-agent/
-  PydanticAI Agent、运行时约束、证据账本、Skill 路由
-      |
-      +--> mcp_server/
-      |      只读仓库工具、知识库工具、hilog 解析
-      |
-      +--> 外部模型供应商
-             OpenAI-compatible Chat Completions
-```
-
-核心目录：
-
-```text
-agent/          Agent 编排、领域模型、运行时和评估集
-server/         FastAPI + AG-UI/SSE 网关
-mcp_server/     FastMCP 仓库检查服务和知识库服务
-web/            React/Vite 诊断工作台
-knowledge/      本地现象知识和业务事实
-skills/         平台级声明式 Skill
-docs/           架构、决策、检索设计和评估文档
-experiments/    检索质量和知识库评估实验
-```
-
-更完整的设计说明见：
-
-- [架构图](docs/ARCHITECTURE.md)
-- [运行时与知识检索约束](docs/decisions/0002-runtime-knowledge-budget.md)
-- [知识库选型决策](docs/decisions/0001-knowledge-base-selection.md)
-- [演进路线](docs/ROADMAP.md)
+`agent/` 和 `server/` 保留用于知识/MCP 领域服务、历史测试和评估资料；产品 Agent 与 HTTP runtime 由 `runtime/` 负责。
 
 ## 环境要求
 
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/)
-- Node.js 18+
+- Node.js `>=22.13.0`
 - npm
+- Python `>=3.11` 和 uv，仅在启动 `mcp_server/` 时需要
 
-## 快速启动
+## 启动网页（开发模式）
 
-### 1. 安装依赖
+在项目根目录执行：
 
 ```bash
 make setup
-```
-
-### 2. 配置模型和本地工作区
-
-复制环境变量模板：
-
-```bash
 cp .env.example .env
 ```
 
-至少配置一个模型。下面以 OpenAI 为例：
+编辑 `.env`，至少配置一个模型。例如：
 
 ```dotenv
 HARMONY_AGENT_MODE=model
 HARMONY_AGENT_MODEL=openai:gpt-5.2
 OPENAI_API_KEY=your-api-key
-```
-
-如果需要分析本地 HarmonyOS 项目，还要配置允许读取的目录：
-
-```dotenv
 HARMONY_AGENT_ALLOWED_ROOTS=/absolute/path/to/your/HarmonyOS/project
 ```
 
-也可以不配置 `.env`，先启动网页，再通过网页右上角的“模型设置”配置模型。没有模型时网页可以打开，但不能发送诊断消息。
-
-### 3. 启动后端服务
-
-在**终端一**执行：
+然后打开两个终端：
 
 ```bash
+# 终端一：Mastra runtime，默认 http://127.0.0.1:8000
 make dev-api
-```
 
-后端启动成功后默认监听：
-
-```text
-http://127.0.0.1:8000
-```
-
-API 文档地址：
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-保持这个终端运行，然后打开**终端二**。
-
-### 4. 启动网页
-
-在**终端二**执行：
-
-```bash
+# 终端二：Vite 网页，默认 http://localhost:5174
 make dev-web
 ```
 
-前端开发服务器启动成功后，打开：
+浏览器访问 `http://localhost:5174`。Vite 会把 `/api` 请求代理到 `127.0.0.1:8000`。没有模型配置时网页仍可打开，但发送诊断消息会返回配置提示。
 
-```text
-http://localhost:5174
-```
+停止服务时，在对应终端按 `Ctrl+C`。
 
-如果 `5174` 端口被占用，Vite 会直接报错。请先关闭占用该端口的进程，再重新执行 `make dev-web`。
+## 启动项目（生产模式）
 
-### 启动流程速览
-
-以后再次启动项目，只需要打开两个终端：
-
-```text
-终端一：make dev-api
-终端二：make dev-web
-浏览器：打开 http://localhost:5174
-```
-
-### 5. 第一次使用
-
-1. 打开网页并完成模型配置。
-2. 点击“新建会话”。
-3. 直接描述 HarmonyOS 问题，可以粘贴日志或代码片段。
-4. 如需分析代码仓库，绑定本地工作区或登记 Git 仓库。
-5. 等待 Agent 检索知识、读取证据并生成诊断报告。
-
-示例问题：
-
-```text
-登录页启动白屏，hilog 中出现：
-TypeError: Cannot read property name
-```
-
-### 停止服务
-
-在运行服务的终端按 `Ctrl+C`：
-
-- 终端一停止 FastAPI 后端；
-- 终端二停止 Vite 前端。
-
-## 配置模型
-
-复制配置模板：
+构建网页和 runtime，并由一个 Mastra 进程同时提供网页与 API：
 
 ```bash
-cp .env.example .env
+make start
 ```
 
-最小配置示例：
-
-```dotenv
-HARMONY_AGENT_MODE=model
-HARMONY_AGENT_MODEL=openai:gpt-5.2
-OPENAI_API_KEY=your-api-key
-```
-
-也可以直接在工作台的“模型设置”中配置。API Key 只保存在当前后端进程内，不写入浏览器、会话记录或接口响应；后端重启后运行时配置会清空。
-
-支持以下模型接入方式：
-
-- OpenAI
-- DeepSeek
-- 通义千问
-- Moonshot/Kimi
-- 智谱 GLM
-- 火山方舟/豆包
-- 任意 OpenAI-compatible 接口
-- 本地 Ollama、vLLM 等无需公网 API Key 的服务
-
-如果服务端不支持 `$defs`、strict 工具定义或多条 system message，可以在模型设置中启用兼容模式。
-
-## 接入业务仓库
-
-### 本地工作区
-
-在 `.env` 中设置允许读取的根目录：
-
-```dotenv
-HARMONY_AGENT_ALLOWED_ROOTS=/absolute/path/to/your/HarmonyOS/project
-```
-
-多个目录使用逗号分隔。每次文件访问都会重新校验真实路径，越过允许根目录的路径和外部软链接会被拒绝。
-
-### Git 仓库
-
-可以在工作台中登记 Git 仓库，也可以使用仓库 API：
-
-```text
-GET  /api/repositories
-POST /api/repositories
-GET  /api/repositories/{id}/branches
-POST /api/repositories/{id}/snapshots
-```
-
-会话绑定仓库分支时，服务端会：
-
-```text
-fetch 分支
-  -> 解析目标 Commit
-  -> 创建 detached 快照
-  -> 通过只读 MCP 工具分析快照
-```
-
-会话会保存仓库、分支和解析后的 Commit。相同 Commit 的快照可以复用，分支后续变化不会影响已经开始的会话。
-
-## 开始一次诊断
-
-在工作台中创建会话后，可以直接描述问题，例如：
-
-```text
-登录页启动白屏，hilog 中出现
-TypeError: Cannot read property name
-```
-
-Agent 会根据问题类型选择知识定位或直接读取代码和日志，并在需要时继续追问。证据充分后，模型通过 `submit_diagnosis_report` 提交结构化报告，报告包含：
-
-- 诊断结论和严重程度
-- 根因候选及置信度
-- 证据原文、来源和位置
-- 已排除项
-- 已执行的检查
-- 缺失信息和诊断边界
-
-也可以直接调用 SSE 接口：
-
-```bash
-curl -N -X POST \
-  http://127.0.0.1:8000/api/conversations/{conversation_id}/messages \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: text/event-stream' \
-  -d '{"content":"登录页启动白屏，hilog 里有 TypeError: Cannot read property name"}'
-```
-
-## 独立 MCP 入口
-
-API 内部会直接挂载 MCP Toolset。同一组仓库工具也可以通过标准 stdio MCP 入口启动：
-
-```bash
-HARMONY_AGENT_MCP_WORKSPACE=/absolute/path/to/project \
-  uv run --project mcp_server harmony-repository-mcp
-```
-
-客户端配置示例见 [mcp.json](mcp.json)。stdio 模式下不要向 stdout 输出日志，否则会破坏 MCP JSON-RPC 通信。
-
-## 开发与验证
-
-知识库校验：
-
-```bash
-make knowledge-validate
-```
-
-运行离线测试：
-
-```bash
-make test
-```
-
-代码检查：
-
-```bash
-make lint
-```
-
-前端构建：
+访问 `http://127.0.0.1:8000`。也可以分步执行：
 
 ```bash
 make build
+HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 ```
 
-配置真实模型后，可以运行 Live Eval。该命令会产生模型调用费用，不会在未配置模型时静默跳过：
+## 第一次使用
+
+1. 打开网页，在模型设置中配置供应商、模型和 API Key，或在 `.env` 中配置环境变量。
+2. 新建会话，输入问题和已知 hilog/代码片段。
+3. 需要检查代码时，设置 `HARMONY_AGENT_ALLOWED_ROOTS`，再绑定本地目录；或先登记 Git 仓库并选择分支。
+4. 等待工具步骤完成。报告会显示结论、证据原文、来源位置、已排除项和缺少的信息。
+
+## 配置
+
+| 变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `HARMONY_MASTRA_HOST` | `127.0.0.1` | 监听地址 |
+| `HARMONY_MASTRA_PORT` | `8000` | API/网页端口 |
+| `HARMONY_MASTRA_SERVE_WEB` | `false` | 是否托管 `web/dist` |
+| `HARMONY_MASTRA_DATA_DIR` | `.data/mastra` | LibSQL 数据目录 |
+| `HARMONY_MASTRA_PROJECT_ROOT` | 仓库根目录 | MCP 项目根目录 |
+| `HARMONY_AGENT_ALLOWED_ROOTS` | 当前工作目录 | 允许读取的本地目录，逗号分隔 |
+| `HARMONY_MASTRA_MCP_COMMAND` | `uv` | 启动 Python MCP 的命令 |
+| `HARMONY_AGENT_MODEL_CONFIG_FILE` | `.data/model-config.json` | 本地模型配置文件 |
+
+网页设置写入 `.data/model-config.json`，文件权限为 `0600`。API Key 不会返回到状态接口、会话、报告、SSE 事件或日志；环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
+
+知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续；仓库 MCP 在绑定仓库会话时按不可变快照单独启动。
+
+## 仓库与快照
+
+Git 仓库流程是：
+
+```text
+登记仓库 -> 查询分支 -> fetch -> 解析 Commit -> 创建 detached 快照 -> 只读 MCP 检查
+```
+
+会话创建请求携带 `repository_id` 和 `branch` 时，runtime 会自动保存快照的仓库、分支、Commit 和工作区路径。后续分支变化不会改变已经绑定的会话。
+
+## 数据迁移
 
 ```bash
-HARMONY_AGENT_LIVE_EVALS=1 \
-  uv run --project server pytest -q agent/evals/test_stage_zero.py -k live
+npm --prefix runtime run migrate -- --mode dry-run
+npm --prefix runtime run migrate -- --mode apply
+npm --prefix runtime run migrate -- --mode rollback --migration-id <id>
 ```
 
-## 数据与安全边界
+迁移会创建备份、保留旧 JSON、不覆盖已发生变化的目标记录，并支持重复执行返回 `no_op`。完整步骤见 [`docs/mastra-migration-operations.md`](docs/mastra-migration-operations.md)。
 
-- 业务仓库通过只读工具访问，不提供修改文件、执行命令或构建应用的能力。
-- 本地工作区必须位于 `HARMONY_AGENT_ALLOWED_ROOTS` 明确允许的目录内。
-- Git 仓库优先按 Commit 创建隔离快照。
-- API Key 不写入前端、会话文件或 API 响应。
-- 会话数据默认保存在 `.data/`，该目录已加入 `.gitignore`。
-- 诊断日志和代码片段可能会发送给配置的模型供应商，启用模型前请确认数据合规策略。
+## 验证
 
-当前版本更适合本地使用或受控内网部署。若部署到公网，仍需补充身份认证、权限隔离、TLS、速率限制、集中式持久化和审计策略。
+```bash
+make test-runtime
+make test-mcp
+make knowledge-validate
+make lint
+make build
+```
 
-## 项目状态
+配置真实模型后再运行 live evaluation；模型调用可能产生费用。默认离线测试不会访问模型供应商。
 
-当前项目聚焦于：
+## 目录
 
-- HarmonyOS 问题定位和证据链诊断
-- 本地知识库检索质量
-- MCP 工具边界和运行时成本控制
-- 多轮诊断报告的可复核性
+```text
+runtime/      Mastra Agent、Hono API、LibSQL、模型配置和迁移
+web/          React/Vite 工作台
+mcp_server/   Python FastMCP 仓库与知识服务
+knowledge/    Markdown 知识库
+skills/       声明式诊断 Skill
+docs/         架构、迁移规格和运维文档
+```
 
-欢迎通过 Issue 或 Pull Request 提交问题和改进建议。
+设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 和 [`docs/mastra-runtime-migration-spec.md`](docs/mastra-runtime-migration-spec.md)。
