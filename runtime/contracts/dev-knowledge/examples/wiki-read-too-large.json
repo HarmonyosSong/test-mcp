@@ -1,0 +1,24 @@
+{
+  "name": "wiki-read-too-large",
+  "tool": "wiki_read",
+  "arguments": {
+    "business_line": "cloudlearn",
+    "product_id": "demo",
+    "topic_id": "topic-demo"
+  },
+  "expected_outcome": "failed",
+  "response": {
+    "status": "response_too_large",
+    "key": {
+      "business_line": "cloudlearn",
+      "product_id": "demo",
+      "topic_id": "topic-demo"
+    },
+    "truncated": true,
+    "truncation": {
+      "reason": "requested response cannot retain a complete section within server.max_response_bytes",
+      "max_response_bytes": 50,
+      "next_action": "increase server.max_response_bytes or use source repository/documents for further evidence; retry other explicit section_ids when available"
+    }
+  }
+}

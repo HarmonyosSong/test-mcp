@@ -2,6 +2,7 @@ import { Activity, AlertTriangle, MessageSquare, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { ChatPanel } from './components/chat/ChatPanel';
+import { NewConversationDialog } from './components/chat/NewConversationDialog';
 import { ChatThread } from './components/chat/ChatThread';
 import { ModelSettingsDialog } from './components/ModelSettingsDialog';
 import { RepositorySettingsDialog } from './components/RepositorySettingsDialog';
@@ -43,6 +44,7 @@ function App() {
   const [meta, setMeta] = useState<MetaResponse>(EMPTY_META);
   const [showModelSettings, setShowModelSettings] = useState(false);
   const [showRepositorySettings, setShowRepositorySettings] = useState(false);
+  const [showNewConversation, setShowNewConversation] = useState(false);
   const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
   const [modelProviders, setModelProviders] = useState<ModelProviderPreset[]>([]);
   const [modelStatus, setModelStatus] = useState<ModelStatus>(OFFLINE_MODEL_STATUS);
@@ -61,8 +63,8 @@ function App() {
     onNotice: setNotice,
   });
 
-  const loadWorkspace = useCallback(async (manual = false) => {
-    setRefreshing(true);
+  const loadWorkspace = useCallback(async (manual = false, manageRefreshing = true): Promise<boolean> => {
+    if (manageRefreshing) setRefreshing(true);
     if (!manual) setConnection('checking');
     try {
       await api.health();
@@ -78,6 +80,7 @@ function App() {
       setRepositories(nextRepositories);
       setConnection('connected');
       if (manual) setNotice({ kind: 'info', message: '诊断服务数据已刷新。' });
+      return true;
     } catch {
       setConnection('demo');
       setMeta(EMPTY_META);
@@ -87,10 +90,25 @@ function App() {
       if (manual) {
         setNotice({ kind: 'error', message: '诊断服务仍未连接，请稍后重试。' });
       }
+      return false;
+    } finally {
+      if (manageRefreshing) setRefreshing(false);
+    }
+  }, []);
+
+  const refreshWorkspace = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (!(await loadWorkspace(true, false))) return;
+      if (!(await chat.refresh())) {
+        setNotice({ kind: 'error', message: '会话刷新失败，请稍后重试。' });
+        return;
+      }
+      setNotice({ kind: 'info', message: '会话和诊断服务数据已刷新。' });
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [chat.refresh, loadWorkspace]);
 
   useEffect(() => {
     if (initialized.current) return;
@@ -136,7 +154,7 @@ function App() {
         <Sidebar
           connection={connection}
           refreshing={refreshing}
-          onRefresh={() => void loadWorkspace(true)}
+          onRefresh={() => void refreshWorkspace()}
           onModelSettings={openModelSettings}
           onRepositorySettings={openRepositorySettings}
         >
@@ -144,7 +162,7 @@ function App() {
             summaries={chat.summaries}
             activeId={chat.activeId}
             onSelect={chat.select}
-            onCreate={() => void chat.createNew()}
+            onCreate={() => setShowNewConversation(true)}
             onDelete={(id) => void chat.remove(id)}
           />
         </Sidebar>
@@ -238,6 +256,14 @@ function App() {
           status={modelStatus}
           onClose={() => setShowModelSettings(false)}
           onChanged={handleModelChanged}
+        />
+      )}
+
+      {showNewConversation && (
+        <NewConversationDialog
+          repositories={repositories}
+          onClose={() => setShowNewConversation(false)}
+          onCreate={chat.createNew}
         />
       )}
 

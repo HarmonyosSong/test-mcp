@@ -8,6 +8,7 @@ import {
   ModelStatusSchema,
   type ModelConfigRequest,
 } from '../domain/schemas.js';
+import { redactSensitiveText } from '../security/redaction.js';
 
 export const MODEL_PROVIDER_PRESETS = [
   {
@@ -17,14 +18,16 @@ export const MODEL_PROVIDER_PRESETS = [
     default_model: 'gpt-5.2',
     suggested_models: ['gpt-5.2', 'gpt-5-mini'],
     api_key_env: 'OPENAI_API_KEY',
+    note: '当前没有真实 provider 调用与诊断质量验收记录；连接测试通过不代表诊断质量已验收。',
   },
   {
     id: 'deepseek',
     name: 'DeepSeek',
     base_url: 'https://api.deepseek.com',
-    default_model: 'deepseek-v4-pro',
-    suggested_models: ['deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'],
+    default_model: 'deepseek-flash',
+    suggested_models: ['deepseek-flash', 'deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'],
     api_key_env: 'DEEPSEEK_API_KEY',
+    note: 'deepseek-flash 已通过本仓库七轮代表性评测及逐轮复核；这是回归样本，不代表总体质量保证。',
   },
   {
     id: 'qwen',
@@ -33,15 +36,16 @@ export const MODEL_PROVIDER_PRESETS = [
     default_model: 'qwen-plus',
     suggested_models: ['qwen-plus', 'qwen-max', 'qwen-turbo'],
     api_key_env: 'DASHSCOPE_API_KEY',
-    note: '企业 Workspace 可将 Base URL 替换为对应地域的 maas.aliyuncs.com 地址。',
+    note: '当前没有真实 provider 调用与诊断质量验收记录。企业 Workspace 可将 Base URL 替换为对应地域的 maas.aliyuncs.com 地址。',
   },
   {
     id: 'moonshot',
     name: 'Moonshot / Kimi',
-    base_url: 'https://api.moonshot.cn/v1',
-    default_model: 'kimi-k3',
-    suggested_models: ['kimi-k3', 'moonshot-v1-8k', 'moonshot-v1-32k'],
+    base_url: 'https://api.kimi.com/coding/v1',
+    default_model: 'kimi-for-coding',
+    suggested_models: ['kimi-for-coding', 'kimi-for-coding-highspeed', 'k3.1-pro', 'k3.1-pro-highspeed'],
     api_key_env: 'MOONSHOT_API_KEY',
+    note: 'Kimi Code 端点连接已验证，但 Kimi 全系列当前仅作实验型号；诊断质量尚未达到本项目正式支持门槛。',
   },
   {
     id: 'zhipu',
@@ -50,6 +54,7 @@ export const MODEL_PROVIDER_PRESETS = [
     default_model: 'glm-5.3',
     suggested_models: ['glm-5.3', 'glm-4-flash', 'glm-4-plus'],
     api_key_env: 'ZHIPUAI_API_KEY',
+    note: '当前没有真实 provider 调用与诊断质量验收记录；连接测试通过不代表诊断质量已验收。',
   },
   {
     id: 'doubao',
@@ -58,7 +63,7 @@ export const MODEL_PROVIDER_PRESETS = [
     default_model: 'doubao-seed-2-1-pro-260628',
     suggested_models: ['doubao-seed-2-1-pro-260628'],
     api_key_env: 'ARK_API_KEY',
-    note: '模型字段兼容当前 Model ID、历史 ep-* 接入点和私有部署标识。',
+    note: '当前没有真实 provider 调用与诊断质量验收记录。模型字段兼容当前 Model ID、历史 ep-* 接入点和私有部署标识。',
   },
   {
     id: 'custom',
@@ -68,6 +73,7 @@ export const MODEL_PROVIDER_PRESETS = [
     suggested_models: [],
     requires_api_key: false,
     api_key_env: null,
+    note: '自定义接口仅有本地协议 fixture 验证；请先测试连接并独立验证模型输出。',
   },
 ].map((preset) => ModelProviderPresetSchema.parse(preset));
 
@@ -99,6 +105,7 @@ export interface AgentModelConfiguration extends ModelDiscoveryConfiguration {
 export interface ModelConfigurationOptions {
   filePath: string;
   env?: NodeJS.ProcessEnv;
+  fetch?: typeof globalThis.fetch;
 }
 
 export class ModelConfigurationError extends Error {}
@@ -185,11 +192,13 @@ export function redactSecret(message: string, secret: string | null | undefined)
 export class ModelConfiguration {
   private readonly filePath: string;
   private readonly env: NodeJS.ProcessEnv;
+  private readonly fetch?: typeof globalThis.fetch;
   private active: ResolvedModelConfiguration | null;
 
   constructor(options: ModelConfigurationOptions) {
     this.filePath = options.filePath;
     this.env = options.env ?? process.env;
+    this.fetch = options.fetch;
     this.active = this.fromEnvironment() ?? null;
   }
 
@@ -300,10 +309,7 @@ export class ModelConfiguration {
       if (separator >= 0) {
         const overrideProvider = spec.slice(0, separator);
         const overrideModel = spec.slice(separator + 1);
-        if (overrideProvider !== provider) {
-          throw new ModelConfigurationError('conversation model override must use the configured provider');
-        }
-        modelName = overrideModel;
+        if (overrideProvider === provider && overrideModel) modelName = overrideModel;
       } else {
         modelName = spec;
       }
@@ -325,13 +331,14 @@ export class ModelConfiguration {
       baseURL: resolved.base_url,
       apiKey: resolved.api_key ?? '',
       supportsStructuredOutputs: resolved.compatibility_mode === 'standard',
+      ...(this.fetch ? { fetch: this.fetch } : {}),
       ...(resolved.compatibility_mode === 'relaxed' ? { transformRequestBody: transformRelaxedRequestBody } : {}),
     });
     return provider.chatModel(resolved.model_id);
   }
 
   redact(message: string): string {
-    return redactSecret(message, this.active?.apiKey);
+    return redactSensitiveText(redactSecret(message, this.active?.apiKey), this.env);
   }
 
   private resolveRequestKey(
@@ -354,7 +361,7 @@ export class ModelConfiguration {
 
   private fromEnvironment(): ResolvedModelConfiguration | undefined {
     if ((this.env.HARMONY_AGENT_MODE ?? 'demo') !== 'model') return undefined;
-    const configuredModel = this.env.HARMONY_AGENT_MODEL ?? 'openai:gpt-5.2';
+    const configuredModel = this.env.HARMONY_AGENT_MODEL ?? 'deepseek:deepseek-flash';
     const separator = configuredModel.indexOf(':');
     const provider = separator >= 0 ? configuredModel.slice(0, separator) : 'configured';
     const modelName = separator >= 0 ? configuredModel.slice(separator + 1) : configuredModel;

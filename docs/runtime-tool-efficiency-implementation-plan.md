@@ -294,10 +294,10 @@ result_chars 是字符量而非 token；持续记录模型请求、累计 token�
 本例正常路径无错误绑定、无重复恢复循环、无伪造证据修复往返，作为确定性目标；
 真实总调用次数与节省比例只有跑完后才能填写。
 
-本仓库已有检查命令：
+以下命令记录的是方案形成时的历史检查入口；旧 Agent/Server 项目定义已退役，当前完整回归入口为 `make test`：
 
 ```sh
-uv run --project server pytest -q agent/tests agent/evals mcp_server/tests server/tests
+make test
 make knowledge-validate
 uv run --project mcp_server pytest -q mcp_server/tests/test_knowledge_base.py mcp_server/tests/test_query_log.py
 make lint

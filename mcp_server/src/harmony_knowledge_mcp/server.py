@@ -117,6 +117,19 @@ def create_knowledge_server(
     retrieval_version = RETRIEVAL_VERSION_V2 if engine is not None else RETRIEVAL_VERSION_V1
     score_kind = SCORE_KIND_V2 if engine is not None else SCORE_KIND_V1
     resolved_log = resolve_query_log_path(query_log_path)
+    query_context = {
+        **(query_context or {}),
+        **(
+            {"conversation_id": os.environ["HARMONY_AGENT_QUERY_CONVERSATION_ID"]}
+            if os.environ.get("HARMONY_AGENT_QUERY_CONVERSATION_ID")
+            else {}
+        ),
+        **(
+            {"message_id": os.environ["HARMONY_AGENT_QUERY_MESSAGE_ID"]}
+            if os.environ.get("HARMONY_AGENT_QUERY_MESSAGE_ID")
+            else {}
+        ),
+    }
     query_logger = (
         QueryLogger(resolved_log, context=query_context) if resolved_log is not None else None
     )

@@ -12,6 +12,8 @@
     "start": "node dist/src/server.js",
     "dev": "tsx src/server.ts",
     "migrate": "tsx src/migration/cli.ts",
+    "live-eval": "tsx src/evaluation/cli.ts",
+    "cases": "tsx src/evaluation/cases-cli.ts",
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
@@ -19,9 +21,9 @@
     "@hono/node-server": "2.1.6",
     "@libsql/client": "0.18.0",
     "@mastra/core": "1.81.0",
-    "@mastra/hono": "1.7.21",
     "@mastra/libsql": "1.28.0",
     "@mastra/mcp": "2.7.0",
+    "ajv": "8.20.0",
     "hono": "4.13.16",
     "zod": "4.6.7"
   },

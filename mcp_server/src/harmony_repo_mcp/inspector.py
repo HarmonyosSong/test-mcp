@@ -32,6 +32,14 @@ class ProjectInspector:
         ".ets",
         ".ts",
         ".js",
+        ".py",
+        ".sh",
+        ".toml",
+        ".ini",
+        ".cfg",
+        ".mk",
+        ".properties",
+        ".gradle",
         ".json5",
         ".json",
         ".xml",
@@ -46,6 +54,7 @@ class ProjectInspector:
         ".h",
         ".hpp",
     }
+    TEXT_FILENAMES = {"Makefile", "Dockerfile", "Justfile", ".gitignore", ".dockerignore"}
     EXCLUDED_DIRS = {
         ".git",
         ".hvigor",
@@ -374,10 +383,10 @@ class ProjectInspector:
         if any(part in self.EXCLUDED_DIRS for part in relative.parts):
             return False
         try:
-            return (
-                path.suffix.lower() in self.TEXT_EXTENSIONS
-                and path.stat().st_size <= self.max_file_bytes
+            allowed_type = (
+                path.suffix.lower() in self.TEXT_EXTENSIONS or path.name in self.TEXT_FILENAMES
             )
+            return allowed_type and path.stat().st_size <= self.max_file_bytes
         except OSError:
             return False
 

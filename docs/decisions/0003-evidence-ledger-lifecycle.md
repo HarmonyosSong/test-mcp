@@ -11,7 +11,7 @@ FIFO 挤掉、复用响应不含证据 ID、模型编 ID 提交报告三连失�
 ## 证据账本淘汰分两层
 
 - **历史容量是软目标**(默认 300 条):超额时只淘汰最旧的**非本轮**观测;
-  本轮已交付模型的观测受保护,不被历史容量挤掉——报告引用本轮早期 ID 始终有效。
+  本轮已交付模型的观测受保护,不被历史容量挤掉——报告引用本轮早期 ID 始终有效。跨轮保留的观测在本轮再次读取时会重新计入本轮容量并受保护。
 - **本轮硬上限**(默认 1000 条 / 4 MiB 文本,`max_current_turn` / `max_current_turn_bytes`):
   达到即停止接纳新观测。admission 在返回 `evidence_refs` 之前完成;
   拒绝时返回 `observation_capacity_reached` 标记,该行观测不产出 ID,
@@ -28,6 +28,8 @@ FIFO 挤掉、复用响应不含证据 ID、模型编 ID 提交报告三连失�
 
 ## 工具调用缓存是记录,不是序号
 
+以下缓存结构和重新绑定规则记录的是 2026-09 的 Python Agent 实现，不是当前 Mastra runtime 的类型或流程。Mastra 当前在单轮诊断中缓存成功的只读调用，并在复用前验证证据仍有效；仓库快照在该轮开始前固定，没有轮内重绑定。
+
 `_cache: 签名 → CachedCall(call_index, snapshot_generation, evidence_refs)`,替代旧的两张表:
 
 - 签名先补工具默认参数再规范化(默认值表与工具定义同步维护),省略默认与显式同值归一。
@@ -38,7 +40,8 @@ FIFO 挤掉、复用响应不含证据 ID、模型编 ID 提交报告三连失�
 
 ## 验收
 
-`agent/tests/test_runtime_efficiency.py` 与 `test_tool_failure_budget.py` 覆盖:
+以下是 **2026-09 旧 Python runtime 的历史测试覆盖**，不代表当前 Mastra 测试覆盖；当前实现和测试映射见本 ADR 顶部及迁移规格。旧测试 `agent/tests/test_runtime_efficiency.py` 与 `test_tool_failure_budget.py` 覆盖:
 本轮观测超历史容量仍可引用;硬上限拒绝接纳不产出 ID;过期/伪造 ID 错误细分;
 淘汰后重读恢复同 ID;缓存证据失效回退真实重读;默认参数归一;同 commit 幂等绑定。
+Mastra 当前回归测试还验证跨轮重读会恢复稳定 ID、重新获得本轮保护，并计入本轮硬容量。
 方案 B-E 阶段(分页协议、引用式报告、计量口径、真实对照)不在本 ADR 范围。

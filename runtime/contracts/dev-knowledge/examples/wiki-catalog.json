@@ -1,0 +1,41 @@
+{
+  "name": "wiki-catalog",
+  "tool": "wiki_catalog",
+  "arguments": {
+    "business_line": "cloudlearn"
+  },
+  "expected_outcome": "hit",
+  "response": {
+    "status": "ok",
+    "filters": {
+      "business_line": "cloudlearn",
+      "product_id": null,
+      "path_prefix": null
+    },
+    "products": [
+      {
+        "business_line": "cloudlearn",
+        "product_id": "demo",
+        "name": "Demo",
+        "summary": "demo",
+        "boundaries": [],
+        "recognition_terms": [
+          "Demo"
+        ]
+      }
+    ],
+    "topic_count": 1,
+    "topics": [
+      {
+        "business_line": "cloudlearn",
+        "product_id": "demo",
+        "topic_id": "topic-demo",
+        "title": "Demo Topic",
+        "path": "Demo / Topic",
+        "summary": "demo topic",
+        "content_status": "supported"
+      }
+    ],
+    "truncated": false
+  }
+}

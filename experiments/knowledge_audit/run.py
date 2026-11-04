@@ -26,7 +26,7 @@ OUT = ROOT / ".data/knowledge-audit-2026-09-28"
 def build_cases(entries):
     cases = []
     for i, line in enumerate(
-        (ROOT / "agent/evals/datasets/knowledge_retrieval.jsonl")
+        (ROOT / "experiments/knowledge_audit/datasets/legacy-knowledge-retrieval.jsonl")
         .read_text()
         .splitlines()
     ):

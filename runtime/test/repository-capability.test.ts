@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -81,12 +81,32 @@ test('registers a local remote, discovers branches, and prepares a reusable deta
   }
 });
 
+test('normalizes single-slash file URLs before passing local repositories to Git', async () => {
+  const state = await fixture();
+  try {
+    const record = await state.repositories.register({ name: 'local-shorthand', url: `file:${state.remote}` });
+    assert.equal(record.url, `file://${state.remote}`);
+    const branches = await state.repositories.listBranches(record.id);
+    assert.ok(branches.some((branch) => branch.name === 'main'));
+  } finally {
+    await rm(state.root, { recursive: true, force: true });
+  }
+});
+
 test('rejects credentials, local-root escapes, invalid refs, missing branches, and duplicate registrations', async () => {
   const state = await fixture();
   try {
     await assert.rejects(
       () => state.repositories.register({ name: 'invalid', url: 'https://user:secret@example.test/repo.git' }),
     );
+    for (const url of [
+      'https://example.test/repo.git?token=secret',
+      'https://example.test/repo.git#branch',
+      'ssh://git@example.test/team/repo.git?token=secret',
+      'ssh://git@example.test/team/repo.git#branch',
+    ]) {
+      await assert.rejects(() => state.repositories.register({ name: 'invalid', url }), /repository URL/);
+    }
     await assert.rejects(
       () => state.repositories.register({ name: 'outside', url: `file://${join(tmpdir(), 'outside.git')}` }),
       /outside allowed roots|does not exist/,
@@ -104,6 +124,49 @@ test('rejects credentials, local-root escapes, invalid refs, missing branches, a
     );
   } finally {
     await rm(state.root, { recursive: true, force: true });
+  }
+});
+
+test('Git receives only the repository capability environment allowlist', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mastra-git-env-'));
+  const bin = join(root, 'bin');
+  const environmentFile = join(root, 'environment.txt');
+  const gitPath = join(bin, 'git');
+  const originalPath = process.env.PATH;
+  const secretKey = 'RUNTIME_GIT_AUDIT_SECRET';
+  const configKey = 'GIT_CONFIG_COUNT';
+  const originalSecret = process.env[secretKey];
+  const originalConfig = process.env[configKey];
+  try {
+    await mkdir(bin);
+    await writeFile(gitPath, `#!/bin/sh\nenv > '${environmentFile}'\nprintf 'a%.0s' $(seq 1 40)\nprintf '\\trefs/heads/main\\n'\n`);
+    await chmod(gitPath, 0o700);
+    process.env.PATH = `${bin}${originalPath ? `:${originalPath}` : ''}`;
+    process.env[secretKey] = 'runtime-secret-sentinel';
+    process.env[configKey] = '1';
+
+    const repositories = new RepositoryCapability({
+      mirrorDir: join(root, 'mirrors'),
+      snapshotDir: join(root, 'snapshots'),
+    });
+    const record = await repositories.register({
+      name: 'remote', url: 'https://example.test/repo.git', default_branch: 'main',
+    });
+    assert.equal(record.url, 'https://example.test/repo.git');
+
+    const childEnvironment = await readFile(environmentFile, 'utf8');
+    assert.equal(childEnvironment.includes('RUNTIME_GIT_AUDIT_SECRET='), false);
+    assert.equal(childEnvironment.includes('GIT_CONFIG_COUNT='), false);
+    assert.match(childEnvironment, /GIT_TERMINAL_PROMPT=0/);
+    assert.match(childEnvironment, /PATH=/);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    if (originalSecret === undefined) delete process.env[secretKey];
+    else process.env[secretKey] = originalSecret;
+    if (originalConfig === undefined) delete process.env[configKey];
+    else process.env[configKey] = originalConfig;
+    await rm(root, { recursive: true, force: true });
   }
 });
 

@@ -1,0 +1,15 @@
+{
+  "name": "wiki-resolve-miss",
+  "tool": "wiki_resolve",
+  "arguments": {
+    "business_line": "cloudlearn",
+    "query": "entirelyUnknownIdentifier"
+  },
+  "expected_outcome": "miss",
+  "response": {
+    "status": "not_found",
+    "query": "entirelyUnknownIdentifier",
+    "candidates": [],
+    "reason": "no complete identifier match: entirelyUnknownIdentifier"
+  }
+}

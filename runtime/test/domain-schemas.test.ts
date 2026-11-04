@@ -43,6 +43,7 @@ test('report schemas apply defaults and enforce strict evidence references', () 
     evidence: [{ ...positiveReport.evidence[0], forged: true }],
   }).success, false);
   assert.equal(DiagnosisReportSchema.safeParse({ ...positiveReport, evidence: [] }).success, false);
+  assert.equal(DiagnosisReportSchema.safeParse({ ...positiveReport, likely_location: 'null' }).success, false);
   assert.equal(DiagnosisReportSchema.safeParse({
     ...positiveReport,
     root_cause_candidates: [{ ...positiveReport.root_cause_candidates[0], evidence_ids: ['unknown'] }],
@@ -59,6 +60,17 @@ test('draft evidence only permits citations and positive candidates need linked 
     evidence: [{ id: 'ev-source-1', excerpt: 'literal excerpt', supports: 'supports claim' }],
   });
   assert.equal(draft.severity, 'unknown');
+  assert.equal(DiagnosisReportDraftSchema.safeParse({
+    ...positiveReport,
+    likely_location: 'null',
+    evidence: [{ id: 'ev-source-1', excerpt: 'literal excerpt', supports: 'supports claim' }],
+  }).success, false);
+  assert.equal(DiagnosisReportDraftSchema.safeParse({
+    ...positiveReport,
+    verdict: 'insufficient_evidence',
+    root_cause_candidates: [{ ...positiveReport.root_cause_candidates[0], evidence_ids: [] }],
+    evidence: [],
+  }).success, false);
   assert.equal(EvidenceCitationSchema.safeParse({
     id: 'ev-source-1', excerpt: 'x', supports: 'claim', kind: 'source',
   }).success, false);
@@ -110,7 +122,7 @@ test('request schemas normalize text and expose Python None defaults as null', a
     title: null, workspace_path: null, repository_id: null, branch: null,
   });
   assert.deepEqual(SendMessageRequestSchema.parse({ content: '  hello  ' }), { content: 'hello' });
-  assert.deepEqual(UpdateConversationRequestSchema.parse({}), { title: null, model_override: null });
+  assert.deepEqual(UpdateConversationRequestSchema.parse({}), { title: null });
 });
 
 test('model config validates credential-free HTTP URLs and key mode', () => {
@@ -141,4 +153,23 @@ test('repository registration rejects embedded credentials while accepting SSH f
   assert.equal(RegisterRepositoryRequestSchema.safeParse({
     name: 'repo', url: 'git@example.com:team/repo.git',
   }).success, true);
+  assert.equal(RegisterRepositoryRequestSchema.safeParse({
+    name: 'repo', url: 'file:///Users/tal/project.git',
+  }).success, true);
+  assert.equal(RegisterRepositoryRequestSchema.safeParse({
+    name: 'repo', url: 'file:/Users/tal/project.git',
+  }).success, true);
+  assert.equal(RegisterRepositoryRequestSchema.safeParse({
+    name: 'repo', url: 'file://remote-host/project.git',
+  }).success, false);
+
+  for (const url of [
+    'https://example.com/repo.git?token=secret',
+    'https://example.com/repo.git?',
+    'http://example.com/repo.git#branch',
+    'ssh://git@example.com/team/repo.git?token=secret',
+    'ssh://git@example.com/team/repo.git#branch',
+  ]) {
+    assert.equal(RegisterRepositoryRequestSchema.safeParse({ name: 'repo', url }).success, false, url);
+  }
 });

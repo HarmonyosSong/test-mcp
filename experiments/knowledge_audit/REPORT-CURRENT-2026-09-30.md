@@ -92,6 +92,8 @@ V2 前三仍是入口现象、上传现象、入口资格事实，分数均 0.55
 
 复现（建议新建输出目录，不覆盖本轮）：
 
+> 历史运行记录：以下命令按 2026-09-30 的仓库布局书写，`server/pyproject.toml` 后续已移除，当前不能原样执行。要复核历史结论请使用本报告的归档 JSON 与当时源码摘要；当前 Python MCP 测试入口为 `uv run --project mcp_server pytest -q mcp_server/tests`，这些历史 Agent 专项测试未迁移为当前验证命令。
+
 ```sh
 uv run --project server python experiments/knowledge_audit/run.py --mode legacy --out .data/kb-reproduce-20260930/legacy
 uv run --project server python experiments/knowledge_audit/run.py --mode legacy --preview-strategy ranked --out .data/kb-reproduce-20260930/legacy-ranked

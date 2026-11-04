@@ -1,15 +1,15 @@
 # 非向量知识检索 V2 技术设计
 
-> **实现边界说明（2026-11-03）**：本文是知识检索算法设计提案，保留检索规则、评测口径和 MCP 服务约束。文中引用的 `agent/` 调用路径属于旧 Python runtime；当前产品由 Mastra `runtime/` 通过 `runtime/src/capabilities/mcp.ts` 消费知识 MCP。本文的提案状态不能证明 Mastra Agent 已完成对应能力迁移。
+> **实现边界说明（2026-11-04）**：本文同时保留历史基线、已实现的检索 V2/预览策略和仍待实现的设计提案。V2 检索引擎已在 `mcp_server/` 实现并可显式启用，默认仍为 `legacy`；合成评测未达到切换默认模式的质量门槛。旧 `agent/` 调用路径是历史上下文，当前 Mastra runtime 通过 MCP 消费知识服务。各节状态以本说明及第 18 节为准。
 
-状态：**设计提案，尚未实现或验证收益**  
+状态：**核心 V2 已实现且保持 opt-in；剩余提案与质量收益仍待逐项验收**
 日期：2026-09-28  
 代码基线：`2a56238b33a74a19d221cda6f8de3e509ea3ebe8`  
 评测基线：[2026-09-28 知识库评测](../experiments/knowledge_audit/REPORT-2026-09-28.md)
 
 本文规定一条不使用向量模型、LLM 改写、在线重排模型或外部搜索服务的检索改造路线。目标是使实现者能够依据同一份定义编写代码、解释排名并复现验收；不是对尚未运行的新算法作准确率承诺。
 
-**阅读约定**：第 1–3 节是已核对的现状与约束；第 4–13 节是拟实现规格；第 14–17 节是验收、交付与风险。标为“初始参数”的数值只用于启动对照实验，不能直接解释为生产最优值。文中新增文件、字段、配置和命令参数均明确标注，现有仓库尚未提供这些能力。
+**阅读约定**：第 1–3 节记录 2026-09 的历史基线；第 4–13 节包含已实现规格和仍待实现的提案，不能整体视为当前代码说明；第 14–17 节记录验收、交付与风险，第 18–19 节记录后续实现状态与专项结果。标为“初始参数”的数值只用于启动对照实验，不能直接解释为生产最优值。每个未交付项仍需独立验收。
 
 实施阅读顺序：先看第 3 节不变量，再按第 5–8 节实现纯检索函数；第 9–11 节处理服务接入；第 14 节决定是否通过，第 15 节决定何时启用。当前文档不改变已生效的 ADR，也不自动批准切换生产模式。
 
@@ -715,13 +715,11 @@ def lookup_v2(snapshot, query, context):
 
 ## 16. 检查命令与交付证据
 
-以下命令当前已存在，可作为实现后的必需检查：
+以下旧 Agent/Server 测试入口是设计阶段的历史记录，旧 Python 项目定义已退役；当前回归入口为 `make test`。MCP 专项检查仍可单独运行：
 
 ```sh
 make knowledge-validate
 uv run --project mcp_server pytest -q mcp_server/tests/test_knowledge_base.py mcp_server/tests/test_query_log.py
-uv run --project server pytest -q agent/evals/test_knowledge_retrieval.py
-uv run --project server pytest -q agent/tests agent/evals mcp_server/tests server/tests
 uv run --project mcp_server ruff check mcp_server
 uv run --project mcp_server ruff format --check mcp_server
 ```
@@ -729,11 +727,11 @@ uv run --project mcp_server ruff format --check mcp_server
 当前审计复现命令：
 
 ```sh
-uv run --project server python experiments/knowledge_audit/run.py
+uv run --project mcp_server python experiments/knowledge_audit/run.py
 ```
 
-该脚本现已支持 `--mode legacy|v2|shadow`、`--out` 与 `--preview-strategy legacy|ranked`。
-`shadow` 仍因未实现而在启动时报错。新增 68 条冻结样本由 `recheck_v2.py` 做配对比较，
+该脚本接受 `--mode legacy|v2|shadow`、`--out` 与 `--preview-strategy legacy|ranked`。
+`shadow` 参数可识别，但 shadow 对照功能未实现，选择后会报配置错误。新增 68 条冻结样本由 `recheck_v2.py` 做配对比较，
 `--include-ranked-preview` 另测 legacy 加新预览的实际 MCP 输出。命令与结果见第 18 节对应报告。
 
 每次对照交付需包含：代码提交、语料与规则摘要、完整参数、数据集版本、环境、全部逐题结果、分组指标、全部失败及退化样例、运行错误、初始化和热查询耗时。真实模型对照另附模型标识、用量缺失情况和人工评估分母。

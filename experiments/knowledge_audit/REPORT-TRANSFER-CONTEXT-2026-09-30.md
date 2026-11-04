@@ -18,11 +18,9 @@
   另跑 75 次症状主描述探针。输出目录 `.data/kb-eval-20260930-pm/`,未覆盖历史归档。
 - 样本为已有开发/合成回归集,不是独立真实用户准确率。本轮未运行真实模型诊断。
 
-证据:[legacy](.data/kb-eval-20260930-pm/legacy/results.json) /
-[legacy+ranked](.data/kb-eval-20260930-pm/legacy-ranked/results.json) /
-[v2](.data/kb-eval-20260930-pm/v2/results.json) /
-[paired](.data/kb-eval-20260930-pm/paired/results.json) /
-[error-book](.data/kb-eval-20260930-pm/error-book.json)(均为本次新产出,未入库)。
+证据文件均为本次新产出，保存在未入库的 `.data/kb-eval-20260930-pm/`：
+`legacy/results.json`、`legacy-ranked/results.json`、`v2/results.json`、
+`paired/results.json` 和 `error-book.json`。这些本地产物未随仓库提交，当前无法从本报告直接打开。
 
 ## 2. 结构与内容维护
 

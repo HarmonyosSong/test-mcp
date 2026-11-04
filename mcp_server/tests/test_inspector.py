@@ -37,6 +37,24 @@ def test_inspector_searches_text_and_blocks_symlink_escape(tmp_path: Path) -> No
         inspector.read_project_file("escape.txt")
 
 
+def test_inspector_includes_build_files_and_python_source_but_rejects_binary(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "Makefile").write_text("setup:\n\tuv sync\n", encoding="utf-8")
+    (project / "service.py").write_text("def run(): return 'ready'\n", encoding="utf-8")
+    (project / "image.bin").write_bytes(b"\x00\x01\x02")
+    inspector = ProjectInspector(project)
+
+    assert inspector.list_project_files() == ["Makefile", "service.py"]
+    matches = inspector.search_project_text("uv sync").matches
+    assert [match.path for match in matches] == ["Makefile"]
+    assert "def run()" in inspector.read_project_file("service.py").content
+    with pytest.raises(InspectionBoundaryError, match="file type is not allowed"):
+        inspector.read_project_file("image.bin")
+
+
 def test_read_paginates_by_character_budget_and_continuation_loses_no_line(
     tmp_path: Path,
 ) -> None:

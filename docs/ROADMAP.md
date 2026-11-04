@@ -27,8 +27,7 @@
 当前 PydanticAI 的 `ToolFailed` 会把失败结果交回模型，本身不必然中止整轮；实现通过统一包装
 将工具异常交回模型、限制累计失败，并补上原先未保护的预检路径。
 `diagnosis_cases.jsonl` 已增加无端/入口的两轮追问、工具失败恢复、预算耗尽和预检失败案例；
-离线测试验证工具与历史传递合同，不代替模型行为验收。真实模型验收入口见 README 的
-`HARMONY_AGENT_LIVE_EVALS=1` 命令。
+离线测试验证工具与历史传递合同，不代替模型行为验收。当前 Mastra runtime 的真实模型评测入口是仓库根目录的 `make live-eval`；评测数据、指标和未完成门槛见 [`mastra-runtime-migration-spec.md`](mastra-runtime-migration-spec.md)。
 
 ## 阶段 1：检索层成熟度
 

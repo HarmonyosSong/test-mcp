@@ -1,6 +1,6 @@
 # 问题排查知识库
 
-> **运行时边界（2026-11-03）**：本文的知识结构、检索流程和 MCP 工具说明仍适用于当前 `mcp_server/`。聊天产品 runtime 已切换到 Mastra，但查询日志关联、诊断案例自动归档和 Mastra 评测入口尚未完成迁移；下文“诊断反馈与提炼”一节中基于 Python Agent 的自动化行为和命令属于旧 runtime 记录，不能作为当前产品能力。迁移状态见 [`docs/mastra-runtime-migration-spec.md`](../docs/mastra-runtime-migration-spec.md)。
+> **运行时边界（2026-11-04）**：本文的知识结构、检索流程和 MCP 工具说明仍适用于当前 `mcp_server/`。聊天产品 runtime 已切换到 Mastra；知识查询会记录会话/消息关联，终态诊断会 best-effort 归档案例并写入 outcome。provider-backed evaluation 与案例人工复核/知识提案现均由 Mastra TypeScript CLI 承载；Python Agent 下的旧命令和结果仅作为历史资料保留。当前迁移验收状态见 [`docs/mastra-runtime-migration-spec.md`](../docs/mastra-runtime-migration-spec.md)。
 
 面向线上问题排查 Agent 的**纯内容仓库**。这里只有 Markdown，没有代码——目的是让懂业务的同学
 （一线支持、SOP 负责人）能直接改、直接提 PR，不需要碰 agent 代码。
@@ -63,7 +63,7 @@ Runtime 保留知识预览和正文页的完整结构，不再统一截成字符
 - **维护人不同**：知识的主要维护者不需要会写 Python。
 - **端无关**：同一个现象在鸿蒙 / iOS / Android 上共享一张索引，不该跟着某个端的代码仓库走。
 
-检索代码不在这里，在 agent 项目的 `mcp_server/src/harmony_knowledge_mcp/`。本仓库只是它的输入。
+检索代码不在这里，在独立的 `mcp_server/src/harmony_knowledge_mcp/` 服务中。Mastra runtime 通过 MCP 调用该服务；本目录是它加载的知识内容源。
 
 ## 知识从哪来
 
@@ -160,15 +160,15 @@ V2 将这些信息作为动作、限定条件参与既有评分，不把“上�
 “上传/录入/导入”和“导出”分开登记；命中只表示条目讨论该任务，不能推出支持该格式或确认故障原因。
 
 召回维护先补同一条目的业务别名或概念同义表达，不复制事实、不调整域排序来制造命中。
-`agent/evals/datasets/knowledge_retrieval.jsonl` 保存旧 Python Agent 阶段发现的漏召回、额外改写与无关查询；
-`uv run --project server pytest -q agent/evals/test_knowledge_retrieval.py` 是历史评测命令，不验证当前 Mastra Agent。
+`experiments/knowledge_audit/datasets/legacy-knowledge-retrieval.jsonl` 保存旧 Python Agent 阶段发现的漏召回、额外改写与无关查询；
+`agent/evals/test_knowledge_retrieval.py` 是仅供复核历史 Agent 行为的旧评测，不验证当前 Mastra Agent。
 额外改写不得原样复制进 aliases；旧评测通过仅说明这些样本覆盖，不能宣称具备通用语义检索能力。
 
-检索与正文预览可分别配置，修改环境变量后须重建工具实例或重启服务：
+检索与正文预览可分别配置，修改环境变量后须重启产品 runtime 或独立知识 MCP。Mastra runtime 会将这两个变量传给按请求启动的知识 MCP：
 
 - `HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE=legacy` 是默认召回；`v2` 是实验性的有类型词表检索。
   V2 统一比较现象和事实，包含规范 ID 精确查询与场景限定；目前仍有库外误召回和事实别名覆盖退化，
-  不应凭合成评测切为默认。`shadow` 尚未实现，设置后会明确报错。
+  不应凭合成评测切为默认。`shadow` 尚未实现：独立启动 MCP 时会报配置错误；产品 runtime 中会导致知识 MCP 不可用，聊天仍可在不挂载知识工具的情况下继续。
 - `HARMONY_AGENT_KNOWLEDGE_PREVIEW_STRATEGY=ranked` 可独立配合 legacy 使用，只调整正文选择，
   不改变候选及其排序。未设置时，legacy 沿用旧预览，V2 使用 ranked。
   显式设置 `legacy` 可恢复旧预览。仍最多返回 3 篇、每篇 1500 字符；不足的判据与例外按页读取。
@@ -203,15 +203,18 @@ uv run --project mcp_server harmony-knowledge-validate
 ```
 
 校验目录层级、业务域字段、frontmatter 完整性、全库 ID 唯一、名称与文件名一致、跨域引用可解析，
-并报告超过 180 天未验证的条目。`make test` 会先执行这项内容校验。
+并报告超过 180 天未验证的条目。`make test` 也会执行这项内容校验。
 
 ## 诊断反馈与提炼
 
-当前 `mcp_server/` 提供知识查询日志和知识库校验入口，但 Mastra runtime 尚未完成查询日志的会话/消息关联、
-诊断案例归档和评测入口迁移。下列旧 Python Agent 资料可用于理解既有知识运营流程，不能视为当前聊天会自动
-归档案例或当前 Mastra 诊断质量已通过评估。
+当前 `mcp_server/` 提供知识查询日志和知识库校验入口；Mastra runtime 会将会话/消息 ID 传给知识 MCP，
+并在诊断终态 best-effort 归档案例、独立追加 outcome。通过 `make live-eval` 执行 provider-backed 固定集评测；
+通过 `npm --prefix runtime run cases -- <command>` 列出、捕获、复核案例和生成/应用知识提案，默认案例目录为
+`.data/knowledge-cases/`。确认根因必须关联报告中的源码/日志观测；新增知识保留 `authority: auto`，补齐现象入口后通过
+整库校验才会写入。一次固定集通过不代表 provider parity 或线上诊断质量已通过验收，运行结果和边界见迁移规格。
 
-历史反馈与评估流程见 [修复与验证说明](../docs/triage-feedback-and-evaluation.md)，其中 `knowledge-cases/`、
-`harmony_agent.knowledge_feedback` 和 `make live-eval` 均属于旧 runtime。确认根因后再按知识维护规则提炼：
+旧 Python Agent 的 `harmony_agent.knowledge_feedback` 命令只适用于旧案例格式，不会读写 Mastra 案例归档；
+历史人工反馈与评估背景见[修复与验证说明](../docs/triage-feedback-and-evaluation.md)。
+确认根因后再按知识维护规则提炼：
 先核对相似条目，优先更新规范 ID；编辑适用范围、判据与例外后校验全库。新条目默认 `auto`，不自动提升来源
 权威，不自动生成 `verified_at`。新增事实还应补充或更新关联现象及区分问题。

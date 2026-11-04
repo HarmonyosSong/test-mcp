@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import {
   chmod,
@@ -25,6 +25,10 @@ const execFile = promisify(execFileCallback);
 const COMMIT_PATTERN = /^[0-9a-f]{40,64}$/;
 const SCP_URL_PATTERN = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[A-Za-z0-9._/-]+$/;
 const REPOSITORY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const GIT_ENVIRONMENT_KEYS = [
+  'PATH', 'HOME', 'USERPROFILE', 'SYSTEMROOT', 'WINDIR',
+  'TMPDIR', 'TEMP', 'TMP', 'XDG_CONFIG_HOME', 'SSH_AUTH_SOCK',
+] as const;
 
 type GitResult = {
   stdout: string;
@@ -118,7 +122,14 @@ function parseRepositoryRequest(request: RegisterRepositoryRequest): {
   if (defaultBranch !== null && defaultBranch.length > 500) {
     throw new RepositoryGitError('default branch is invalid');
   }
-  return { name, url, defaultBranch };
+  let normalizedUrl = url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'file:') normalizedUrl = pathToFileURL(fileURLToPath(parsed)).href;
+  } catch {
+    // Non-URL Git forms such as SCP syntax are validated separately.
+  }
+  return { name, url: normalizedUrl, defaultBranch };
 }
 
 /**
@@ -142,13 +153,13 @@ export function validateRepositoryUrl(url: string): void {
     return;
   }
   if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-    if (!parsed.hostname || parsed.username || parsed.password) {
+    if (!parsed.hostname || parsed.username || parsed.password || /[?#]/.test(url)) {
       throw new RepositoryGitError('repository URL must include a host and must not contain credentials');
     }
     return;
   }
   if (parsed.protocol === 'ssh:') {
-    if (!parsed.hostname || parsed.password) {
+    if (!parsed.hostname || parsed.password || /[?#]/.test(url)) {
       throw new RepositoryGitError('repository URL must include a host and must not contain credentials');
     }
     return;
@@ -500,7 +511,13 @@ export class RepositoryCapability {
     const args = (typeof last === 'object' ? rawArgs.slice(0, -1) : rawArgs) as string[];
     try {
       const result = await execFile('git', args, {
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        env: {
+          ...Object.fromEntries(GIT_ENVIRONMENT_KEYS.flatMap((key) => {
+            const value = process.env[key];
+            return value === undefined ? [] : [[key, value]];
+          })),
+          GIT_TERMINAL_PROMPT: '0',
+        },
         timeout: this.timeoutMs,
         killSignal: 'SIGKILL',
         maxBuffer: 8 * 1024 * 1024,

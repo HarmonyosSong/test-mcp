@@ -4,6 +4,9 @@ import { z } from 'zod';
 const isoDateTime = z.iso.datetime({ offset: true });
 const nowIsoDateTime = () => new Date().toISOString();
 const nullableText = z.string().nullable();
+const nullableLocation = z.string()
+  .refine((value) => value.trim().toLowerCase() !== 'null', 'use null instead of the string "null"')
+  .nullable();
 const defaultEvidenceId = () => `ev-${randomUUID().replaceAll('-', '').slice(0, 8)}`;
 const defaultToolId = () => `tool-${randomUUID().replaceAll('-', '').slice(0, 8)}`;
 const defaultMessageId = () => `msg-${randomUUID().replaceAll('-', '').slice(0, 10)}`;
@@ -46,7 +49,7 @@ const reportFields = {
   severity: SeveritySchema.default('unknown'),
   summary: z.string(),
   issue_category: z.string(),
-  likely_location: nullableText.default(null),
+  likely_location: nullableLocation.default(null),
   root_cause_candidates: z.array(RootCauseCandidateSchema).default([]),
   ruled_out: z.array(z.string()).default([]),
   missing_information: z.array(z.string()).default([]),
@@ -76,19 +79,18 @@ function validateReportReferences(
 
   const ids = new Set(evidence.map((item) => item.id));
   value.root_cause_candidates.forEach((candidate, index) => {
-    if (candidate.evidence_ids.some((id) => !ids.has(id))) {
+    if (candidate.evidence_ids.length === 0 || candidate.evidence_ids.some((id) => !ids.has(id))) {
       ctx.addIssue({
         code: 'custom',
         path: ['root_cause_candidates', index, 'evidence_ids'],
-        message: 'every candidate must be linked to evidence present in the report',
+        message: 'every candidate must cite evidence present in the report',
       });
     }
   });
 
   if (
     (value.verdict === 'located' || value.verdict === 'probable') &&
-    (value.root_cause_candidates.length === 0 ||
-      value.root_cause_candidates.some((candidate) => candidate.evidence_ids.length === 0))
+    value.root_cause_candidates.length === 0
   ) {
     ctx.addIssue({
       code: 'custom',
@@ -180,12 +182,9 @@ export const CreateConversationRequestSchema = z.object({
 export const SendMessageRequestSchema = z.object({
   content: z.string().trim().min(1).max(20_000),
 });
-export const RenameConversationRequestSchema = z.object({
-  title: z.string().trim().min(1).max(120),
-});
 export const UpdateConversationRequestSchema = z.object({
   title: z.string().trim().min(1).max(120).nullable().default(null),
-  model_override: z.string().trim().max(250).nullable().default(null),
+  model_override: z.string().trim().max(250).nullable().optional(),
 });
 
 const credentialFreeHttpUrl = (value: string) => {
@@ -281,13 +280,23 @@ export const RegisterRepositoryRequestSchema = z.object({
   const url = value.url.trim();
   let parsed: URL | undefined;
   try { parsed = new URL(url); } catch { /* SCP and file URLs are checked below. */ }
+  if (parsed?.protocol === 'file:') {
+    if (!parsed.pathname || parsed.hostname) {
+      ctx.addIssue({ code: 'custom', path: ['url'], message: 'local repository URL must contain an absolute local path' });
+    }
+    return;
+  }
   if (parsed && ['http:', 'https:', 'ssh:'].includes(parsed.protocol)) {
-    if (!parsed.hostname || parsed.password || (parsed.username && ['http:', 'https:'].includes(parsed.protocol))) {
+    if (
+      !parsed.hostname ||
+      parsed.password ||
+      (parsed.username && ['http:', 'https:'].includes(parsed.protocol)) ||
+      /[?#]/.test(url)
+    ) {
       ctx.addIssue({ code: 'custom', path: ['url'], message: 'repository URL must include a host and must not contain credentials' });
     }
     return;
   }
-  if (url.startsWith('file:') && url.length > 'file:'.length && !url.startsWith('file://')) return;
   if (/^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[A-Za-z0-9._/-]+$/.test(url)) return;
   ctx.addIssue({ code: 'custom', path: ['url'], message: 'repository URL must use HTTP(S), SSH, or SCP syntax' });
 });

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { copyFile, mkdir, readFile, readdir, stat } from 'node:fs/promises';
+import { mkdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
 import { createClient, type Client, type Transaction } from '@libsql/client';
@@ -63,6 +64,7 @@ function initialReport(mode: MigrationReport['mode'], sourceHash: string): Migra
 }
 
 export function createRuntimeDatabase(config: RuntimeConfig): Client {
+  mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
   return createClient({ url: config.databaseUrl });
 }
 

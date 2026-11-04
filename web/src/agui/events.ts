@@ -55,6 +55,7 @@ export interface RunErrorEvent extends AguiEventBase {
   conversation_id?: string;
   message_id?: string;
   error: string;
+  failure_category?: 'cancelled' | 'provider_error' | 'tool_protocol_error' | 'runtime_error';
   conversation?: ChatConversation;
 }
 

@@ -97,6 +97,8 @@ V2 仍未满足原发布门槛：压力负例须 ≤4/16，当前 5/16；历史�
 跨产品同名对象误召回、短别名触达和内容核验仍需单独处理。当前修复可改善默认模式的专项正文触达，
 不足以据此把 V2 切成默认，也不能推出线上诊断质量已提升。
 
+> 历史运行记录：以下命令按 2026-09-30 的仓库布局书写，`server/pyproject.toml` 后续已移除，当前不能原样执行。要复核历史结论请使用本报告的归档 JSON 与当时源码摘要；当前 Python MCP 测试入口为 `uv run --project mcp_server pytest -q mcp_server/tests`，这些历史 Agent 专项测试未迁移为当前验证命令。
+
 ```sh
 uv run --project server python experiments/knowledge_audit/run.py --mode legacy --out .data/kb-transfer-reproduce/legacy
 uv run --project server python experiments/knowledge_audit/run.py --mode legacy --preview-strategy ranked --out .data/kb-transfer-reproduce/legacy-ranked

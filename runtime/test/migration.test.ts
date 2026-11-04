@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -9,7 +9,7 @@ import { createClient } from '@libsql/client';
 import { loadRuntimeConfig } from '../src/config.js';
 import { migrateLegacyData, rollbackLegacyMigration } from '../src/migration/legacy.js';
 
-async function fixture() {
+async function fixture(createDataDir = true) {
   const root = await mkdtemp(join(tmpdir(), 'troubleshoot-migration-'));
   const dataDir = join(root, 'new-data');
   const legacyDir = join(root, 'legacy');
@@ -21,7 +21,7 @@ async function fixture() {
   const now = '2026-09-24T08:10:07.817750+00:00';
 
   await import('node:fs/promises').then(({ mkdir }) => mkdir(snapshotDir, { recursive: true }));
-  await import('node:fs/promises').then(({ mkdir }) => mkdir(dataDir, { recursive: true }));
+  if (createDataDir) await import('node:fs/promises').then(({ mkdir }) => mkdir(dataDir, { recursive: true }));
   await writeFile(conversations, JSON.stringify([{
     id: 'conv-legacy',
     title: 'legacy',
@@ -52,6 +52,17 @@ async function fixture() {
   });
   return { root, dataDir, config, conversations, repositories, modelConfig };
 }
+
+test('legacy migration creates a missing target directory on first apply', async () => {
+  const state = await fixture(false);
+  await assert.rejects(access(state.dataDir), { code: 'ENOENT' });
+
+  const applied = await migrateLegacyData(state.config, 'apply');
+
+  await access(join(state.dataDir, 'runtime.db'));
+  assert.deepEqual(applied.imported, { conversation: 1, repository: 1, snapshot: 1 });
+  assert.equal(applied.rejected.length, 0);
+});
 
 test('legacy migration dry-run is side-effect free and apply is idempotent', async () => {
   const state = await fixture();

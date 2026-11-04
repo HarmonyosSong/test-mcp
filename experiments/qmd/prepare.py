@@ -27,7 +27,7 @@ EXTRA = [
 async def main():
     OUT.mkdir(parents=True, exist_ok=True)
     cases = []
-    for i, line in enumerate((ROOT / 'agent/evals/datasets/knowledge_retrieval.jsonl').read_text().splitlines()):
+    for i, line in enumerate((ROOT / 'experiments/knowledge_audit/datasets/legacy-knowledge-retrieval.jsonl').read_text().splitlines()):
         item = json.loads(line)
         cases.append({'id': f'existing-{i}', 'query': item['query'], 'split': item['split'],
                       'expected': [item['expected']] if item['expected'] else []})

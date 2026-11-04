@@ -140,8 +140,9 @@ export class EvidenceLedger {
     const body = text ?? evidence.excerpt;
     const incomingBytes = byteLength(body);
     const isNew = !this.entries.has(evidence.id);
+    const isCurrentTurn = this.currentTurnIds.has(evidence.id);
     if (
-      isNew &&
+      !isCurrentTurn &&
       (this.currentTurnIds.size >= this.maxCurrentTurn ||
         this.currentTurnBytes + incomingBytes > this.maxCurrentTurnBytes)
     ) {
@@ -151,7 +152,7 @@ export class EvidenceLedger {
     this.entries.set(evidence.id, evidence);
     this.texts.set(evidence.id, body);
     if (this.evicted.delete(evidence.id)) this.restoredCount += 1;
-    if (isNew) {
+    if (!isCurrentTurn) {
       this.currentTurnIds.add(evidence.id);
       this.currentTurnBytes += incomingBytes;
     }
@@ -341,18 +342,16 @@ export class EvidenceLedger {
     }
 
     const report = DiagnosisReportSchema.parse({ ...draft, evidence: resolved });
-    if (report.verdict === 'located' || report.verdict === 'probable') {
-      const byId = new Map(report.evidence.map((item) => [item.id, item]));
-      for (const candidate of report.root_cause_candidates) {
-        if (!candidate.evidence_ids.some((id) => {
-          const item = byId.get(id);
-          return item?.kind === 'source' || item?.kind === 'log';
-        })) {
-          throw new EvidenceLedgerError(
-            'positive_without_observed_source',
-            '正向根因候选必须引用至少一条源码或日志观测；用户输入引用只能支撑现象存在。',
-          );
-        }
+    const byId = new Map(report.evidence.map((item) => [item.id, item]));
+    for (const candidate of report.root_cause_candidates) {
+      if (!candidate.evidence_ids.some((id) => {
+        const item = byId.get(id);
+        return item?.kind === 'source' || item?.kind === 'log';
+      })) {
+        throw new EvidenceLedgerError(
+          'positive_without_observed_source',
+          '每个根因候选都必须引用至少一条本次源码或日志观测；用户输入和知识线索不能单独构成根因候选。',
+        );
       }
     }
     return report;

@@ -4,6 +4,8 @@
 
 日期：2026-09-30。状态：**待实现的技术方案**（2026-10-08 修订：依据线上流量前提重排优先级）。
 
+**当前实现状态核对（2026-11-04）**：线上默认仍为 legacy 召回；V2 可显式启用，属于实验路径；ranked 正文预览可配置，尚非全局默认；`shadow` 对照尚未实现，配置后会报错。项目外主体提示只覆盖零命中，不处理已有候选上的误召回。本段描述当前代码，不改变下文方案与历史评测的提案状态。
+
 **2026-10-08 修订前提：线上提问均围绕本项目，项目外问法（外部产品主体、生活场景）实际不出现。**
 原 P0 的适用性判断只影响项目外误召回，暂缓为 P2，设计保留备查；原 P1（改写召回、事实自检、ranked 预览启用）提升为本期主线。负例套件保留为回归哨兵，发布门槛只统计线上可发生的输入子集（依据：当前 V2 剩余 5 条压力负例误召回全部依赖外部主体词；描述不足、本应用崩溃锚点等可发生输入 V2 已零误召回）。若未来流量构成变化（对外开放、接入更广入口），P2 须重新评估。
 
@@ -414,9 +416,12 @@ retrieval_profile:
 ```sh
 make knowledge-validate
 uv run --project mcp_server pytest -q mcp_server/tests/test_knowledge_base.py mcp_server/tests/test_query_log.py
+# 以下两条是旧 Python Agent/Server 阶段的历史命令；其项目定义已退役，不可在当前 checkout 执行。
 uv run --project server pytest -q mcp_server/tests agent/evals/test_knowledge_retrieval.py
 uv run --project server pytest -q agent/tests agent/evals server/tests
 ```
+
+当前回归入口为 `make test`；本文中的 Python runtime 测试命令仅保留为当时的验证记录。
 
 原冻结集复现用最新报告中的五条命令。新增 policy 变体应扩展现有脚本参数并在结果中记录配置；不要伪造当前不存在的 CLI。所有结果写入新目录，禁止覆盖当前基线。
 

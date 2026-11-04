@@ -1,5 +1,6 @@
 import { loadRuntimeConfig } from '../config.js';
 import { migrateLegacyData, rollbackLegacyMigration } from './legacy.js';
+import { redactConfiguredError } from '../security/configured-redaction.js';
 
 const args = process.argv.slice(2);
 const positional = args.filter((value) => !value.startsWith('--'));
@@ -23,7 +24,11 @@ try {
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   if (report.rejected.length > 0) process.exitCode = 2;
 } catch (error) {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  try {
+    process.stderr.write(`${await redactConfiguredError(loadRuntimeConfig().modelConfigFile, error)}\n`);
+  } catch {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  }
   process.exitCode = 1;
 }
 }

@@ -13,15 +13,21 @@ export interface LoadedSkill {
 }
 
 function scalar(frontmatter: string, key: string): string | undefined {
-  const match = frontmatter.match(new RegExp(`^\\s*${key}:\\s*["']?([^"'\\n]+?)["']?\\s*$`, 'm'));
+  const match = frontmatter.match(new RegExp(`^${key}:\\s*["']?([^"'\\n]+?)["']?\\s*$`, 'm'));
   return match?.[1]?.trim();
 }
 
-function list(frontmatter: string, key: string): string[] {
-  const inline = frontmatter.match(new RegExp(`^\\s*${key}:\\s*\\[([^\\]]*)\\]\\s*$`, 'm'))?.[1];
+function metadata(frontmatter: string): string {
+  return (frontmatter.match(/^metadata:\s*\n((?:[ \t]+.*\n?)*)/m)?.[1] ?? '').replace(/^  /gm, '');
+}
+
+function list(fields: string, key: string): string[] {
+  const inline = fields.match(new RegExp(`^${key}:\\s*\\[([^\\]]*)\\]\\s*$`, 'm'))?.[1];
   if (inline !== undefined) {
     return inline.split(',').map((item) => item.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
   }
+  const block = fields.match(new RegExp(`^${key}:\\s*\\n((?:[ \\t]+-\\s*[^\\n]+\\n?)*)`, 'm'))?.[1];
+  if (block !== undefined) return [...block.matchAll(/^\s+-\s*["']?([^"'\n]+?)["']?\s*$/gm)].map((match) => match[1]!.trim());
   return [];
 }
 
@@ -30,6 +36,7 @@ export function parseSkill(source: string, path: string): LoadedSkill {
   const end = source.indexOf('\n---', 4);
   if (end < 0) throw new Error(`invalid frontmatter: ${path}`);
   const frontmatter = source.slice(4, end);
+  const metadataFields = metadata(frontmatter);
   const instructions = source.slice(end + 4).trim();
   const name = scalar(frontmatter, 'name');
   const description = scalar(frontmatter, 'description');
@@ -37,10 +44,10 @@ export function parseSkill(source: string, path: string): LoadedSkill {
   return {
     name,
     description,
-    version: scalar(frontmatter, 'version') ?? '0.1.0',
-    stage: scalar(frontmatter, 'stage') ?? 'general',
-    modes: list(frontmatter, 'modes').length ? list(frontmatter, 'modes') : ['chat', 'diagnosis'],
-    requiredTools: list(frontmatter, 'required_tools'),
+    version: scalar(metadataFields, 'version') ?? '0.1.0',
+    stage: scalar(metadataFields, 'stage') ?? 'general',
+    modes: list(metadataFields, 'modes').length ? list(metadataFields, 'modes') : ['chat', 'diagnosis'],
+    requiredTools: list(metadataFields, 'required_tools'),
     instructions,
     source: path,
   };
@@ -67,7 +74,9 @@ export class SkillRegistry {
   }
 
   all(): LoadedSkill[] {
-    return [...this.skills.values()].sort((left, right) => left.name.localeCompare(right.name));
+    const stageOrder: Record<string, number> = { intake: 0, locate: 1, investigate: 2, diagnose: 3, general: 4 };
+    return [...this.skills.values()].sort((left, right) =>
+      (stageOrder[left.stage] ?? 99) - (stageOrder[right.stage] ?? 99) || left.name.localeCompare(right.name));
   }
 
   available(mode: string, tools: Set<string>): LoadedSkill[] {

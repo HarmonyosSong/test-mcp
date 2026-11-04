@@ -8,6 +8,8 @@
 
 ## 职责与入口
 
+本节记录产品策略；工具名和运行时行为反映 2026-09 的 Python 实现。Mastra 当前能力和未完成的兼容验收以迁移规格为准。
+
 - Knowledge 保存术语、候选、区分判据、代码锚点与适用范围。
 - Skill 按已有线索选择检索、读取、追问或结论，不把知识命中当作根因证明。
 - Runtime 管理工具预算、复用、上下文配对、观测记录和结构化报告验证。
@@ -58,28 +60,25 @@
 未原样加入 aliases 的额外改写和无关查询。内容变化需复核预期，不降低全局阈值来强行制造命中。
 这个小型人工样本集不代表真实用户总体召回率，也不是盲测或真实模型端到端正确率。
 
-聊天轮（含 Agent 已返回失败事件的轮次）记录 `tool_usage`：调用数、执行数、复用数、返回字符数、
-停止原因、模型请求数与 Agent 运行耗时（不含模型初始化和历史加载）。
-请求数在 Runtime 请求入口计数，包含失败尝试，不包含供应商 SDK 内部的网络重试。
-字符数用于观察载荷，不等于供应商计费 Token；实际输入/输出 Token 沿用模型 usage。
-失败前的模型用量若供应商没有返回 usage，则保持未知；不得把未知成本当作零。
-未配置或未执行真实模型评估时，不报告成本下降比例或诊断正确率提升。
+**Python runtime 历史计量口径（2026-09）**：当时的 `tool_usage` 包含调用数、执行数、复用数、返回字符数、停止原因、模型请求数与运行耗时。此字段集合不是 Mastra 当前 API 的保证。
+
+Mastra 当前记录工具 attempted/failed/accepted、budget、blocked、report attempts、复用及无进展计数；运行时消息提供模型返回的 input/output token usage（供应商未提供时为未知），并从 `step-start` 事件统计模型请求数、记录本轮耗时。固定集评测汇总运行时提供的 `model_requests` 与耗时；在模型调用前失败的轮次仍将请求数记为未知。聚合工具结果字符数没有统一计量口径，保持未知。未知值不得当作零。未配置或未执行真实模型评估时，不报告成本下降比例或诊断正确率提升。
 
 后续使用固定模型和相同真实问题比较：正确定位率、无证据结论比例、合理追问/拒绝判断率、
 模型轮数、总 Token、工具载荷、重复调用和耗时。成功与失败轮次都计入成本，不能靠提前放弃获得“节省”。
 
 ```bash
+make test-runtime
+make test-mcp
 make knowledge-validate
-uv run --project server pytest -q agent/tests agent/evals mcp_server/tests server/tests
 ```
 
-上述 Python Agent/Server 测试命令是本 ADR 形成时的历史验证入口；目前不要用它们验收 Mastra runtime。当前 runtime 检查命令见根目录 `Makefile`，迁移验收状态见 [`mastra-runtime-migration-spec.md`](../mastra-runtime-migration-spec.md)。
+旧 Python Agent/Server 测试命令属于本 ADR 形成时的历史验证入口，旧项目定义已退役，不再运行。以上为当前验证入口；迁移验收状态见 [`mastra-runtime-migration-spec.md`](../mastra-runtime-migration-spec.md)。
 
-## 2026-09-24 验证与反馈入口补充
+## 2026-09-24 历史验证与反馈入口
 
-- `make live-eval` 运行固定的三场景四轮真实模型报告/追问评估，未配置模型时失败，不静默跳过。
+- 当时的 `make live-eval` 运行固定的三场景四轮真实模型报告/追问评估，未配置模型时失败，不静默跳过。当前入口仍为 `make live-eval`，实现已切换为 Mastra TypeScript runner。
 - `python -m harmony_agent.evaluation --input ... --baseline ...` 汇总及比较同模型、同数据集、同轮次结果。
-  质量标签带 assessed/unassessed 分母，未知成本保留 null，失败轮次仍计入；自由文本无证据断言须另行复核。
-- 聊天终态自动独立归档；`harmony_agent.knowledge_feedback` 提供复核、提案、校验入库与规范条目关联。
+  这条命令和 `harmony_agent.knowledge_feedback` 均属于旧 Python runtime，不能用于 Mastra 产物。当前案例操作使用 `npm --prefix runtime run cases -- <command>`；质量评测使用 `make live-eval`。
 - 受控概念召回和现象覆盖只改善候选触达，不提升知识权威，也不改变观测账本或工具配对。
 - 实际执行结果和适用边界见 [修复与验证说明](../triage-feedback-and-evaluation.md)。

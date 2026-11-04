@@ -168,6 +168,23 @@ test('rereading identical content restores its stable ID and clears the tombston
   assert.equal(nextTurn.restoredCount, 1);
 });
 
+test('reread historical evidence becomes protected for the current turn and counts against its limit', () => {
+  const ledger = new EvidenceLedger({ maxEntries: 1, maxCurrentTurn: 1 });
+  const originalId = read(ledger, 'a.ets', 'same').evidence_refs[0]!.id;
+  const nextTurn = EvidenceLedger.restore(ledger.snapshot());
+
+  assert.equal(read(nextTurn, 'a.ets', 'same').evidence_refs[0]?.id, originalId);
+  assert.deepEqual([...nextTurn.currentTurnIds], [originalId]);
+  const rejected = read(nextTurn, 'b.ets', 'new observation') as {
+    evidence_refs: unknown[];
+    observation_capacity_reached?: boolean;
+  };
+
+  assert.equal(rejected.observation_capacity_reached, true);
+  assert.deepEqual(rejected.evidence_refs, []);
+  assert.equal(nextTurn.entries.has(originalId), true);
+});
+
 test('user references are stable and require verbatim excerpts', () => {
   const text = '用户报告点击完成后返回首页';
   const ledger = new EvidenceLedger({ inputTexts: [text] });
@@ -213,6 +230,23 @@ test('positive candidates require source or log observations, never user-only ev
   const sourceId = read(ledger, 'src/a.ets', 'throw Error').evidence_refs[0]!.id;
   const report = ledger.resolveDraft(draft(sourceId, 'throw Error'));
   assert.equal(report.verdict, 'probable');
+});
+
+test('insufficient reports cannot store knowledge-only causes as root-cause candidates', () => {
+  const ledger = new EvidenceLedger({ inputTexts: ['The page is blank'] });
+  const userId = ledger.registerUserTexts()[0]!.id;
+  assert.throws(
+    () => ledger.resolveDraft(draft(userId, 'page is blank', {
+      verdict: 'insufficient_evidence',
+      root_cause_candidates: [{
+        title: 'Container injection failure',
+        explanation: 'A knowledge entry describes this possibility.',
+        confidence: 0.2,
+        evidence_ids: [userId],
+      }],
+    })),
+    (error: unknown) => error instanceof EvidenceLedgerError && error.code === 'positive_without_observed_source',
+  );
 });
 
 test('same observation can support distinct excerpts but exact duplicate citations are rejected', () => {

@@ -1,0 +1,13 @@
+{
+  "name": "wiki-catalog-invalid",
+  "tool": "wiki_catalog",
+  "arguments": {
+    "business_line": "cloudlearn",
+    "limit": 0
+  },
+  "expected_outcome": "failed",
+  "response": {
+    "status": "invalid_request",
+    "message": "limit must be between 1 and 200"
+  }
+}

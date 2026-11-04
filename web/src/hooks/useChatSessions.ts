@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { streamChatMessage } from '../agui/client';
 import { api } from '../api';
+import { loadSessionState } from '../sessionFlow';
 import type {
   ChatConversation,
   ChatConversationSummary,
   ConnectionState,
+  CreateConversationInput,
 } from '../types';
 
 interface UseChatSessionsOptions {
@@ -19,7 +21,8 @@ export interface ChatController {
   sending: boolean;
   loaded: boolean;
   select: (id: string) => void;
-  createNew: () => Promise<void>;
+  createNew: (input?: CreateConversationInput) => Promise<boolean>;
+  refresh: () => Promise<boolean>;
   remove: (id: string) => Promise<void>;
   send: (content: string) => Promise<void>;
   stop: () => void;
@@ -44,27 +47,17 @@ export function useChatSessions({
     setSummaries(list);
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<boolean> => {
     try {
-      const list = await api.listConversations();
-      setSummaries(list);
+      const state = await loadSessionState(api, activeIdRef.current);
+      setSummaries(state.summaries);
+      setActive(state.active);
+      setActiveId(state.activeId);
       setLoaded(true);
-      const currentId = activeIdRef.current;
-      if (currentId && list.some((item) => item.id === currentId)) {
-        const detail = await api.getConversation(currentId);
-        setActive(detail);
-        return;
-      }
-      if (list.length > 0) {
-        const detail = await api.getConversation(list[0].id);
-        setActive(detail);
-        setActiveId(list[0].id);
-      } else {
-        setActive(null);
-        setActiveId(null);
-      }
+      return true;
     } catch {
       onNotice({ kind: 'error', message: '会话列表加载失败，请稍后刷新。' });
+      return false;
     }
   }, [onNotice]);
 
@@ -83,15 +76,17 @@ export function useChatSessions({
     [onNotice],
   );
 
-  const createNew = useCallback(async () => {
+  const createNew = useCallback(async (input: CreateConversationInput = {}) => {
     try {
-      const created = await api.createConversation({});
+      const created = await api.createConversation(input);
       await refreshSummaries();
       setActive(created);
       setActiveId(created.id);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : '创建会话失败';
       onNotice({ kind: 'error', message });
+      return false;
     }
   }, [onNotice, refreshSummaries]);
 
@@ -183,6 +178,7 @@ export function useChatSessions({
     loaded,
     select,
     createNew,
+    refresh: load,
     remove,
     send,
     stop,

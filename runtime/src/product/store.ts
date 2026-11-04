@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
+import { createHash } from "node:crypto";
 
-import type { Client } from '@libsql/client';
+import type { Client } from "@libsql/client";
 
-import { ensureProductSchema } from '../migration/legacy.js';
+import { ensureProductSchema } from "../migration/legacy.js";
 import {
   ChatMessageSchema,
   ConversationRecordSchema,
@@ -12,18 +12,18 @@ import {
   type ConversationRecord,
   type RepositoryRecord,
   type RepositorySnapshot,
-} from '../domain/schemas.js';
+} from "../domain/schemas.js";
 
-type ProductEntity = 'conversation' | 'repository' | 'snapshot';
+type ProductEntity = "conversation" | "repository" | "snapshot";
 
 const tableByEntity: Record<ProductEntity, string> = {
-  conversation: 'product_conversations',
-  repository: 'product_repositories',
-  snapshot: 'product_snapshots',
+  conversation: "product_conversations",
+  repository: "product_repositories",
+  snapshot: "product_snapshots",
 };
 
 function digest(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function toData(value: unknown): string {
@@ -31,7 +31,8 @@ function toData(value: unknown): string {
 }
 
 function parseData<T>(value: unknown): T {
-  if (typeof value !== 'string') throw new Error('product record data is not text');
+  if (typeof value !== "string")
+    throw new Error("product record data is not text");
   return JSON.parse(value) as T;
 }
 
@@ -53,18 +54,22 @@ export class ProductStore {
   constructor(private readonly client: Client) {}
 
   async initialize(): Promise<void> {
-    this.ready ??= ensureProductSchema(this.client);
+    this.ready ??= (async () => {
+      await ensureProductSchema(this.client);
+      await this.repairInterruptedConversations();
+    })();
     await this.ready;
-    await this.repairInterruptedConversations();
   }
 
   async listConversations(): Promise<ConversationSummary[]> {
     await this.initialize();
     const result = await this.client.execute(
-      'SELECT data FROM product_conversations ORDER BY updated_at DESC',
+      "SELECT data FROM product_conversations ORDER BY updated_at DESC",
     );
     return result.rows.map((row) => {
-      const conversation = ConversationRecordSchema.parse(parseData<unknown>(row.data));
+      const conversation = ConversationRecordSchema.parse(
+        parseData<unknown>(row.data),
+      );
       return {
         id: conversation.id,
         title: conversation.title,
@@ -78,7 +83,7 @@ export class ProductStore {
   async getConversation(id: string): Promise<ConversationRecord> {
     await this.initialize();
     const result = await this.client.execute({
-      sql: 'SELECT data FROM product_conversations WHERE id = ?',
+      sql: "SELECT data FROM product_conversations WHERE id = ?",
       args: [id],
     });
     const row = result.rows[0];
@@ -86,12 +91,16 @@ export class ProductStore {
     return ConversationRecordSchema.parse(parseData<unknown>(row.data));
   }
 
-  async saveConversation(conversation: ConversationRecord): Promise<ConversationRecord> {
+  async saveConversation(
+    conversation: ConversationRecord,
+  ): Promise<ConversationRecord> {
     await this.initialize();
     return this.saveConversationReady(conversation);
   }
 
-  private async saveConversationReady(conversation: ConversationRecord): Promise<ConversationRecord> {
+  private async saveConversationReady(
+    conversation: ConversationRecord,
+  ): Promise<ConversationRecord> {
     const parsed = ConversationRecordSchema.parse(conversation);
     const data = toData(parsed);
     await this.client.execute({
@@ -104,7 +113,9 @@ export class ProductStore {
     return parsed;
   }
 
-  async createConversation(input: Partial<ConversationRecord> = {}): Promise<ConversationRecord> {
+  async createConversation(
+    input: Partial<ConversationRecord> = {},
+  ): Promise<ConversationRecord> {
     const conversation = ConversationRecordSchema.parse({
       ...input,
       messages: input.messages ?? [],
@@ -117,16 +128,21 @@ export class ProductStore {
   async deleteConversation(id: string): Promise<void> {
     await this.initialize();
     const result = await this.client.execute({
-      sql: 'DELETE FROM product_conversations WHERE id = ?',
+      sql: "DELETE FROM product_conversations WHERE id = ?",
       args: [id],
     });
-    if (result.rowsAffected !== 1) throw new ProductNotFoundError(`conversation not found: ${id}`);
+    if (result.rowsAffected !== 1)
+      throw new ProductNotFoundError(`conversation not found: ${id}`);
   }
 
   async listRepositories(): Promise<RepositoryRecord[]> {
     await this.initialize();
-    const result = await this.client.execute('SELECT data FROM product_repositories ORDER BY data');
-    return result.rows.map((row) => RepositoryRecordSchema.parse(parseData<unknown>(row.data)));
+    const result = await this.client.execute(
+      "SELECT data FROM product_repositories ORDER BY data",
+    );
+    return result.rows.map((row) =>
+      RepositoryRecordSchema.parse(parseData<unknown>(row.data)),
+    );
   }
 
   async getRepository(id: string): Promise<RepositoryRecord> {
@@ -136,7 +152,9 @@ export class ProductStore {
     return record;
   }
 
-  async saveRepository(repository: RepositoryRecord): Promise<RepositoryRecord> {
+  async saveRepository(
+    repository: RepositoryRecord,
+  ): Promise<RepositoryRecord> {
     await this.initialize();
     const parsed = RepositoryRecordSchema.parse(repository);
     const data = toData(parsed);
@@ -150,7 +168,9 @@ export class ProductStore {
     return parsed;
   }
 
-  async saveSnapshot(snapshot: RepositorySnapshot): Promise<RepositorySnapshot> {
+  async saveSnapshot(
+    snapshot: RepositorySnapshot,
+  ): Promise<RepositorySnapshot> {
     await this.initialize();
     const parsed = RepositorySnapshotSchema.parse(snapshot);
     const data = toData(parsed);
@@ -165,34 +185,52 @@ export class ProductStore {
     return parsed;
   }
 
-  async getSnapshot(repositoryId: string, commit: string): Promise<RepositorySnapshot> {
+  async getSnapshot(
+    repositoryId: string,
+    commit: string,
+  ): Promise<RepositorySnapshot> {
     await this.initialize();
     const result = await this.client.execute({
-      sql: 'SELECT data FROM product_snapshots WHERE id = ?',
+      sql: "SELECT data FROM product_snapshots WHERE id = ?",
       args: [`${repositoryId}:${commit}`],
     });
     const row = result.rows[0];
-    if (!row) throw new ProductNotFoundError(`snapshot not found: ${repositoryId}:${commit}`);
+    if (!row)
+      throw new ProductNotFoundError(
+        `snapshot not found: ${repositoryId}:${commit}`,
+      );
     return RepositorySnapshotSchema.parse(parseData<unknown>(row.data));
   }
 
   private async repairInterruptedConversations(): Promise<void> {
-    const result = await this.client.execute('SELECT data FROM product_conversations');
+    const result = await this.client.execute(
+      "SELECT data FROM product_conversations",
+    );
     for (const row of result.rows) {
-      const conversation = ConversationRecordSchema.parse(parseData<unknown>(row.data));
-      const hasStreaming = conversation.messages.some((message) => message.status === 'streaming');
+      const conversation = ConversationRecordSchema.parse(
+        parseData<unknown>(row.data),
+      );
+      const hasStreaming = conversation.messages.some(
+        (message) => message.status === "streaming",
+      );
       if (!hasStreaming) continue;
-      const messages = conversation.messages.map((message, index, all) => {
-        if (message.status !== 'streaming') return message;
-        const previous = all[index - 1];
+      const messages = conversation.messages.map((message) => {
+        if (message.status !== "streaming") return message;
         return ChatMessageSchema.parse({
           ...message,
-          status: 'failed',
-          error: '回复中断：服务重启前未完成',
-          content: message.content,
-          steps: message.steps,
+          status: "failed",
+          error: "回复中断：服务重启前未完成",
+          content: "",
+          steps: message.steps.map((step) =>
+            step.status === "running"
+              ? {
+                  ...step,
+                  status: "failed",
+                  summary: "服务重启前工具调用中断，结果未知",
+                }
+              : step,
+          ),
           report: null,
-          ...(previous?.role === 'user' ? {} : { content: '' }),
         });
       });
       await this.saveConversationReady({ ...conversation, messages });
@@ -206,7 +244,7 @@ export class ProductStore {
 
 export function messageWithStatus(
   message: ChatMessage,
-  status: ChatMessage['status'],
+  status: ChatMessage["status"],
   patch: Partial<ChatMessage> = {},
 ): ChatMessage {
   return ChatMessageSchema.parse({ ...message, ...patch, status });

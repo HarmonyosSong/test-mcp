@@ -20,7 +20,7 @@
 | `name` | 是 | kebab-case，`^[a-z0-9][a-z0-9-]*$` | 必须与文件名一致 |
 | `kind` | 是 | 见下表 | 必须与所在目录匹配 |
 | `domains` | 否 | kebab-case 字符串列表，不可重复 | 事实省略时从目录推导；显式填写必须包含所在目录业务域。现象省略时为未知，可填多个候选域 |
-| `applies_to` | 是 | `harmony` / `ios` / `android` 的列表 | 适用端。是**过滤维度**，不是分区键 |
+| `applies_to` | 是 | `harmony` / `ios` / `android` 的列表 | 适用端上下文；不匹配会降低检索优先级，不作硬过滤 |
 | `authority` | 是 | `official` / `internal-sop` / `code` / `ticket` / `auto` | 来源类型，帮助评估判据可信度；不代表本次故障已成立 |
 | `updated_at` | 是 | `YYYY-MM-DD` | 最后修改日期 |
 | `verified_at` | 否 | `YYYY-MM-DD` | 最后**人工验证**日期。**缺席表示从未验证过**；超过 180 天会告警 |
@@ -108,7 +108,7 @@
 现象条目正文里用 `[[条目名]]` 引用事实条目：
 
 ```markdown
-6. **蓝牙耳机采样率回落** —— 见 [[harmony-audio-samplerate-fallback]]。
+6. **合同来源核对** —— 见 [[order-contract-agreement-sources]]。
 ```
 
 现象和事实都可以跨业务域引用事实，只允许使用全库唯一的 `[[name]]`，不能引用现象，不能写目录路径。

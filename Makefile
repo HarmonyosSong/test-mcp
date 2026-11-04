@@ -1,6 +1,6 @@
 .PHONY: setup check-node dev-api dev-server dev-web dev-mcp test test-runtime test-mcp knowledge-validate lint build build-runtime build-web start live-eval knowledge-querylog knowledge-cases
 
-setup:
+setup: check-node
 	uv sync --project mcp_server --index-url https://pypi.org/simple
 	npm --prefix web install
 	npm --prefix runtime ci
@@ -49,11 +49,11 @@ start: build-runtime build-web check-node
 	HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 # Live evaluation fails when the model is absent; it never silently skips.
-live-eval:
-	uv run --project server python -m harmony_agent.evaluation --live agent/evals/datasets/live_chat.jsonl --output .data/evals/latest.json
+live-eval: check-node
+	npm --prefix runtime run live-eval -- --live runtime/src/evaluation/datasets/live_chat.jsonl --output .data/evals/latest.json
 
 knowledge-querylog:
 	uv run --project mcp_server harmony-knowledge-querylog
 
 knowledge-cases:
-	uv run --project server python -m harmony_agent.knowledge_feedback list
+	npm --prefix runtime run cases -- list

@@ -8,8 +8,8 @@ also documents their standalone stdio entry points.
 
 ## Responsibilities
 
-- validate that every inspected path stays inside the authorized snapshot;
-- list and search allowed source and documentation files;
+- validate that every inspected path stays inside the authorized workspace;
+- list and search allowed HarmonyOS, Python, build/configuration, and documentation files;
 - read bounded source ranges;
 - parse pasted HiLog output;
 - load repository-local business context as untrusted evidence.
@@ -28,14 +28,21 @@ mcp_server/
 
 ## Run
 
-From the repository root, install the MCP dependencies with `make setup`. Then set the immutable repository snapshot and start the standalone stdio server:
+From the repository root, install the MCP dependencies with `make setup`. Then set the workspace directory and start the standalone stdio server:
 
 ```bash
 HARMONY_AGENT_MCP_WORKSPACE=/absolute/path/to/snapshot \
   uv run --project mcp_server harmony-repository-mcp
 ```
 
-The root [`mcp.json`](../mcp.json) contains a standalone repository-server client configuration. The Mastra runtime uses the same `uv run --project mcp_server ...` entry points and creates its own per-conversation repository client.
+The knowledge server is a separate stdio process and reads the repository knowledge tree:
+
+```bash
+HARMONY_AGENT_KNOWLEDGE_ROOT=/absolute/path/to/knowledge \
+  uv run --project mcp_server harmony-knowledge-mcp
+```
+
+The standalone server reads the directory passed in `HARMONY_AGENT_MCP_WORKSPACE` directly; it does not create or verify a snapshot. Use a fixed copy if checks must be repeatable, because changes to that directory can affect later reads. The root [`mcp.json`](../mcp.json) contains a standalone repository-server client configuration. The Mastra runtime uses the same `uv run --project mcp_server ...` entry points and creates a repository client for each diagnosis turn. Git-backed sessions use an immutable detached snapshot; local-directory sessions read the authorized live workspace, whose contents may change during a diagnosis.
 
 ## Tools
 
@@ -69,7 +76,8 @@ Domain preferences and matched domains are included in query logs for retrieval 
 ## Product runtime
 
 For the complete application flow, start `runtime/` through `make dev-api` or
-`make start` from the repository root. Do not start the old `server/` FastAPI
-application to run the product; `server/` and `agent/` remain legacy tests,
-evaluation tools, and domain references while the user-facing Agent and HTTP
-runtime are owned by Mastra.
+`make start` from the repository root. The product's Agent and HTTP request path
+are owned by Mastra. Python Agent and FastAPI source/tests remain in `agent/`
+and `server/` for historical review, but their Python project definitions and
+lockfiles have been removed; they are not supported runtime or test entry
+points. See the root migration specification for the remaining release gates.

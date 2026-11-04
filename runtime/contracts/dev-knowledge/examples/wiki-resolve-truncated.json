@@ -1,0 +1,48 @@
+{
+  "name": "wiki-resolve-truncated",
+  "tool": "wiki_resolve",
+  "arguments": {
+    "business_line": "cloudlearn",
+    "query": "loadDemo"
+  },
+  "expected_outcome": "hit",
+  "response": {
+    "status": "resolved",
+    "query": "loadDemo",
+    "candidates": [
+      {
+        "business_line": "cloudlearn",
+        "product_id": "demo",
+        "topic_id": "topic-demo",
+        "title": "Demo Topic",
+        "path": "Demo / Topic",
+        "content_status": "supported",
+        "confidence": "high",
+        "recommended_sections": [
+          {
+            "section_id": "overview",
+            "title": "overview",
+            "support_status": "evidence_limited",
+            "gap_reason": "外部结果需要核验"
+          }
+        ]
+      }
+    ],
+    "resolution": {
+      "credible_candidate_count": 1,
+      "confidence": "high",
+      "next_action": "Read recommended sections when snippets are incomplete or conditions need checking; resolved identifies a Topic, not a complete answer."
+    },
+    "truncated": true,
+    "truncation": {
+      "reason": "server.max_response_bytes exceeded",
+      "max_response_bytes": 900,
+      "omitted": {
+        "snippets": 1,
+        "evidence_boundaries": 1,
+        "summary": 1
+      },
+      "next_action": "response fields omitted; call wiki_read with the candidate identity and recommended section_ids for complete evidence"
+    }
+  }
+}

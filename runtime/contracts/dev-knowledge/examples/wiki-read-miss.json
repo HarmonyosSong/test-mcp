@@ -1,0 +1,18 @@
+{
+  "name": "wiki-read-miss",
+  "tool": "wiki_read",
+  "arguments": {
+    "business_line": "cloudlearn",
+    "product_id": "demo",
+    "topic_id": "missing"
+  },
+  "expected_outcome": "miss",
+  "response": {
+    "status": "not_found",
+    "key": {
+      "business_line": "cloudlearn",
+      "product_id": "demo",
+      "topic_id": "missing"
+    }
+  }
+}
