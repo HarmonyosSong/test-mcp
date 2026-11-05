@@ -366,12 +366,22 @@ export class ModelConfiguration {
     const provider = separator >= 0 ? configuredModel.slice(0, separator) : 'configured';
     const modelName = separator >= 0 ? configuredModel.slice(separator + 1) : configuredModel;
     const preset = presetsById.get(provider);
+    // OpenAI-compatible gateways set OPENAI_BASE_URL; without it, openai preset hits api.openai.com.
+    const openAiBaseUrl = this.env.OPENAI_BASE_URL?.trim() || '';
+    const baseUrl =
+      ((provider === 'openai' || provider === 'custom') && openAiBaseUrl) ||
+      preset?.base_url ||
+      null;
     return {
       provider,
       providerName: preset?.name ?? provider,
       modelName,
-      baseUrl: preset?.base_url || null,
-      apiKey: preset?.api_key_env ? normalizeSecret(this.env[preset.api_key_env]) : null,
+      baseUrl,
+      apiKey: preset?.api_key_env
+        ? normalizeSecret(this.env[preset.api_key_env])
+        : provider === 'custom'
+          ? normalizeSecret(this.env.OPENAI_API_KEY)
+          : null,
       source: 'environment',
       compatibilityMode: 'standard',
     };

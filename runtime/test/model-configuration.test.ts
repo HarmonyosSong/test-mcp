@@ -234,6 +234,29 @@ test('environment model configuration takes precedence over persisted configurat
   });
 });
 
+test('environment openai provider honors OPENAI_BASE_URL for compatible gateways', async () => {
+  await withConfig(async (_configuration, filePath) => {
+    const environment = new ModelConfiguration({
+      filePath,
+      env: {
+        HARMONY_AGENT_MODE: 'model',
+        HARMONY_AGENT_MODEL: 'openai:deepseek-v4.1-flash',
+        OPENAI_BASE_URL: 'https://test-gateway-openai-inner.speiyou.com/v1',
+        OPENAI_API_KEY: 'gateway-secret',
+      },
+    });
+    await environment.initialize();
+    assert.equal(environment.status().source, 'environment');
+    assert.equal(environment.status().provider, 'openai');
+    assert.equal(environment.status().base_url, 'https://test-gateway-openai-inner.speiyou.com/v1');
+    assert.deepEqual(await environment.configuredDiscovery(), {
+      provider: 'openai',
+      base_url: 'https://test-gateway-openai-inner.speiyou.com/v1',
+      api_key: 'gateway-secret',
+    });
+  });
+});
+
 test('builds a Mastra OpenAI-compatible chat model config with the selected endpoint and secret', async () => {
   await withConfig(async (configuration) => {
     await configuration.configure({
