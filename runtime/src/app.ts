@@ -120,7 +120,17 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
 
     if (config.serveWeb) {
       const webRoot = resolve(config.projectRoot, config.webDist);
-      app.use('/assets/*', serveStatic({ root: webRoot }));
+      const appPrefix = config.appPrefix;
+      // Vite emits absolute URLs like /xesapp-agent/assets/*.js. serveStatic joins
+      // root + req.path, so strip the app prefix or it looks under web/dist/xesapp-agent/.
+      app.use(
+        '/assets/*',
+        serveStatic({
+          root: webRoot,
+          rewriteRequestPath: (path) =>
+            path.startsWith(appPrefix) ? path.slice(appPrefix.length) || '/' : path,
+        }),
+      );
       app.get('*', async (context) => {
         const path = context.req.path;
         if (path.includes('/api/') || path.includes('/auth/')) return context.notFound();
