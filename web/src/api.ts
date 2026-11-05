@@ -1,3 +1,5 @@
+import { apiPath } from './auth/paths';
+import { authenticatedFetch } from './auth/session-fetch';
 import type {
   ChatConversation,
   ChatConversationSummary,
@@ -14,7 +16,6 @@ import type {
   RepositorySnapshot,
 } from './types';
 
-const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 const REQUEST_TIMEOUT_MS = 5_000;
 
 export class ApiError extends Error {
@@ -36,7 +37,7 @@ async function request<T>(
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${API_BASE}${path}`, {
+    const response = await authenticatedFetch(apiPath(path), {
       ...init,
       headers: {
         Accept: 'application/json',
@@ -70,12 +71,12 @@ async function request<T>(
 }
 
 export const api = {
-  health: () => request<HealthResponse>('/api/health'),
-  meta: () => request<MetaResponse>('/api/meta'),
-  repositories: () => request<RepositoryRecord[]>('/api/repositories'),
+  health: () => request<HealthResponse>('/health'),
+  meta: () => request<MetaResponse>('/meta'),
+  repositories: () => request<RepositoryRecord[]>('/repositories'),
   registerRepository: (input: RegisterRepositoryInput) =>
     request<RepositoryRecord>(
-      '/api/repositories',
+      '/repositories',
       {
         method: 'POST',
         body: JSON.stringify(input),
@@ -84,21 +85,21 @@ export const api = {
     ),
   repositoryBranches: (repositoryId: string, query = '') =>
     request<RepositoryBranch[]>(
-      `/api/repositories/${repositoryId}/branches?query=${encodeURIComponent(query)}`,
+      `/repositories/${repositoryId}/branches?query=${encodeURIComponent(query)}`,
       undefined,
       60_000,
     ),
   createRepositorySnapshot: (repositoryId: string, branch: string) =>
     request<RepositorySnapshot>(
-      `/api/repositories/${repositoryId}/snapshots`,
+      `/repositories/${repositoryId}/snapshots`,
       {
         method: 'POST',
         body: JSON.stringify({ branch }),
       },
       180_000,
     ),
-  modelProviders: () => request<ModelProviderPreset[]>('/api/model/providers'),
-  availableModels: () => request<string[]>('/api/model/available-models'),
+  modelProviders: () => request<ModelProviderPreset[]>('/model/providers'),
+  availableModels: () => request<string[]>('/model/available-models'),
   probeModels: (input: {
     provider: string;
     base_url?: string;
@@ -106,19 +107,19 @@ export const api = {
     no_api_key: boolean;
   }) =>
     request<string[]>(
-      '/api/model/available-models',
+      '/model/available-models',
       { method: 'POST', body: JSON.stringify(input) },
       20_000,
     ),
-  modelStatus: () => request<ModelStatus>('/api/model/status'),
+  modelStatus: () => request<ModelStatus>('/model/status'),
   configureModel: (input: ModelConfigInput) =>
-    request<ModelStatus>('/api/model/config', {
+    request<ModelStatus>('/model/config', {
       method: 'PUT',
       body: JSON.stringify(input),
     }),
   testModel: (input: ModelConfigInput) =>
     request<ModelConnectionResult>(
-      '/api/model/test',
+      '/model/test',
       {
         method: 'POST',
         body: JSON.stringify(input),
@@ -126,21 +127,21 @@ export const api = {
       25_000,
     ),
   disableModel: () =>
-    request<ModelStatus>('/api/model/config', {
+    request<ModelStatus>('/model/config', {
       method: 'DELETE',
     }),
-  listConversations: () => request<ChatConversationSummary[]>('/api/conversations'),
+  listConversations: () => request<ChatConversationSummary[]>('/conversations'),
   createConversation: (input: CreateConversationInput) =>
-    request<ChatConversation>('/api/conversations', {
+    request<ChatConversation>('/conversations', {
       method: 'POST',
       body: JSON.stringify(input),
     }),
-  getConversation: (id: string) => request<ChatConversation>(`/api/conversations/${id}`),
+  getConversation: (id: string) => request<ChatConversation>(`/conversations/${id}`),
   updateConversation: (id: string, patch: { title?: string; model_override?: string }) =>
-    request<ChatConversation>(`/api/conversations/${id}`, {
+    request<ChatConversation>(`/conversations/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
   deleteConversation: (id: string) =>
-    request<void>(`/api/conversations/${id}`, { method: 'DELETE' }),
+    request<void>(`/conversations/${id}`, { method: 'DELETE' }),
 };

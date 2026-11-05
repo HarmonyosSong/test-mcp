@@ -6,19 +6,26 @@ import test from 'node:test';
 
 import { loadRuntimeConfig } from '../src/config.js';
 import { createRuntimeApp } from '../src/app.js';
+import {
+  APP_PREFIX,
+  api,
+  authedGetHeaders,
+  issueSession,
+  loadTestConfig,
+} from './auth-helpers.js';
 
 test('loads safe defaults and exposes health metadata', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'troubleshoot-odyssey-'));
   try {
-    const config = loadRuntimeConfig({
-      HARMONY_MASTRA_DATA_DIR: dataDir,
+    const config = loadTestConfig(dataDir, {
       HARMONY_AGENT_CORS_ORIGINS: 'https://workbench.example.test',
     });
     assert.equal(config.projectRoot, process.cwd().replace(/\/runtime$/, ''));
     assert.equal(config.skillsDir.endsWith('/skills'), true);
-    const { app, mastra, modelConfiguration } = await createRuntimeApp(config);
+    const { app, mastra, modelConfiguration, identityProvider, store } = await createRuntimeApp(config);
     assert.equal((await stat(config.dataDir)).mode & 0o777, 0o700);
     assert.equal((await stat(join(config.dataDir, 'runtime.db'))).mode & 0o777, 0o600);
+    const { cookie } = issueSession(identityProvider);
     const secretName = 'RUNTIME_HTTP_AUDIT_SECRET';
     const previousSecret = process.env[secretName];
     const secret = 'http-error-secret-sentinel';
@@ -38,7 +45,7 @@ test('loads safe defaults and exposes health metadata', async () => {
       else process.env[secretName] = previousSecret;
     }
 
-    const response = await app.request('/api/health');
+    const response = await app.request(api('/health'));
     assert.equal(response.status, 200);
     const health = await response.json() as { status: string; mode: string; model: string | null; provider: string | null };
     assert.equal(health.status, 'ok');
@@ -49,8 +56,10 @@ test('loads safe defaults and exposes health metadata', async () => {
     console.error = (...args: unknown[]) => logged.push(args.join(' '));
     modelConfiguration.status = () => { throw new Error(`status failure ${secret}`); };
     try {
-      for (const path of ['/api/health', '/api/meta']) {
-        const failed = await app.request(path);
+      for (const path of [api('/health'), api('/meta')]) {
+        const failed = await app.request(path, {
+          headers: path.endsWith('/meta') ? authedGetHeaders(cookie) : undefined,
+        });
         assert.equal(failed.status, 500, path);
         assert.deepEqual(await failed.json(), { detail: 'Internal Server Error' });
       }
@@ -62,16 +71,23 @@ test('loads safe defaults and exposes health metadata', async () => {
     }
     assert.equal(logged.join(' ').includes(secret), false);
 
-    const notFound = await app.request('/api/not-a-product-route');
+    const notFound = await app.request(api('/not-a-product-route'), {
+      headers: authedGetHeaders(cookie),
+    });
     assert.equal(notFound.status, 404);
     assert.deepEqual(await notFound.json(), { detail: 'Not Found' });
 
-    for (const path of ['/api/agents', '/api/workflows', '/api/tools', '/api/memory/threads']) {
-      const response = await app.request(path);
+    for (const path of [
+      `${APP_PREFIX}/api/agents`,
+      `${APP_PREFIX}/api/workflows`,
+      `${APP_PREFIX}/api/tools`,
+      `${APP_PREFIX}/api/memory/threads`,
+    ]) {
+      const response = await app.request(path, { headers: authedGetHeaders(cookie) });
       assert.equal(response.status, 404, `${path} must not expose Mastra's generic server API`);
     }
 
-    const preflight = await app.request('/api/conversations', {
+    const preflight = await app.request(api('/conversations'), {
       method: 'OPTIONS',
       headers: {
         origin: 'https://workbench.example.test',
@@ -82,7 +98,10 @@ test('loads safe defaults and exposes health metadata', async () => {
     assert.equal(preflight.headers.get('access-control-allow-origin'), 'https://workbench.example.test');
     assert.match(preflight.headers.get('access-control-allow-methods') ?? '', /PATCH/);
 
-    const metaResponse = await app.request('/api/meta');
+    const metaResponse = await app.request(api('/meta'), {
+      headers: authedGetHeaders(cookie),
+    });
+    assert.equal(metaResponse.status, 200);
     const meta = await metaResponse.json() as {
       mcp_tools: string[];
       constraints: string[];
@@ -107,6 +126,7 @@ test('loads safe defaults and exposes health metadata', async () => {
     };
     await memory.saveThread({ thread });
     await mastra.getStorage()?.close();
+    await store.close();
 
     const restarted = await createRuntimeApp(config);
     const restartedMemory = await restarted.mastra.getStorage()?.getStore('memory');
@@ -115,6 +135,7 @@ test('loads safe defaults and exposes health metadata', async () => {
       thread.resourceId,
     );
     await restarted.mastra.getStorage()?.close();
+    await restarted.store.close();
   } finally {
     await rm(dataDir, { recursive: true, force: true });
   }

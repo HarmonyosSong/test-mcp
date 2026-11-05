@@ -1,6 +1,7 @@
 import {
   GitFork,
   LoaderCircle,
+  LogOut,
   MessageSquare,
   RefreshCw,
   ScanSearch,
@@ -16,18 +17,22 @@ export type SidebarNav = 'chat';
 interface SidebarProps {
   connection: ConnectionState;
   refreshing: boolean;
+  identityLabel?: string;
   onRefresh: () => void;
   onModelSettings: () => void;
   onRepositorySettings: () => void;
+  onLogout?: () => void;
   children: ReactNode;
 }
 
 export function Sidebar({
   connection,
   refreshing,
+  identityLabel,
   onRefresh,
   onModelSettings,
   onRepositorySettings,
+  onLogout,
   children,
 }: SidebarProps) {
   const connectionLabel =
@@ -60,11 +65,11 @@ export function Sidebar({
       <div className="sidebar-footer">
         <span
           className={`sidebar-status sidebar-status-${connection}`}
-          title={connectionLabel}
+          title={identityLabel ? `${connectionLabel} · ${identityLabel}` : connectionLabel}
         >
           <span className={`source-dot source-${connection}`} />
           {connection === 'checking' && <LoaderCircle className="spin" size={12} />}
-          {connectionLabel}
+          {identityLabel || connectionLabel}
         </span>
         <div className="sidebar-footer-actions">
           <ThemeToggle />
@@ -96,6 +101,17 @@ export function Sidebar({
           >
             <Settings2 size={16} />
           </button>
+          {onLogout && (
+            <button
+              className="sidebar-icon-button"
+              type="button"
+              onClick={onLogout}
+              title="退出登录"
+              aria-label="退出登录"
+            >
+              <LogOut size={16} />
+            </button>
+          )}
         </div>
       </div>
     </aside>

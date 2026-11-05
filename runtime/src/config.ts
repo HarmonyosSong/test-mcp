@@ -58,12 +58,19 @@ export const runtimeConfigSchema = z.object({
     'http://127.0.0.1:5173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
+    'https://localhost:5174',
+    'https://127.0.0.1:5174',
   ]),
   mcpCommand: z.string().default('uv'),
   skillsDir: z.string().default(resolve(repositoryRoot, 'skills')),
   gitMirrorDir: z.string().default('.data/git-mirrors'),
   snapshotDir: z.string().default('.data/workspaces'),
   gitTimeoutMs: z.coerce.number().int().min(1_000).max(600_000).default(120_000),
+  publicBaseUrl: z.string().default(''),
+  appPrefix: z.string().default('/xesapp-agent'),
+  ssoBaseUrl: z.string().default(''),
+  ssoAppId: z.string().default(''),
+  ssoAppKey: z.string().default(''),
 });
 
 export type RuntimeConfig = z.infer<typeof runtimeConfigSchema>;
@@ -94,10 +101,24 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     gitMirrorDir: env.HARMONY_MASTRA_GIT_MIRROR_DIR,
     snapshotDir: env.HARMONY_MASTRA_SNAPSHOT_DIR,
     gitTimeoutMs: env.HARMONY_MASTRA_GIT_TIMEOUT_MS,
+    publicBaseUrl: env.HARMONY_AGENT_PUBLIC_BASE_URL,
+    appPrefix: env.HARMONY_AGENT_APP_PREFIX,
+    ssoBaseUrl: env.HARMONY_AGENT_SSO_BASE_URL,
+    ssoAppId: env.HARMONY_AGENT_SSO_APP_ID,
+    ssoAppKey: env.HARMONY_AGENT_SSO_APP_KEY,
   });
   const projectRoot = resolve(repositoryRoot, config.projectRoot);
   const fromRoot = (path: string) => resolve(projectRoot, path);
   const dataDir = fromRoot(config.dataDir);
+  const publicBaseUrl = config.publicBaseUrl.replace(/\/+$/, '');
+  const ssoBaseUrl = config.ssoBaseUrl.replace(/\/+$/, '');
+  let appPrefix = (config.appPrefix || '/xesapp-agent').trim() || '/xesapp-agent';
+  if (!appPrefix.startsWith('/')) appPrefix = `/${appPrefix}`;
+  appPrefix = appPrefix.replace(/\/+$/, '') || '/xesapp-agent';
+  const corsOrigins = [...config.corsOrigins];
+  if (publicBaseUrl && !corsOrigins.includes(publicBaseUrl)) {
+    corsOrigins.push(publicBaseUrl);
+  }
   return {
     ...config,
     projectRoot,
@@ -116,5 +137,9 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     gitMirrorDir: fromRoot(config.gitMirrorDir),
     snapshotDir: fromRoot(config.snapshotDir),
     databaseUrl: config.databaseUrl || `file:${resolve(dataDir, 'runtime.db')}`,
+    publicBaseUrl,
+    appPrefix,
+    ssoBaseUrl,
+    corsOrigins,
   };
 }
