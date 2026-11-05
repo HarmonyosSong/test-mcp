@@ -34,6 +34,13 @@ function loadProjectEnv(): void {
 
 loadProjectEnv();
 
+/** Non-secret Compass A2A defaults. Mirrored in `.env.example`; Token stays empty there. */
+export const A2A_CONFIG_DEFAULTS = {
+  baseUrl: 'https://dev-agent-fz.speiyou.com',
+  clientId: 'xesapp-agent',
+  waitSeconds: 180,
+} as const;
+
 export const runtimeConfigSchema = z.object({
   host: z.string().default('127.0.0.1'),
   port: z.coerce.number().int().min(1).max(65535).default(8000),
@@ -71,6 +78,10 @@ export const runtimeConfigSchema = z.object({
   ssoBaseUrl: z.string().default(''),
   ssoAppId: z.string().default(''),
   ssoAppKey: z.string().default(''),
+  a2aBaseUrl: z.string().default(A2A_CONFIG_DEFAULTS.baseUrl),
+  a2aClientId: z.string().default(A2A_CONFIG_DEFAULTS.clientId),
+  a2aToken: z.string().default(''),
+  a2aWaitSeconds: z.coerce.number().int().min(1).max(3_600).default(A2A_CONFIG_DEFAULTS.waitSeconds),
 });
 
 export type RuntimeConfig = z.infer<typeof runtimeConfigSchema>;
@@ -106,6 +117,10 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     ssoBaseUrl: env.HARMONY_AGENT_SSO_BASE_URL,
     ssoAppId: env.HARMONY_AGENT_SSO_APP_ID,
     ssoAppKey: env.HARMONY_AGENT_SSO_APP_KEY,
+    a2aBaseUrl: env.HARMONY_AGENT_A2A_BASE_URL,
+    a2aClientId: env.HARMONY_AGENT_A2A_CLIENT_ID,
+    a2aToken: env.HARMONY_AGENT_A2A_TOKEN,
+    a2aWaitSeconds: env.HARMONY_AGENT_A2A_WAIT_SECONDS,
   });
   const projectRoot = resolve(repositoryRoot, config.projectRoot);
   const fromRoot = (path: string) => resolve(projectRoot, path);
@@ -119,6 +134,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   if (publicBaseUrl && !corsOrigins.includes(publicBaseUrl)) {
     corsOrigins.push(publicBaseUrl);
   }
+  const a2aBaseUrl = config.a2aBaseUrl.replace(/\/+$/, '');
   return {
     ...config,
     projectRoot,
@@ -141,5 +157,17 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     appPrefix,
     ssoBaseUrl,
     corsOrigins,
+    a2aBaseUrl,
+    a2aClientId: config.a2aClientId.trim() || A2A_CONFIG_DEFAULTS.clientId,
+    a2aToken: config.a2aToken.trim(),
+  };
+}
+
+export function compassA2AClientConfig(config: Pick<RuntimeConfig, 'a2aBaseUrl' | 'a2aClientId' | 'a2aToken' | 'a2aWaitSeconds'>) {
+  return {
+    baseUrl: config.a2aBaseUrl,
+    clientId: config.a2aClientId,
+    token: config.a2aToken,
+    waitSeconds: config.a2aWaitSeconds,
   };
 }
