@@ -82,6 +82,17 @@ export const runtimeConfigSchema = z.object({
   a2aClientId: z.string().default(A2A_CONFIG_DEFAULTS.clientId),
   a2aToken: z.string().default(''),
   a2aWaitSeconds: z.coerce.number().int().min(1).max(3_600).default(A2A_CONFIG_DEFAULTS.waitSeconds),
+  yachEnabled: booleanFromEnv,
+  yachAppKey: z.string().default(''),
+  yachAppSecret: z.string().default(''),
+  yachBaseUrl: z.string().default('https://yach-oapi.zhiyinlou.com'),
+  yachDispatchUrl: z.string().default('https://chatconf.msg.xescdn.com/v4/proxy/config'),
+  yachChannelAppId: z.string().default('yach20001'),
+  yachBizId: z.string().default('97'),
+  yachVersionArea: z.string().default('YachAreaRed'),
+  yachBridgePath: z.string().default(''),
+  yachNodePath: z.string().default('node'),
+  yachRobotId: z.string().default(''),
 });
 
 export type RuntimeConfig = z.infer<typeof runtimeConfigSchema>;
@@ -121,6 +132,17 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     a2aClientId: env.HARMONY_AGENT_A2A_CLIENT_ID,
     a2aToken: env.HARMONY_AGENT_A2A_TOKEN,
     a2aWaitSeconds: env.HARMONY_AGENT_A2A_WAIT_SECONDS,
+    yachEnabled: env.HARMONY_AGENT_YACH_ENABLED,
+    yachAppKey: env.HARMONY_AGENT_YACH_APP_KEY ?? env.YACH_APP_KEY,
+    yachAppSecret: env.HARMONY_AGENT_YACH_APP_SECRET ?? env.YACH_APP_SECRET,
+    yachBaseUrl: env.HARMONY_AGENT_YACH_BASE_URL ?? env.YACH_BASE_URL,
+    yachDispatchUrl: env.HARMONY_AGENT_YACH_DISPATCH_URL,
+    yachChannelAppId: env.HARMONY_AGENT_YACH_CHANNEL_APP_ID,
+    yachBizId: env.HARMONY_AGENT_YACH_BIZ_ID,
+    yachVersionArea: env.HARMONY_AGENT_YACH_VERSION_AREA,
+    yachBridgePath: env.HARMONY_AGENT_YACH_BRIDGE_PATH,
+    yachNodePath: env.HARMONY_AGENT_YACH_NODE_PATH,
+    yachRobotId: env.HARMONY_AGENT_YACH_ROBOT_ID ?? env.YACH_ROBOT_ID,
   });
   const projectRoot = resolve(repositoryRoot, config.projectRoot);
   const fromRoot = (path: string) => resolve(projectRoot, path);
@@ -135,6 +157,9 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     corsOrigins.push(publicBaseUrl);
   }
   const a2aBaseUrl = config.a2aBaseUrl.replace(/\/+$/, '');
+  const yachBridgePath = config.yachBridgePath.trim()
+    ? (config.yachBridgePath.startsWith('/') ? config.yachBridgePath : fromRoot(config.yachBridgePath))
+    : resolve(projectRoot, 'runtime/yach-bridge/bridge.cjs');
   return {
     ...config,
     projectRoot,
@@ -160,6 +185,17 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     a2aBaseUrl,
     a2aClientId: config.a2aClientId.trim() || A2A_CONFIG_DEFAULTS.clientId,
     a2aToken: config.a2aToken.trim(),
+    yachEnabled: Boolean(config.yachEnabled),
+    yachAppKey: config.yachAppKey.trim(),
+    yachAppSecret: config.yachAppSecret.trim(),
+    yachBaseUrl: config.yachBaseUrl.replace(/\/+$/, ''),
+    yachDispatchUrl: config.yachDispatchUrl.replace(/\/+$/, ''),
+    yachChannelAppId: config.yachChannelAppId.trim() || 'yach20001',
+    yachBizId: String(config.yachBizId || '97').trim() || '97',
+    yachVersionArea: config.yachVersionArea.trim() || 'YachAreaRed',
+    yachBridgePath,
+    yachNodePath: config.yachNodePath.trim() || 'node',
+    yachRobotId: config.yachRobotId.trim(),
   };
 }
 

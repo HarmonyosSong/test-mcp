@@ -4,16 +4,21 @@ import { createRuntimeApp } from './app.js';
 import { drainHttpServer } from './shutdown.js';
 
 const config = loadRuntimeConfig();
-const { app, mastra, store, capabilities } = await createRuntimeApp(config);
+const { app, mastra, store, capabilities, yachChannel } = await createRuntimeApp(config);
 
 const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
   console.log(`Mastra runtime listening on http://${info.address}:${info.port}`);
+  if (yachChannel) {
+    yachChannel.start();
+    console.log('Yach digital-partner IM channel started');
+  }
 });
 
 let shutdownPromise: Promise<void> | undefined;
 const shutdown = () => {
   shutdownPromise ??= drainHttpServer(server, async () => {
     const results = await Promise.allSettled([
+      Promise.resolve().then(() => yachChannel?.close()),
       Promise.resolve().then(() => store.close()),
       Promise.resolve().then(() => capabilities.close()),
       Promise.resolve().then(() => mastra.getStorage()?.close()),

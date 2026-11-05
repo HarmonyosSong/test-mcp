@@ -43,6 +43,7 @@ export class ProductConflictError extends Error {}
 export interface ConversationSummary {
   id: string;
   title: string;
+  channel: 'web' | 'yach_im';
   repository_name: string | null;
   message_count: number;
   updated_at: string;
@@ -73,6 +74,7 @@ export class ProductStore {
       return {
         id: conversation.id,
         title: conversation.title,
+        channel: conversation.channel ?? 'web',
         repository_name: conversation.repository_name,
         message_count: conversation.messages.length,
         updated_at: conversation.updated_at,

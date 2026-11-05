@@ -24,6 +24,7 @@ import {
   requireIdentity,
   type AuthVariables,
 } from './auth/index.js';
+import { isYachImConfigured, YachChannel } from './channels/yach/index.js';
 
 export interface RuntimeApp {
   app: Hono<{ Variables: AuthVariables }>;
@@ -35,6 +36,7 @@ export interface RuntimeApp {
   skills: SkillRegistry;
   diagnosisAgent: DiagnosisAgent;
   identityProvider: SSOIdentityProvider;
+  yachChannel: YachChannel | null;
 }
 
 export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeApp> {
@@ -145,6 +147,15 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
     }
 
     root.route('/', app);
+    const yachChannel = isYachImConfigured(config)
+      ? new YachChannel({
+        config,
+        store,
+        diagnosisAgent,
+        capabilities,
+        modelConfiguration,
+      })
+      : null;
     return {
       app: root,
       mastra,
@@ -155,6 +166,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       skills,
       diagnosisAgent,
       identityProvider,
+      yachChannel,
     };
   } catch (error) {
     await Promise.allSettled([
