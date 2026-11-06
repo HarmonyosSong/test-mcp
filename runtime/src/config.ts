@@ -73,6 +73,7 @@ export const runtimeConfigSchema = z.object({
   gitMirrorDir: z.string().default('.data/git-mirrors'),
   snapshotDir: z.string().default('.data/workspaces'),
   gitTimeoutMs: z.coerce.number().int().min(1_000).max(600_000).default(120_000),
+  runMode: z.enum(['local', 'server']).default('server'),
   publicBaseUrl: z.string().default(''),
   appPrefix: z.string().default('/xesapp-agent'),
   ssoBaseUrl: z.string().default(''),
@@ -99,7 +100,9 @@ export const runtimeConfigSchema = z.object({
   logcenterBaseUrl: z.string().default('https://logcenter-api.tal.com/api'),
 });
 
-export type RuntimeConfig = z.infer<typeof runtimeConfigSchema>;
+export type RuntimeConfig = z.infer<typeof runtimeConfigSchema> & {
+  authMode: 'local' | 'sso';
+};
 
 export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
   const config = runtimeConfigSchema.parse({
@@ -127,6 +130,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     gitMirrorDir: env.HARMONY_MASTRA_GIT_MIRROR_DIR,
     snapshotDir: env.HARMONY_MASTRA_SNAPSHOT_DIR,
     gitTimeoutMs: env.HARMONY_MASTRA_GIT_TIMEOUT_MS,
+    runMode: env.HARMONY_AGENT_RUN_MODE || undefined,
     publicBaseUrl: env.HARMONY_AGENT_PUBLIC_BASE_URL,
     appPrefix: env.HARMONY_AGENT_APP_PREFIX,
     ssoBaseUrl: env.HARMONY_AGENT_SSO_BASE_URL,
@@ -168,6 +172,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   const yachBridgePath = config.yachBridgePath.trim()
     ? (config.yachBridgePath.startsWith('/') ? config.yachBridgePath : fromRoot(config.yachBridgePath))
     : resolve(projectRoot, 'runtime/yach-bridge/bridge.cjs');
+  const authMode = config.runMode === 'local' ? 'local' : 'sso';
   return {
     ...config,
     projectRoot,
@@ -186,6 +191,8 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     gitMirrorDir: fromRoot(config.gitMirrorDir),
     snapshotDir: fromRoot(config.snapshotDir),
     databaseUrl: config.databaseUrl || `file:${resolve(dataDir, 'runtime.db')}`,
+    host: config.runMode === 'local' ? '127.0.0.1' : config.host,
+    authMode,
     publicBaseUrl,
     appPrefix,
     ssoBaseUrl,

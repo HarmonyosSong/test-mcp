@@ -17,7 +17,7 @@ import {
 } from './session-fetch';
 
 export interface ServerSession {
-  authMode: 'sso';
+  authMode: 'sso' | 'local';
   csrfToken: string;
   identity: {
     subject: string;
@@ -42,7 +42,8 @@ async function fetchSession(): Promise<ServerSession> {
     throw error;
   }
   const body = (await response.json()) as ServerSession;
-  if (!body?.csrfToken || !body.identity?.subject) {
+  const csrfOk = body.authMode === 'local' || Boolean(body?.csrfToken);
+  if (!csrfOk || !body.identity?.subject) {
     throw new Error('invalid session payload');
   }
   return body;

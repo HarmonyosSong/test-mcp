@@ -31,7 +31,7 @@
 
 | 项 | 决定 |
 |---|---|
-| 本地免登 | **不做**。本地也走真 SSO |
+| 本地免登 | 由 `HARMONY_AGENT_RUN_MODE` 控制：`local` 免登，`server`（默认）走 SSO；详见 [`docs/superpowers/specs/2026-11-06-local-auth-bypass-design.md`](../docs/superpowers/specs/2026-11-06-local-auth-bypass-design.md) |
 | 应用 path 前缀 | 固定 `/xesapp-agent` |
 | `PUBLIC_BASE_URL` | 只写 origin（协议+主机+端口），**不含** path |
 | 数据隔离 | 本轮**只做门禁**；conversation / 模型配置仍共用，不按 `workcode` 过滤 |

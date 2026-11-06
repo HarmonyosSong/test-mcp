@@ -51,7 +51,7 @@ cp .env.example .env
 
 `make setup` 会一次安装 MCP、网页和 Mastra runtime 的依赖；如果只需要先打开网页/API，可分别执行 `npm --prefix web install` 和 `npm --prefix runtime ci`，不启动 MCP 时不要求 Python/uv。
 
-编辑 `.env`，至少配置模型和知音楼 SSO。例如：
+编辑 `.env`。本地开发建议 `HARMONY_AGENT_RUN_MODE=local`（免 SSO）；线上 `.env-prd` 使用 `server` 走知音楼 SSO。例如：
 
 ```dotenv
 HARMONY_AGENT_MODE=model
@@ -59,7 +59,9 @@ HARMONY_AGENT_MODEL=deepseek:deepseek-flash
 DEEPSEEK_API_KEY=your-api-key
 HARMONY_AGENT_ALLOWED_ROOTS=/absolute/path/to/your/HarmonyOS/project
 
-# 知音楼 SSO（PUBLIC_BASE_URL 只写 origin，不含 /xesapp-agent）
+# 本地免登；线上改为 server
+HARMONY_AGENT_RUN_MODE=local
+# 知音楼 SSO（PUBLIC_BASE_URL 只写 origin，不含 /xesapp-agent；server 模式必填）
 HARMONY_AGENT_PUBLIC_BASE_URL=https://127.0.0.1:5174
 HARMONY_AGENT_APP_PREFIX=/xesapp-agent
 HARMONY_AGENT_SSO_BASE_URL=https://sso.zhiyinlou.com
@@ -93,7 +95,7 @@ make dev-api
 make dev-web
 ```
 
-浏览器访问 `https://127.0.0.1:5174/xesapp-agent/`。Vite 会把 `/xesapp-agent/api` 与 `/xesapp-agent/auth` 代理到 `127.0.0.1:8000`。未配置 SSO 时页面会提示登录配置未完成。没有模型配置时登录后仍可打开工作台，但发送诊断消息会返回配置提示。未安装 Python/uv 时，Mastra API 仍可启动；知识 MCP 会降级为空能力，仓库代码检查不可用。
+浏览器访问 `https://127.0.0.1:5174/xesapp-agent/`。Vite 会把 `/xesapp-agent/api` 与 `/xesapp-agent/auth` 代理到 `127.0.0.1:8000`。`RUN_MODE=local` 时无需企业登录即可进入工作台；`server` 且未配置 SSO 时页面会提示登录配置未完成。没有模型配置时进入工作台后发送诊断消息会返回配置提示。未安装 Python/uv 时，Mastra API 仍可启动；知识 MCP 会降级为空能力，仓库代码检查不可用。
 
 停止服务时，在对应终端按 `Ctrl+C`。
 
@@ -147,6 +149,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_KNOWLEDGE_CASES_DIR` | `.data/knowledge-cases` | 终态诊断案例归档目录 |
 | `HARMONY_AGENT_MODEL` | `deepseek:deepseek-flash` | 环境模式使用的正式支持模型；其他 provider/model 仍可配置但处于实验或未验收状态 |
 | `HARMONY_AGENT_MODEL_CONFIG_FILE` | `.data/model-config.json` | 本地模型配置文件 |
+| `HARMONY_AGENT_RUN_MODE` | `server` | `local` 本机免登；`server` 走知音楼 SSO（生产必须） |
 | `HARMONY_AGENT_PUBLIC_BASE_URL` | 空 | 浏览器 origin（不含 `/xesapp-agent`）；SSO 与 CSRF Origin 校验依赖它 |
 | `HARMONY_AGENT_APP_PREFIX` | `/xesapp-agent` | 应用 path 前缀 |
 | `HARMONY_AGENT_SSO_BASE_URL` | 空 | 知音楼 SSO 网关，如 `https://sso.zhiyinlou.com` |

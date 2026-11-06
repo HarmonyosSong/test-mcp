@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 
 import { employeeIdentity, type UserIdentity } from './identity.js';
 import { AuthHttpError, appHome, normalizeAppPrefix, safeReturnTo } from './paths.js';
+import type { ResolveIdentityInput } from './resolve.js';
 import {
   SESSION_SECONDS,
   STATE_SECONDS,
@@ -114,12 +115,7 @@ export class SSOIdentityProvider {
     return this.getSession(sessionToken).csrf;
   }
 
-  resolve(input: {
-    method: string;
-    origin: string | undefined;
-    csrfHeader: string | undefined;
-    sessionToken: string | undefined;
-  }): UserIdentity {
+  resolve(input: ResolveIdentityInput): UserIdentity {
     const session = this.getSession(input.sessionToken);
     const method = input.method.toUpperCase();
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {

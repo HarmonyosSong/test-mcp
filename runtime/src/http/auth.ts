@@ -1,10 +1,12 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 
 import {
   AuthHttpError,
   authErrorResponse,
+  resolveIdentityInput,
   type AuthVariables,
+  type IdentityProvider,
   type SSOIdentityProvider,
 } from '../auth/index.js';
 
@@ -23,10 +25,24 @@ function allQueryValues(url: string, key: string): string[] {
   return values;
 }
 
-export function createAuthRoutes(provider: SSOIdentityProvider) {
+function isSsoProvider(provider: IdentityProvider): provider is SSOIdentityProvider {
+  return 'beginLogin' in provider && typeof (provider as SSOIdentityProvider).beginLogin === 'function';
+}
+
+function rejectLocalSso(context: Context) {
+  return context.json({ detail: 'Local auth mode does not use SSO login' }, 400);
+}
+
+export function createAuthRoutes(
+  provider: IdentityProvider,
+  authMode: 'sso' | 'local',
+) {
   const app = new Hono<{ Variables: AuthVariables }>();
 
   app.get('/auth/sso/login', (context) => {
+    if (authMode === 'local' || !isSsoProvider(provider)) {
+      return rejectLocalSso(context);
+    }
     try {
       const returnTo = context.req.query('return_to') ?? undefined;
       const { redirectUrl, binding } = provider.beginLogin(returnTo);
@@ -42,6 +58,9 @@ export function createAuthRoutes(provider: SSOIdentityProvider) {
   });
 
   app.get('/auth/sso/callback', async (context) => {
+    if (authMode === 'local' || !isSsoProvider(provider)) {
+      return rejectLocalSso(context);
+    }
     try {
       const result = await provider.completeCallback({
         stateValues: allQueryValues(context.req.url, 'state'),
@@ -71,14 +90,12 @@ export function createAuthRoutes(provider: SSOIdentityProvider) {
   });
 
   app.post('/auth/logout', (context) => {
+    if (authMode === 'local' || !isSsoProvider(provider)) {
+      return rejectLocalSso(context);
+    }
     try {
       const sessionToken = getCookie(context, provider.cookieName);
-      provider.resolve({
-        method: context.req.method,
-        origin: context.req.header('origin'),
-        csrfHeader: context.req.header('x-csrf-token'),
-        sessionToken,
-      });
+      provider.resolve(resolveIdentityInput(context, provider));
       provider.store.revoke(sessionToken ?? '');
       deleteCookie(context, provider.cookieName, {
         path: provider.cookiePath,
@@ -103,16 +120,14 @@ export function createAuthRoutes(provider: SSOIdentityProvider) {
 
   app.get('/api/session', (context) => {
     try {
-      const sessionToken = getCookie(context, provider.cookieName);
-      const identity = provider.resolve({
-        method: 'GET',
-        origin: context.req.header('origin'),
-        csrfHeader: context.req.header('x-csrf-token'),
-        sessionToken,
-      });
+      const identity = provider.resolve(resolveIdentityInput(context, provider));
+      const csrfToken =
+        authMode === 'local' || !isSsoProvider(provider)
+          ? ''
+          : provider.csrfToken(getCookie(context, provider.cookieName));
       return context.json({
-        authMode: 'sso',
-        csrfToken: provider.csrfToken(sessionToken),
+        authMode,
+        csrfToken,
         identity: {
           subject: identity.subject,
           displayName: identity.displayName,

@@ -170,7 +170,7 @@ function App() {
           onRefresh={() => void refreshWorkspace()}
           onModelSettings={openModelSettings}
           onRepositorySettings={openRepositorySettings}
-          onLogout={handleLogout}
+          onLogout={session?.authMode === 'sso' ? handleLogout : undefined}
         >
           <ChatPanel
             summaries={chat.summaries}

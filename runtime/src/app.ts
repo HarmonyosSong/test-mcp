@@ -20,9 +20,11 @@ import { DiagnosisAgent } from './diagnosis/agent.js';
 import { MODEL_CONTEXT_WINDOWS, MODEL_PRICES, REPOSITORY_MCP_TOOL_NAMES } from './model/metadata.js';
 import { redactSensitiveText } from './security/redaction.js';
 import {
+  LocalIdentityProvider,
   SSOIdentityProvider,
   requireIdentity,
   type AuthVariables,
+  type IdentityProvider,
 } from './auth/index.js';
 import { isYachImConfigured, YachChannel } from './channels/yach/index.js';
 
@@ -35,7 +37,7 @@ export interface RuntimeApp {
   capabilities: CapabilityMcp;
   skills: SkillRegistry;
   diagnosisAgent: DiagnosisAgent;
-  identityProvider: SSOIdentityProvider;
+  identityProvider: IdentityProvider;
   yachChannel: YachChannel | null;
 }
 
@@ -63,13 +65,16 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
     const skills = new SkillRegistry(config.skillsDir);
     await skills.load();
     const diagnosisAgent = new DiagnosisAgent(modelConfiguration, skills, mastra);
-    const identityProvider = new SSOIdentityProvider({
-      publicBaseUrl: config.publicBaseUrl,
-      appPrefix: config.appPrefix,
-      ssoBaseUrl: config.ssoBaseUrl,
-      ssoAppId: config.ssoAppId,
-      ssoAppKey: config.ssoAppKey,
-    });
+    const identityProvider: IdentityProvider =
+      config.authMode === 'local'
+        ? new LocalIdentityProvider({ publicBaseUrl: config.publicBaseUrl })
+        : new SSOIdentityProvider({
+            publicBaseUrl: config.publicBaseUrl,
+            appPrefix: config.appPrefix,
+            ssoBaseUrl: config.ssoBaseUrl,
+            ssoAppId: config.ssoAppId,
+            ssoAppKey: config.ssoAppKey,
+          });
 
     const root = new Hono<{ Variables: AuthVariables }>();
     root.onError((error, context) => {
@@ -85,7 +90,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
     }));
 
     const app = new Hono<{ Variables: AuthVariables }>().basePath(config.appPrefix);
-    app.route('/', createAuthRoutes(identityProvider));
+    app.route('/', createAuthRoutes(identityProvider, config.authMode));
     app.get('/api/health', (context) =>
       context.json({
         status: 'ok',

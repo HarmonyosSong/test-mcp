@@ -1,5 +1,9 @@
 import type { RuntimeApp } from '../src/app.js';
-import { employeeIdentity, type SSOIdentityProvider } from '../src/auth/index.js';
+import {
+  employeeIdentity,
+  SSOIdentityProvider,
+  type IdentityProvider,
+} from '../src/auth/index.js';
 import { loadRuntimeConfig, type RuntimeConfig } from '../src/config.js';
 import { createRuntimeApp } from '../src/app.js';
 
@@ -42,11 +46,14 @@ export async function createTestRuntime(
   return createRuntimeApp(loadTestConfig(dataDir, overrides));
 }
 
-export function issueSession(provider: SSOIdentityProvider): {
+export function issueSession(provider: IdentityProvider): {
   token: string;
   csrf: string;
   cookie: string;
 } {
+  if (!(provider instanceof SSOIdentityProvider)) {
+    throw new Error('issueSession requires SSOIdentityProvider');
+  }
   const token = provider.store.create(employeeIdentity('080230', 'Tester'));
   const session = provider.store.get(token);
   if (!session) throw new Error('failed to create test session');

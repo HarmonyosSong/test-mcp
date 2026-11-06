@@ -14,7 +14,15 @@ export {
 } from './session-store.js';
 export { SSOIdentityProvider, type SsoSettings, type CookieOptions } from './sso.js';
 export {
+  LOCAL_ISSUER,
+  LOCAL_SUBJECT,
+  LocalIdentityProvider,
+} from './local.js';
+export type { ResolveIdentityInput } from './resolve.js';
+export {
   authErrorResponse,
   requireIdentity,
+  resolveIdentityInput,
   type AuthVariables,
+  type IdentityProvider,
 } from './middleware.js';
