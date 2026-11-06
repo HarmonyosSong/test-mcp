@@ -4,6 +4,7 @@ import { MCPClient } from '@mastra/mcp';
 import { noopLogger } from '@mastra/core/logger';
 import type { RuntimeConfig } from '../config.js';
 import { createExternalKnowledgeTools, createExternalKnowledgeToolsForConfig, decodeExternalMcpResult, loadExternalKnowledgeConfig, type ExternalToolCall } from './external-knowledge.js';
+import { integrationError } from '../observability/integration-log.js';
 import { createLogCatalogTools } from './log-center.js';
 
 type ExternalKnowledgeTools = NonNullable<Awaited<ReturnType<typeof createExternalKnowledgeTools>>>['tools'];
@@ -156,7 +157,8 @@ export class CapabilityMcp {
     try {
       const tools = await createLogCatalogTools(this.config);
       return tools ? { tools } : null;
-    } catch {
+    } catch (error) {
+      integrationError('logcenter', 'createLogCatalogTools failed; tools unavailable this round', error);
       return null;
     }
   }

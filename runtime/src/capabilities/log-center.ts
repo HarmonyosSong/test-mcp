@@ -7,6 +7,7 @@ import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 
 import type { RuntimeConfig } from '../config.js';
+import { integrationError, integrationInfo, integrationWarn } from '../observability/integration-log.js';
 
 export const LOGCENTER_DEFAULT_BASE_URL = 'https://logcenter-api.tal.com/api';
 export const LOG_CATALOG_DEFAULT_RELATIVE = 'runtime/contracts/log-catalog/catalog.yaml';
@@ -242,26 +243,39 @@ export class LogCenterClient {
 
   private async request(path: string, params: Record<string, string | number | boolean>): Promise<Record<string, unknown>> {
     const url = this.endpoint(path, params);
+    integrationInfo('logcenter', 'request start', {
+      path,
+      baseUrl: this.baseUrl,
+      region: params.region,
+      collection: params.collection_id,
+      topic: params.topic_id,
+      accountConfigured: Boolean(params.account_ak_id),
+    });
     const { status, body } = await this.http({
       method: 'GET',
       url,
       headers: signHeaders(this.appId, this.appSecret),
     });
     if (status === 403 || (typeof body === 'object' && body && (body as { code?: number }).code === 403)) {
+      integrationWarn('logcenter', 'permission denied', { path, status });
       throw new Error('log_permission_denied: 暂无该云日志读权限，请联系管理员申请');
     }
     if (status >= 400) {
+      integrationWarn('logcenter', 'upstream HTTP error', { path, status });
       throw new Error(`log_upstream_error: HTTP ${status}`);
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      integrationWarn('logcenter', 'invalid response body', { path, status });
       throw new Error('log_upstream_error: invalid response body');
     }
     const payload = body as { code?: number; msg?: string; data?: unknown };
     if (payload.code !== undefined && payload.code !== 0) {
       const msg = typeof payload.msg === 'string' ? payload.msg : 'upstream rejected request';
+      integrationWarn('logcenter', 'upstream business error', { path, status, code: payload.code, msg });
       if (payload.code === 403) throw new Error(`log_permission_denied: ${msg}`);
       throw new Error(`log_upstream_error: ${msg}`);
     }
+    integrationInfo('logcenter', 'request ok', { path, status, code: payload.code ?? 0 });
     return body as Record<string, unknown>;
   }
 
@@ -347,9 +361,30 @@ export async function createLogCatalogTools(
   count_cloud_logs: ReturnType<typeof createTool>;
   search_cloud_logs: ReturnType<typeof createTool>;
 } | null> {
-  if (!isLogCenterConfigured(config)) return null;
+  if (!isLogCenterConfigured(config)) {
+    integrationWarn('logcenter', 'tools not mounted: credentials missing', {
+      appIdConfigured: Boolean(config.logcenterAppId.trim()),
+      appSecretConfigured: Boolean(config.logcenterAppSecret.trim()),
+    });
+    return null;
+  }
 
-  const catalog = options?.catalog ?? await loadLogCatalog(logCatalogPath(config));
+  const catalogFile = logCatalogPath(config);
+  let catalog: LogCatalog;
+  try {
+    catalog = options?.catalog ?? await loadLogCatalog(catalogFile);
+  } catch (error) {
+    integrationError('logcenter', 'tools not mounted: catalog load failed', error, {
+      catalogPath: catalogFile,
+    });
+    throw error;
+  }
+  integrationInfo('logcenter', 'tools mounted', {
+    catalogPath: catalogFile,
+    baseUrl: config.logcenterBaseUrl || LOGCENTER_DEFAULT_BASE_URL,
+    appIdConfigured: true,
+    storeCount: catalog.stores?.length ?? 0,
+  });
   const client = new LogCenterClient(
     config.logcenterAppId,
     config.logcenterAppSecret,
@@ -362,7 +397,15 @@ export async function createLogCatalogTools(
       id: 'resolve_log_target',
       description: 'Resolve a business phrase to Aliyun SLS coordinates using the built-in log catalog. Routing only; not incident evidence.',
       inputSchema: z.strictObject({ query: z.string().min(1).max(400) }),
-      execute: async ({ query }) => resolveLogTarget(catalog, query),
+      execute: async ({ query }) => {
+        const result = resolveLogTarget(catalog, query);
+        integrationInfo('logcenter', 'resolve_log_target', {
+          query: query.slice(0, 120),
+          status: result.status,
+          candidateCount: result.candidates.length,
+        });
+        return result;
+      },
     }),
     count_cloud_logs: createTool({
       id: 'count_cloud_logs',

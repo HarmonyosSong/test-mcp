@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { integrationError, integrationInfo, integrationWarn } from '../observability/integration-log.js';
+
 /** Protocol constants (not environment defaults — those live in `config.ts` / `.env.example`). */
 export const COMPASS_A2A_PROTOCOL_VERSION = '1.0';
 export const COMPASS_A2A_RPC_PATH = '/compass/a2a';
@@ -200,12 +202,25 @@ export class CompassA2AClient {
   }
 
   async fetchAgentCard(signal?: AbortSignal): Promise<CompassA2AAgentCard> {
-    const response = await this.fetchImpl(new URL(COMPASS_A2A_AGENT_CARD_PATH, `${this.baseUrl}/`).toString(), {
-      method: 'GET',
-      headers: authHeaders(this),
-      signal,
+    const cardUrl = new URL(COMPASS_A2A_AGENT_CARD_PATH, `${this.baseUrl}/`).toString();
+    integrationInfo('a2a', 'fetchAgentCard start', {
+      baseUrl: this.baseUrl,
+      clientId: this.clientId,
+      url: cardUrl,
     });
+    let response: Response;
+    try {
+      response = await this.fetchImpl(cardUrl, {
+        method: 'GET',
+        headers: authHeaders(this),
+        signal,
+      });
+    } catch (error) {
+      integrationError('a2a', 'fetchAgentCard network error', error, { url: cardUrl });
+      throw error;
+    }
     if (!response.ok) {
+      integrationWarn('a2a', 'fetchAgentCard HTTP error', { url: cardUrl, status: response.status });
       throw new CompassA2AError(`Failed to fetch Compass agent card (${response.status})`, response.status);
     }
     const raw = (await response.json()) as Record<string, unknown>;
@@ -247,6 +262,10 @@ export class CompassA2AClient {
       throw new CompassA2AError(`Compass A2A RPC path must be ${COMPASS_A2A_RPC_PATH}`);
     }
     this.rpcUrl = selectedUrl.toString();
+    integrationInfo('a2a', 'fetchAgentCard ok', {
+      rpcUrl: this.rpcUrl,
+      interfaceCount: supportedInterfaces.length,
+    });
     return {
       name: typeof raw.name === 'string' ? raw.name : undefined,
       description: typeof raw.description === 'string' ? raw.description : undefined,
@@ -288,26 +307,47 @@ export class CompassA2AClient {
         messageId: input.messageId?.trim() || randomUUID(),
       };
       if (input.contextId?.trim()) message.contextId = input.contextId.trim();
-      const response = await this.fetchImpl(rpcUrl, {
-        method: 'POST',
-        headers: {
-          ...authHeaders(this),
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: randomUUID(),
-          method: 'SendStreamingMessage',
-          params: { message },
-        }),
-        signal: controller.signal,
+      integrationInfo('a2a', 'SendStreamingMessage start', {
+        rpcUrl,
+        clientId: this.clientId,
+        waitSeconds: this.waitSeconds,
+        textLength: text.length,
+        hasContextId: Boolean(input.contextId?.trim()),
       });
+      let response: Response;
+      try {
+        response = await this.fetchImpl(rpcUrl, {
+          method: 'POST',
+          headers: {
+            ...authHeaders(this),
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: randomUUID(),
+            method: 'SendStreamingMessage',
+            params: { message },
+          }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        integrationError('a2a', 'SendStreamingMessage network error', error, { rpcUrl });
+        throw error;
+      }
       const contentType = response.headers.get('content-type') ?? '';
       if (!response.ok) {
+        integrationWarn('a2a', 'SendStreamingMessage HTTP error', {
+          rpcUrl,
+          status: response.status,
+        });
         throw new CompassA2AError(`Compass A2A stream failed (${response.status})`, response.status);
       }
       if (!contentType.includes('text/event-stream')) {
+        integrationWarn('a2a', 'SendStreamingMessage non-stream response', {
+          rpcUrl,
+          contentType,
+        });
         parseJsonRpcPayload(await response.text());
         throw new CompassA2AError('Compass A2A did not return an event stream', 'non_stream');
       }
@@ -378,20 +418,38 @@ export class CompassA2AClient {
 
       const finalText = artifactTexts.join('\n').trim();
       if (!finalText && state && state !== 'TASK_STATE_COMPLETED') {
+        integrationWarn('a2a', 'SendStreamingMessage terminal without text', { state, taskId });
         throw new CompassA2AError(`Compass A2A ended in ${state}`, state);
       }
       if (!finalText) {
+        integrationWarn('a2a', 'SendStreamingMessage completed without text artifacts', { state, taskId });
         throw new CompassA2AError('Compass A2A completed without text artifacts');
       }
+      integrationInfo('a2a', 'SendStreamingMessage ok', {
+        state,
+        taskId,
+        textLength: finalText.length,
+      });
       return { text: finalText, taskId, contextId, state };
     } catch (error) {
-      if (error instanceof CompassA2AError) throw error;
+      if (error instanceof CompassA2AError) {
+        integrationWarn('a2a', 'SendStreamingMessage failed', {
+          message: error.message,
+          code: error.code,
+        });
+        throw error;
+      }
       if (controller.signal.aborted) {
+        const aborted = Boolean(input.abortSignal?.aborted);
+        integrationWarn('a2a', aborted ? 'SendStreamingMessage aborted' : 'SendStreamingMessage timeout', {
+          waitSeconds: this.waitSeconds,
+        });
         throw new CompassA2AError(
-          input.abortSignal?.aborted ? 'Compass A2A request aborted' : `Compass A2A timed out after ${this.waitSeconds}s`,
-          input.abortSignal?.aborted ? 'aborted' : 'timeout',
+          aborted ? 'Compass A2A request aborted' : `Compass A2A timed out after ${this.waitSeconds}s`,
+          aborted ? 'aborted' : 'timeout',
         );
       }
+      integrationError('a2a', 'SendStreamingMessage unexpected error', error);
       throw error;
     } finally {
       clearTimeout(timeout);

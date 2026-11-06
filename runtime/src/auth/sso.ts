@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 
+import { integrationError, integrationInfo, integrationWarn } from '../observability/integration-log.js';
 import { employeeIdentity, type UserIdentity } from './identity.js';
 import { AuthHttpError, appHome, normalizeAppPrefix, safeReturnTo } from './paths.js';
 import type { ResolveIdentityInput } from './resolve.js';
@@ -135,15 +136,26 @@ export class SSOIdentityProvider {
     for (const [key, value] of Object.entries(params)) {
       url.searchParams.set(key, value);
     }
+    // Never log query values (appkey / token / ticket).
+    const logTarget = `${this.settings.ssoBaseUrl}${path}`;
     try {
       const response = await this.fetchImpl(url, { redirect: 'manual' });
-      if (!response.ok) throw new Error('bad status');
+      if (!response.ok) {
+        integrationWarn('sso', 'upstream HTTP error', { path, status: response.status, url: logTarget });
+        throw new Error('bad status');
+      }
       const body = (await response.json()) as unknown;
       if (!body || typeof body !== 'object' || typeof (body as { errcode?: unknown }).errcode !== 'number') {
+        integrationWarn('sso', 'upstream invalid body', { path, url: logTarget });
         throw new Error('bad body');
       }
+      const errcode = (body as { errcode: number }).errcode;
+      integrationInfo('sso', 'upstream ok', { path, status: response.status, errcode });
       return body as Record<string, unknown>;
-    } catch {
+    } catch (error) {
+      if (!(error instanceof Error && (error.message === 'bad status' || error.message === 'bad body'))) {
+        integrationError('sso', 'upstream request failed', error, { path, url: logTarget });
+      }
       throw new AuthHttpError(502, 'SSO service unavailable');
     }
   }
@@ -187,6 +199,11 @@ export class SSOIdentityProvider {
       `${this.settings.ssoBaseUrl}/portal/login/` +
       `${encodeURIComponent(this.settings.ssoAppId)}?` +
       new URLSearchParams({ state }).toString();
+    integrationInfo('sso', 'beginLogin', {
+      returnTo: safeReturnTo(target, this.appPrefix),
+      ssoHost: this.settings.ssoBaseUrl,
+      appIdConfigured: Boolean(this.settings.ssoAppId),
+    });
     return { redirectUrl, binding };
   }
 
@@ -198,11 +215,16 @@ export class SSOIdentityProvider {
   }): Promise<{ returnTo: string; sessionToken: string }> {
     this.requireConfigured();
     if (input.stateValues.length !== 1 || input.tokenValues.length !== 1) {
+      integrationWarn('sso', 'callback rejected: bad state/token arity', {
+        stateCount: input.stateValues.length,
+        tokenCount: input.tokenValues.length,
+      });
       throw new AuthHttpError(400, 'Invalid login callback');
     }
     const state = input.stateValues[0] ?? '';
     const token = input.tokenValues[0] ?? '';
     if (!state || !token || state.length > 256 || token.length > 8192) {
+      integrationWarn('sso', 'callback rejected: invalid state/token shape');
       throw new AuthHttpError(400, 'Invalid login callback');
     }
     const returnTo = this.store.consumeState(state, input.bindingCookie ?? '');
@@ -221,10 +243,15 @@ export class SSOIdentityProvider {
       identity = employeeIdentity(String(record.workcode), name, 'sso');
     } catch (error) {
       if (error instanceof AuthHttpError) throw error;
+      integrationWarn('sso', 'verify payload rejected', { errcode: body.errcode });
       throw new AuthHttpError(401, 'SSO authentication failed');
     }
     const sessionToken = this.store.create(identity);
     this.store.revoke(input.existingSessionCookie ?? '');
+    integrationInfo('sso', 'callback success', {
+      subject: identity.subject,
+      returnTo,
+    });
     return { returnTo, sessionToken };
   }
 
