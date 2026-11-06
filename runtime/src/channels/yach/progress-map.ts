@@ -3,6 +3,14 @@ import type { DiagnosisStreamEvent } from '../../diagnosis/agent.js';
 export function progressLabelForTool(toolName: string): string {
   const name = toolName.toLowerCase();
   if (
+    name.includes('log_target')
+    || name.includes('cloud_logs')
+    || name.includes('log_catalog')
+    || name.includes('logcenter')
+  ) {
+    return '正在查询远程日志';
+  }
+  if (
     name.includes('external')
     || name.includes('dev_knowledge')
     || name.includes('dev-knowledge')

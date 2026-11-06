@@ -93,6 +93,10 @@ export const runtimeConfigSchema = z.object({
   yachBridgePath: z.string().default(''),
   yachNodePath: z.string().default('node'),
   yachRobotId: z.string().default(''),
+  logCatalogPath: z.string().default(''),
+  logcenterAppId: z.string().default(''),
+  logcenterAppSecret: z.string().default(''),
+  logcenterBaseUrl: z.string().default('https://logcenter-api.tal.com/api'),
 });
 
 export type RuntimeConfig = z.infer<typeof runtimeConfigSchema>;
@@ -143,6 +147,10 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     yachBridgePath: env.HARMONY_AGENT_YACH_BRIDGE_PATH,
     yachNodePath: env.HARMONY_AGENT_YACH_NODE_PATH,
     yachRobotId: env.HARMONY_AGENT_YACH_ROBOT_ID ?? env.YACH_ROBOT_ID,
+    logCatalogPath: env.HARMONY_AGENT_LOG_CATALOG,
+    logcenterAppId: env.HARMONY_AGENT_LOGCENTER_APP_ID,
+    logcenterAppSecret: env.HARMONY_AGENT_LOGCENTER_APP_SECRET,
+    logcenterBaseUrl: env.HARMONY_AGENT_LOGCENTER_BASE_URL,
   });
   const projectRoot = resolve(repositoryRoot, config.projectRoot);
   const fromRoot = (path: string) => resolve(projectRoot, path);
@@ -196,6 +204,12 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     yachBridgePath,
     yachNodePath: config.yachNodePath.trim() || 'node',
     yachRobotId: config.yachRobotId.trim(),
+    logCatalogPath: config.logCatalogPath.trim()
+      ? (config.logCatalogPath.startsWith('/') ? config.logCatalogPath.trim() : fromRoot(config.logCatalogPath.trim()))
+      : '',
+    logcenterAppId: config.logcenterAppId.trim(),
+    logcenterAppSecret: config.logcenterAppSecret.trim(),
+    logcenterBaseUrl: (config.logcenterBaseUrl.trim() || 'https://logcenter-api.tal.com/api').replace(/\/+$/, ''),
   };
 }
 

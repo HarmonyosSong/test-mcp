@@ -4,8 +4,10 @@ import { MCPClient } from '@mastra/mcp';
 import { noopLogger } from '@mastra/core/logger';
 import type { RuntimeConfig } from '../config.js';
 import { createExternalKnowledgeTools, createExternalKnowledgeToolsForConfig, decodeExternalMcpResult, loadExternalKnowledgeConfig, type ExternalToolCall } from './external-knowledge.js';
+import { createLogCatalogTools } from './log-center.js';
 
 type ExternalKnowledgeTools = NonNullable<Awaited<ReturnType<typeof createExternalKnowledgeTools>>>['tools'];
+type LogCatalogTools = NonNullable<Awaited<ReturnType<typeof createLogCatalogTools>>>;
 
 export function knowledgeServerEnvironment(config: RuntimeConfig, conversationId: string, messageId: string): Record<string, string> {
   return {
@@ -148,6 +150,15 @@ export class CapabilityMcp {
     };
     const tools = createExternalKnowledgeToolsForConfig(externalConfig, inputTexts, projectRoot, call);
     return { tools, client };
+  }
+
+  async createLogCatalogTools(): Promise<{ tools: LogCatalogTools } | null> {
+    try {
+      const tools = await createLogCatalogTools(this.config);
+      return tools ? { tools } : null;
+    } catch {
+      return null;
+    }
   }
 
   async close(): Promise<void> {

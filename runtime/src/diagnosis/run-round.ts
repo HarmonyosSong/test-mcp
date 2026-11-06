@@ -145,6 +145,10 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
       externalKnowledgeClient = externalKnowledge.client;
       toolsets = { ...toolsets, external_knowledge: externalKnowledge.tools };
     }
+    const logCatalog = await capabilities.createLogCatalogTools?.();
+    if (logCatalog) {
+      toolsets = { ...toolsets, log_catalog: logCatalog.tools };
+    }
 
     for await (const event of diagnosisAgent.stream({
       conversation,

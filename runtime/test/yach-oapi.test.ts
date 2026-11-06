@@ -72,6 +72,7 @@ test('maps tool names to medium progress labels', () => {
   assert.equal(progressLabelForTool('search_knowledge'), '正在查阅知识库');
   assert.equal(progressLabelForTool('repository_read_file'), '正在读取代码证据');
   assert.equal(progressLabelForTool('external_knowledge_resolve'), '正在查阅外部知识');
+  assert.equal(progressLabelForTool('resolve_log_target'), '正在查询远程日志');
   assert.equal(progressLabelForTool('other_tool'), '正在收集证据');
 });
 

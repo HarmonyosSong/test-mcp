@@ -194,6 +194,8 @@ export async function runLive(datasetPath: string, outputPath: string, timeoutSe
           }
           external = await runtime.capabilities.createExternalKnowledgeTools([prompt], config.projectRoot);
           if (external) { if (external.client) clients.push(external.client); toolsets.external_knowledge = external.tools; }
+          const logCatalog = await runtime.capabilities.createLogCatalogTools?.();
+          if (logCatalog) toolsets.log_catalog = logCatalog.tools;
           const run = runtime.diagnosisAgent.stream({ conversation, content: prompt, toolsets: toolsets as DiagnosisRunInput['toolsets'], abortSignal: AbortSignal.timeout(timeoutSeconds * 1000) });
           for await (const event of run) {
             if (event.type === 'text') text += event.delta;
