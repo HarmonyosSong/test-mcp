@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1000" role="img" aria-labelledby="title description">
+  <title id="title">Troubleshoot Odyssey 系统总架构</title>
+  <desc id="description">用分层方式展示产品入口、Mastra Runtime、本地能力、外部服务和数据存储，减少跨层连线。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#63758b"/>
+    </marker>
+    <marker id="arrow-external" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#16816f"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #26364b; }
+      .title { font-size: 32px; font-weight: 700; }
+      .subtitle { font-size: 16px; fill: #5f6f84; }
+      .section { font-size: 13px; font-weight: 700; fill: #62738a; }
+      .heading { font-size: 18px; font-weight: 700; }
+      .body { font-size: 13px; fill: #506177; }
+      .small { font-size: 12px; fill: #65758a; }
+      .frame { fill: #fbfcfe; stroke: #dce3eb; stroke-width: 1.5; }
+      .external-frame { fill: #f7fbfa; stroke: #9dc8bd; stroke-width: 1.5; stroke-dasharray: 8 6; }
+      .box { fill: #ffffff; stroke: #b8c5d3; stroke-width: 1.5; }
+      .runtime { fill: #eef3fb; stroke: #91a8c7; stroke-width: 1.7; }
+      .knowledge { fill: #fff4e7; stroke: #dfb16b; stroke-width: 1.7; }
+      .data { fill: #f1f6ed; stroke: #a5bc89; stroke-width: 1.7; }
+      .planned { fill: #fffaf0; stroke: #d99a3c; stroke-width: 1.7; stroke-dasharray: 7 5; }
+      .external { fill: #eef7f6; stroke: #83b9ad; stroke-width: 1.7; }
+      .edge { fill: none; stroke: #718299; stroke-width: 2; marker-end: url(#arrow); }
+      .edge-external { fill: none; stroke: #16816f; stroke-width: 2; stroke-dasharray: 7 5; marker-end: url(#arrow-external); }
+      .pill { fill: #e7f3ed; stroke: #a7cdb7; }
+      .pill-planned { fill: #fff7e9; stroke: #dfb16b; }
+      .pill-text { font-size: 11px; font-weight: 700; fill: #286b4d; }
+      .pill-planned-text { font-size: 11px; font-weight: 700; fill: #9b6315; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="1000" fill="#ffffff"/>
+  <text x="54" y="56" class="title">Troubleshoot Odyssey | 系统总架构</text>
+  <text x="54" y="84" class="subtitle">客户端 Runtime 负责统一协调；外部 Agent 和外部知识保持清晰边界</text>
+
+  <g transform="translate(980 36)">
+    <rect x="0" y="0" width="78" height="24" rx="12" class="pill"/>
+    <text x="39" y="16" text-anchor="middle" class="pill-text">已实现</text>
+    <rect x="90" y="0" width="96" height="24" rx="12" class="pill-planned"/>
+    <text x="138" y="16" text-anchor="middle" class="pill-planned-text">规划中</text>
+    <line x1="202" y1="12" x2="246" y2="12" class="edge-external"/>
+    <text x="256" y="16" class="small">外部 Agent</text>
+  </g>
+
+  <rect x="44" y="120" width="936" height="826" rx="12" class="frame"/>
+  <text x="68" y="150" class="section">客户端诊断系统</text>
+  <rect x="1002" y="120" width="354" height="826" rx="12" class="external-frame"/>
+  <text x="1026" y="150" class="section">外部系统边界</text>
+
+  <text x="68" y="184" class="section">01 · 产品入口与 API</text>
+  <rect x="68" y="198" width="888" height="124" rx="9" class="frame"/>
+  <rect x="92" y="238" width="238" height="58" rx="8" class="box"/>
+  <text x="112" y="263" class="heading">Web 工作台</text>
+  <text x="112" y="283" class="body">React · Vite · AG-UI SSE</text>
+  <rect x="374" y="238" width="238" height="58" rx="8" class="box"/>
+  <text x="394" y="263" class="heading">知音楼 IM</text>
+  <text x="394" y="283" class="body">Yach Channel · 消息桥接</text>
+  <rect x="656" y="238" width="268" height="58" rx="8" class="runtime"/>
+  <text x="676" y="263" class="heading">Hono 产品 API</text>
+  <text x="676" y="283" class="body">认证 · REST · SSE · 路由适配</text>
+  <path d="M 330 267 H 374" class="edge"/>
+  <path d="M 612 267 H 656" class="edge"/>
+
+  <text x="68" y="358" class="section">02 · Mastra Runtime 编排层</text>
+  <rect x="68" y="372" width="888" height="184" rx="9" class="frame"/>
+  <rect x="92" y="416" width="238" height="92" rx="8" class="runtime"/>
+  <text x="112" y="450" class="heading">会话与能力生命周期</text>
+  <text x="112" y="475" class="body">权限 · 超时 · Abort · 资源清理</text>
+  <rect x="374" y="416" width="266" height="92" rx="8" class="runtime"/>
+  <text x="394" y="450" class="heading">ClientDiagnosisAgent</text>
+  <text x="394" y="475" class="body">Mastra · Skill · 工具调用</text>
+  <rect x="684" y="416" width="248" height="92" rx="8" class="planned"/>
+  <text x="704" y="450" class="heading">Runtime Supervisor</text>
+  <text x="704" y="475" class="body">分流 · 槽位调度 · 并行 · 聚合</text>
+  <path d="M 956 267 V 350 H 210 V 410" class="edge"/>
+  <path d="M 330 462 H 374" class="edge"/>
+  <path d="M 640 462 H 684" class="edge"/>
+
+  <text x="68" y="592" class="section">03 · 本地能力与证据层</text>
+  <rect x="68" y="606" width="888" height="184" rx="9" class="frame"/>
+  <rect x="92" y="650" width="238" height="92" rx="8" class="knowledge"/>
+  <text x="112" y="684" class="heading">本地 Knowledge MCP</text>
+  <text x="112" y="709" class="body">现象 · 事实 · 判据 · 关联引用</text>
+  <rect x="374" y="650" width="238" height="92" rx="8" class="box"/>
+  <text x="394" y="684" class="heading">Repository MCP</text>
+  <text x="394" y="709" class="body">固定快照 · 只读源码 · 证据回读</text>
+  <rect x="656" y="650" width="268" height="92" rx="8" class="planned"/>
+  <text x="676" y="684" class="heading">LogCenter</text>
+  <text x="676" y="709" class="body">日志查询 · 脱敏 · 关联门禁</text>
+  <path d="M 808 508 V 590 H 210 V 644" class="edge"/>
+  <path d="M 808 590 H 493 V 644" class="edge"/>
+  <path d="M 808 590 H 790 V 644" class="edge"/>
+
+  <text x="68" y="826" class="section">04 · 结果与持久化</text>
+  <rect x="68" y="840" width="888" height="82" rx="9" class="frame"/>
+  <rect x="92" y="858" width="238" height="48" rx="8" class="data"/>
+  <text x="112" y="888" class="heading">EvidenceLedger</text>
+  <rect x="374" y="858" width="238" height="48" rx="8" class="planned"/>
+  <text x="394" y="888" class="heading">联合诊断报告</text>
+  <rect x="656" y="858" width="268" height="48" rx="8" class="data"/>
+  <text x="676" y="888" class="heading">LibSQL ProductStore</text>
+  <path d="M 493 742 V 820 H 211 V 852" class="edge"/>
+  <path d="M 808 742 V 820 H 493 V 852" class="edge"/>
+  <path d="M 493 906 V 930 H 790 V 912" class="edge"/>
+
+  <rect x="1026" y="198" width="306" height="76" rx="8" class="external"/>
+  <text x="1050" y="230" class="heading">知音楼 SSO</text>
+  <text x="1050" y="253" class="body">登录 · Ticket 验证 · 退出</text>
+  <path d="M 924 267 H 1026" class="edge-external"/>
+
+  <rect x="1026" y="372" width="306" height="76" rx="8" class="external"/>
+  <text x="1050" y="404" class="heading">模型服务商</text>
+  <text x="1050" y="427" class="body">DeepSeek 正式 · 其他 Provider 实验</text>
+  <path d="M 640 462 H 978 V 410 H 1026" class="edge-external"/>
+
+  <rect x="1026" y="540" width="306" height="92" rx="8" class="external"/>
+  <text x="1050" y="574" class="heading">A2A Agent Slot</text>
+  <text x="1050" y="598" class="body">Agent Card · JSON-RPC · SSE</text>
+  <text x="1050" y="618" class="small">Compass 是当前第一个实例</text>
+  <path d="M 932 462 H 990 V 586 H 1026" class="edge-external"/>
+
+  <rect x="1026" y="700" width="306" height="92" rx="8" class="external"/>
+  <text x="1050" y="734" class="heading">远端 Agent</text>
+  <text x="1050" y="758" class="body">云学习 / 服务端 / 专项 Agent</text>
+  <text x="1050" y="778" class="small">返回 external_findings，不进本地证据账本</text>
+  <path d="M 1179 632 V 700" class="edge-external"/>
+
+  <rect x="1026" y="858" width="306" height="48" rx="8" class="external"/>
+  <text x="1050" y="888" class="heading">远端 Agent 知识库</text>
+  <path d="M 1179 792 V 858" class="edge-external"/>
+</svg>

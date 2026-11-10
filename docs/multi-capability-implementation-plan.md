@@ -1,7 +1,7 @@
 # 多能力扩展实施任务拆分
 
 > 状态：分阶段实施；本轮落实公共能力框架和基线修复，LogCenter 真实联调后置，其余任务仍按下述依赖排期。
-> 基线：多能力扩展规划 v7、技术设计 v1；代码基线 `2ee8437` 加当前工作区改动。
+> 基线：多能力扩展规划 v8、技术设计 v2；代码基线 `abd4b0f`（已合入 `main`）。
 > 上游：[`multi-capability-expansion-plan.md`](multi-capability-expansion-plan.md)；设计：[`multi-capability-technical-design.md`](multi-capability-technical-design.md)。
 
 ## 目标与拆分原则
@@ -29,7 +29,7 @@
 | --- | --- | --- |
 | SSO / 本地开发认证 | SSO 分支已同步；`RUN_MODE=local` 本地免 SSO、`server` 使用 SSO | 无需列入本轮多能力实施；按发布环境验证配置 |
 | 客户端知识 | 本仓库 `knowledge/` 通过 Knowledge MCP 提供 | 保持现有知识规范和全局检索回退 |
-| A2A | Compass 客户端、Agent Card、JSON-RPC SSE 和 `CancelTask` API 已实现；聊天未接线 | 做会话级授权、外发门控、持久确认、调用恢复及外部结论隔离 |
+| A2A | Compass A2A Agent Slot、Agent Card、JSON-RPC SSE 和 `CancelTask` API 已实现；聊天未接线 | 抽象通用 Agent Slot Registry，以 Runtime Supervisor 编排统一客户端 Agent 与远端 Agent，完成并行调查、条件 handoff、会话授权、外发门控、调用恢复及外部结论隔离 |
 | 日志 | `runtime/src/capabilities/log-center.ts` 已提供可选的 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs` Mastra 工具，查询 Aliyun SLS；搜索结果当前是辅助信息，不进入 EvidenceLedger | 规划中的 LogCenter `service_id` 发现、专用脱敏、`observation_context`、证据关联门禁均未实现 |
 | 多端 | 提示词和知识工具目前以 HarmonyOS 为主要上下文；Knowledge MCP 的 `end` 参数仍可由调用方选择 | 增加会话端绑定，并由 runtime 强制路由；完成 Android/iOS 用例 |
 | Graphify | xesapp 的离线 PoC 通过辅助导航验收；runtime 尚未加载或查询图产物 | 增加产物校验、快照绑定、只读查询和回读源码门禁 |
@@ -67,9 +67,24 @@
 
 ## 实施任务
 
-### T1：会话端绑定与最小多端路由
+### T0.5：Agent Slot Registry 公共契约
 
-**产出：** 会话显式绑定 `client_platform`，HarmonyOS、Android、iOS 的提示词、Skill 和知识查询都使用 runtime 确认的端上下文。
+**产出：** 主 Runtime 的远端 Agent 插槽契约，以及 Compass 作为第一个 A2A 槽位的适配关系。
+
+**范围：**
+
+- 固定 `AgentSlotRegistry`、`RemoteAgentSlot`、Agent Card、任务/结果、鉴权、超时、取消、输出上限和 `external_findings` 归档契约。
+- 明确客户端只有一个 `ClientDiagnosisAgent`；HarmonyOS、iOS、Android 通过 `client_platform`、Skill、知识排序和仓库适配处理，不复制 Agent。
+- 新远端 Agent 只需实现 A2A 服务并注册槽位；需要新的证据类别、本地数据外发字段或权限模型时，必须回到 Runtime 核心评审。
+- 将 Compass 的具体配置与通用槽位生命周期分开，避免后续 Agent 复制 `CompassA2AClient` 的业务编排。
+
+**依赖：** 无；与 B0 并行。
+
+**验收：** 用 Mock Agent Card 注册两个不同角色的远端槽位；同一 Runtime 编排可以按 `slotId` 调度，结果统一进入 `external_findings`，不会进入 EvidenceLedger，也不要求新增客户端 Agent。
+
+### T1：会话端绑定与统一客户端 Agent 的多端路由
+
+**产出：** 会话显式绑定 `client_platform`，同一个 `ClientDiagnosisAgent` 在 HarmonyOS、Android、iOS 上使用 runtime 确认的端上下文。
 
 **范围：**
 
@@ -78,7 +93,7 @@
 - Agent 主提示词读取会话端，不写死 HarmonyOS。
 - Skill 元数据支持适用端，由服务端过滤目录和加载结果，沿用现有 `modes`、`required_tools` 机制。
 - Knowledge MCP 的检索入口由 runtime 注入已绑定端；不允许模型覆盖或省略绑定。检索仍保留跨域候选与全局回退，端只影响排序。
-- 为 Android/iOS 各准备一个可复现的仓库/问题端到端用例。
+- 为 Android/iOS 各准备一个可复现的仓库/问题端到端用例，验证同一个 Agent 的端上下文切换，不创建新的 Agent 身份。
 
 建议分两次交付：**T1.1 会话绑定与兼容默认值**先完成，为 A2A 提供稳定上下文；**T1.2 提示词、Skill、知识排序及 Android/iOS 端到端**随后完成。A2A 不必等待全部多端路由上线。
 
@@ -127,16 +142,18 @@
 
 ### T4：Compass 会话授权与确认状态
 
-**产出：** 用户能为会话开启咨询能力，并对每一条固定的脱敏出站摘要进行批准或拒绝；批准/拒绝状态可恢复。
+**产出：** 用户能为会话开启咨询能力，并对每个服务端调查分支的固定脱敏出站范围进行批准或拒绝；批准/拒绝状态可恢复，已批准范围内允许服务端 Agent 自主探索。
 
 **范围：**
 
 - 增加会话级 `consult_compass` 开关，默认关闭；只允许受保护的用户 API 修改。
 - 增加持久化咨询记录和状态迁移：`pending`、`approved`、`rejected`、`expired` 等；绑定会话、轮次、摘要 digest 和过期时间。
-- 从当前轮绑定消息生成唯一出站摘要，独立脱敏后保存；首版附件为空，不含源码、日志、工具原文或历史消息。
+- 从当前轮绑定消息生成唯一出站摘要，独立脱敏后保存；首版附件为空，不含源码、日志、工具原文或历史消息。服务端分支在该范围内可以自主查询自己的知识、代码和日志。
+- 新增客户端材料、服务/环境、关联标识或其他外发范围时，创建新的咨询记录并重新确认；服务端 Agent 的内部步骤不要求逐步弹窗确认。
 - 新增 SSO owner 校验及 CSRF 保护的批准/拒绝接口；接口不能接受文本、URL、token 或模型参数覆盖摘要。
 - 当前轮进入 `waiting_confirmation` 后结束 SSE 并释放活动锁；重连、重启、重复批准和过期都有确定行为。
 - 工具提案以明确的待确认结果结束并保留完整调用/返回配对；展示消息不遗留 `streaming`，独立 `run_state` 表示等待。确认后通过新的恢复轮次继续，不把半截工具调用交给模型。
+- 确认记录绑定服务端调查分支和 `investigation_plan`；客户端本地分支可以继续执行，不因等待服务端授权而阻塞本地诊断。
 
 **依赖：** T0 公共契约、T1.1、B0；只做确认记录与状态，不调用 Compass。
 
@@ -144,20 +161,24 @@
 
 ### T5：Compass A2A 调用、取消与外部结果隔离
 
-**产出：** 批准后只能发送已保存的摘要；任务结果可恢复、限长、取消，并始终与本地证据分开。
+**产出：** Runtime Supervisor 能按计划启动任意已注册的 A2A Agent Slot；批准后只能发送已保存的摘要；任务结果可恢复、限长、取消，并始终与本地证据分开。
 
 **范围：**
 
-- 复用现有 `CompassA2AClient`；由 runtime 读取批准记录中的固定摘要发起请求，不接受模型自由文本或地址。
-- 客户端先初筛；缺少服务端关联线索时不提出咨询。普通聊天文本不能打开开关。
+- 复用 A2A Slot Adapter；Compass 作为首个具体实现。由 runtime 读取批准记录中的固定摘要发起请求，不接受模型自由文本或地址。
+- Runtime 先做轻量分流；当服务端上下文足够且用户已确认调查范围时，服务端分支可以与客户端分支并行启动，不等待客户端先给出“无问题”结论。已批准范围内允许服务端 Agent 自主探索；缺少服务端上下文或授权时只运行可安全执行的本地分支。普通聊天文本不能打开开关。
+- 新增 `investigation_plan` 和分支状态；Runtime 负责 fan-out、fan-in、分支预算、最大交接次数和兄弟任务取消，A2A 客户端只负责服务端任务通信。
+- 一侧发现跨侧线索时，只能由 Runtime 发起有界 handoff；服务端返回不能直接触发新的无限外发调用。
+- 服务端 Agent 在已批准范围内的内部工具调用不重复打断用户；handoff 若需要新增客户端数据或改变目标范围，必须创建新的确认记录。
 - 以持久化状态原子领取已批准请求，防止重复点击或恢复时重复启动；`approved → sent`、task ID 写入、进程崩溃窗口的处理必须明确。无法确认是否已发送时保留 `unknown`，不得自动重发。
 - 超时、用户取消或断连时尽力调用 `CancelTask`；远端状态无法确定时存 `unknown`。
 - 限制结果长度并标记截断、不可信来源、scope 和限制；结果进入独立 `remote_conclusion` / `external_findings`，不得进入 EvidenceLedger。
 - 对模型试图传入源码/日志的调用参数做硬拒绝，并断言 mock Compass 零 HTTP 请求。
+- 覆盖客户端单侧、远端单侧、双侧并行、单侧失败和超过交接上限五类流程；“客户端暂未发现根因”不能阻止远端分支启动。
 
 **依赖：** T4。
 
-**验收：** 仅批准摘要发出网络请求；拒绝和模型注入额外上下文时 mock 端零请求；取消到达 `CancelTask`；A2A 结果不改变本地证据账本；重启能恢复任务状态。
+**验收：** 仅批准摘要发出网络请求；拒绝和模型注入额外上下文时 mock 端零请求；取消到达 `CancelTask`；A2A 结果不改变本地证据账本；重启能恢复任务状态；并行分支、聚合、单侧失败和 handoff 上限行为确定。
 
 ### T6：联合报告与前端呈现
 
@@ -169,7 +190,7 @@
 - 外部结果、任务 ID 和来源由 runtime 从真实持久化咨询记录注入；模型只能描述综合判断，不能伪造远端调用或重写远端原文。
 - `responsibility` 与诊断 verdict 分离；服务端 Agent 的说法不能升级成已验证服务端事实。
 - UI 呈现咨询原因与待确认摘要、远端来源/状态/限制、客户端可验证主张和综合判断；拒绝、失败、取消、截断都明确展示。
-- A2A 失败不覆盖已完成的客户端报告；远端返回不得自动触发新的外发调用。
+- A2A 失败不覆盖已完成的客户端报告；远端返回不得自动触发新的外发调用；聚合器必须允许客户端分支先完成并展示中间状态。
 
 **依赖：** T4、T5；若联合报告引用日志关联结果，还需 T3。
 
@@ -192,7 +213,7 @@
 
 ## 依赖关系与可并行工作
 
-任务编号表示工作包，不表示串行排期。按规划 §9，**优先交付 A2A 联合排查主线**：T0 公共契约/B0 → T1.1 → T4 → T5 → T6 → 对应 T7 验收。日志 T3 和 Graphify T2 作为并行支线；T1.2 的其他端正式开放必须等其完整端到端验收。A2A 首版可以使用已有本地源码/hilog 初筛，不以新日志源或 Graphify 上线作为前提。
+任务编号表示工作包，不表示串行排期。按规划 §9，**优先交付 A2A 联合排查主线**：T0 公共契约/B0 → T1.1 → T4 → T5 → T6 → 对应 T7 验收。日志 T3 和 Graphify T2 作为并行支线；T1.2 的其他端正式开放必须等其完整端到端验收。A2A 首版可以使用已有本地源码/hilog 作为客户端分支，同时按可靠服务端上下文独立启动服务端分支，不以新日志源或 Graphify 上线作为前提。
 
 ```mermaid
 flowchart TD
@@ -224,7 +245,7 @@ T4 可与 T2/T3/T1.2 并行；T5 必须等确认状态和 API 契约落地。T7 
 | T2 | 拟新增 `runtime/src/capabilities/code-graph.ts` 与图 fixtures；仓库快照接口、Agent 工具注入与缓存、`runtime/src/config.ts` | 产物校验与绑定；查询；源码回读和证据隔离 |
 | T3 | `runtime/src/capabilities/log-center.ts` 与 Catalog 仅按决策扩展；拟新增日志 MCP/适配器、脱敏模块、fixtures；`runtime/src/diagnosis/evidence.ts`、报告 Schema、日志 Skill | 上游契约；脱敏/匹配；观测上下文；报告门禁 |
 | T4 | `runtime/src/domain/schemas.ts`、`runtime/src/product/store.ts`、`runtime/src/diagnosis/run-round.ts`、`runtime/src/http/conversations.ts`、`runtime/src/auth/` 现有身份/CSRF 接口、`web/src/agui/` | 确认记录与迁移；owner/CSRF/幂等 API；等待与恢复 |
-| T5 | `runtime/src/capabilities/compass-a2a.ts`、拟新增咨询工具/运行模块、`runtime/src/diagnosis/{agent,run-round}.ts`、`runtime/src/shutdown.ts` | 无自由文本工具；批准领取与调用；取消/限长/崩溃恢复 |
+| T5 | `runtime/src/capabilities/compass-a2a.ts`、拟新增 `runtime/src/diagnosis/joint-investigation.ts` 与咨询工具/运行模块、`runtime/src/diagnosis/{agent,run-round}.ts`、`runtime/src/shutdown.ts` | Runtime Supervisor；并行分支与 fan-in；条件 handoff；无自由文本工具；批准领取与调用；取消/限长/崩溃恢复 |
 | T6 | 报告 Schema、`runtime/src/diagnosis/evidence.ts`、`web/src/{api,types}.ts`、`web/src/components/chat/{ReportCard,ToolStepCard}.tsx`、`web/src/hooks/useChatSessions.ts` | 向后兼容联合报告；确认摘要 UI；分来源展示 |
 | T7 | `runtime/src/evaluation/`、`runtime/test/`、对应 MCP 测试、能力 spec 与运行说明 | 离线反例；真实服务联调；对照评估与灰度结论 |
 

@@ -21,7 +21,9 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 - 正式支持 DeepSeek `deepseek-flash`；同时保留 OpenAI、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 配置入口作为实验/未验收选项。可配置不等于正式支持，当前 provider 范围和证据见迁移规格。
 - 会话、仓库、快照和证据状态保存在 runtime 的 LibSQL；模型配置仍保存在 owner-only 的 `.data/model-config.json`，旧 `.data` JSON 可通过迁移命令导入。
 - 知音楼网页 SSO：未登录不可用业务 API；应用挂在 `/xesapp-agent` 前缀下。设计见 [`spec/sso-login-design.md`](spec/sso-login-design.md)。
-- 云学习服务端 Agent 通过 Compass A2A 对接；当前仓库已实现 P0 客户端和配置，聊天调用尚未接入。目标流程是客户端先初筛，用户确认本次出站摘要后再咨询服务端 Agent，返回结论由客户端交叉验证，并与本地证据分开呈现。客户端保留自己的本地知识库，不直连云学习 Knowledge MCP。规划见 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)，接入契约见 [`spec/compass-a2a-integration.md`](spec/compass-a2a-integration.md)。
+- 云学习服务端 Agent 通过 Compass A2A 对接；当前仓库已实现 P0 客户端和配置，聊天调用尚未接入。目标流程由 Runtime 轻量分流，在上下文和授权满足时让客户端与服务端并行调查，再聚合两侧事实；服务端结论与本地证据分开保存。首次批准的服务端调查范围内允许对端 Agent 自主探索，新增客户端材料或扩大范围时再次确认。客户端保留自己的本地知识库，不直连云学习 Knowledge MCP。规划见 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)，接入契约见 [`spec/compass-a2a-integration.md`](spec/compass-a2a-integration.md)。
+- 客户端只有一个统一的 `ClientDiagnosisAgent`，HarmonyOS、iOS 和 Android 通过会话端上下文、Skill、知识排序和仓库适配处理差异；服务端或专项 Agent 通过 A2A Agent Slot 接入，Compass 是首个具体实例。
+- 技术分享版见 [`docs/architecture-sharing.html`](docs/architecture-sharing.html)，配套 Markdown 和分模块 SVG 位于 `docs/` 与 `docs/diagrams/`。
 
 ## 技术栈
 

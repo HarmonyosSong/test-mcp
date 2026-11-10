@@ -105,7 +105,7 @@
   <text class="small" x="112" y="635">准入 · 生命周期 · 终态持久化</text>
 
   <rect class="card-core" x="334" y="550" width="264" height="112" rx="9"/>
-  <text class="card-title" x="356" y="582">DiagnosisAgent</text>
+  <text class="card-title" x="356" y="582">ClientDiagnosisAgent</text>
   <text class="card-sub" x="356" y="608">Mastra Agent · 多轮对话</text>
   <text class="small" x="356" y="635">模型编排 · 流式事件</text>
 

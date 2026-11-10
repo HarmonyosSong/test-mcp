@@ -4,11 +4,11 @@
 > 范围：Mastra TypeScript runtime（`runtime/`）  
 > 关联：Compass A2A 1.0 JSON-RPC；本仓库 AG-UI/SSE 聊天链路；[`多能力扩展规划`](../docs/multi-capability-expansion-plan.md)；[`多能力扩展技术设计`](../docs/multi-capability-technical-design.md)
 
-本文是 Troubleshoot Odyssey 中 Compass A2A 的唯一接入契约。客户端保留自己的本地 Knowledge MCP；云学习知识由云学习服务端 Agent 管理，客户端通过 Compass A2A 调用该 Agent，不直连云学习 Knowledge MCP。
+本文是 Troubleshoot Odyssey 中 Compass 这个具体 A2A Agent Slot 的唯一接入契约。通用槽位边界见 [`multi-capability-technical-design.md`](../docs/multi-capability-technical-design.md#41-agent-slot-registry-与-a2a-适配器)。客户端只有一个统一的 `ClientDiagnosisAgent`，HarmonyOS、iOS 和 Android 通过会话端上下文处理差异；客户端保留自己的本地 Knowledge MCP，远端知识由对应远端 Agent 管理，客户端通过 A2A Slot 调用，不直连远端 Knowledge MCP。
 
 ## 1. 目标与阶段
 
-本仓库的 Mastra runtime 是 A2A 客户端和客户端问题诊断归属方；Compass 对端是云学习服务端 Agent，负责其服务端知识与排查流程。A2A 输出属于外部 Agent 结论，不是客户端的现场观测证据。
+本仓库的 Mastra runtime 是 A2A 客户端和统一客户端问题诊断归属方；Compass 对端是当前第一个远端 Agent，负责其知识与排查流程。A2A 输出属于外部 Agent 结论，不是客户端的现场观测证据。
 
 | 阶段 | 交付物 | 状态 |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ Runtime 字段：`a2aBaseUrl`、`a2aClientId`、`a2aToken`、`a2aWaitSeconds`。
 - 单测：`runtime/test/compass-a2a.test.ts`（Mock Agent Card + SSE）
 - 联调冒烟（手工，仅本地 Token）：Agent Card HTTP 200；短问 `SendStreamingMessage` 返回带 `TASK_STATE_COMPLETED` 与 artifact 文本的 SSE
 
-P0 **不**注册工具，**不**注入 `toolsets`，**不**改 `DiagnosisAgent` 指令。
+P0 **不**注册工具，**不**注入 `toolsets`，**不**改统一客户端 `ClientDiagnosisAgent` 的指令（当前 TypeScript 实现类名为 `DiagnosisAgent`）。
 
 ## 4. 后续使用与接入流程（P1–P2）
 
@@ -116,14 +116,14 @@ P1 之后可选；每项都会更深触及流式/会话：
 
 ### 4.5 P1 — 客户端与服务端联合排查编排
 
-这一节定义产品流程，不改变 A2A 的传输职责。客户端 Agent 负责客户端知识、仓库和本地可见观测；云学习服务端 Agent 负责服务端知识、代码和服务端日志。一个问题同时涉及两侧时，必须按以下顺序执行：
+这一节定义产品流程，不改变 A2A 的传输职责。客户端 Agent 负责客户端知识、仓库和本地可见观测；云学习服务端 Agent 负责服务端知识、代码和服务端日志。Runtime 采用“轻量分流 + 并行调查 + 条件交接”的协调模式，不把客户端的“暂未发现”当作服务端问题的前置否定结论：
 
-1. **客户端初筛**：先确认客户端平台、入口、时间范围、请求关联标识和本地可见事实。发现 API、Bridge、服务端任务或服务端数据关联线索后，才进入服务端咨询；没有关联线索时不自动调用 Compass。
-2. **授权确认**：会话级 `consult_compass` 开关默认关闭，只控制本会话是否允许咨询。每次调用前 Runtime 展示咨询原因和准确的脱敏出站摘要，并取得用户确认；附加客户端日志、源码或工具结果时，逐项列明并确认。打开会话开关不授权模型自动发起所有后续调用。
-3. **受控发送**：Runtime 生成 `server_consult_context`，绑定当前轮问题、会话端、服务、环境、已确认的关联标识和时间范围。模型不能自由传入历史消息、源码、日志或其他上下文。若服务端查询必须使用原始关联标识，确认摘要必须明确展示该值；若标识已脱敏或伪名化到无法查询，不得声称完成了针对该请求的服务端关联。
-4. **服务端分析**：服务端 Agent 使用自己的知识和服务端能力分析，返回任务终态、结论、适用范围和限制条件。客户端不直连服务端 Knowledge MCP。
-5. **客户端复核**：Runtime 将结果保存为独立的 `remote_conclusion` / `external_findings`。客户端 Agent 把服务端主张拆成可本地验证和只能服务端验证两类，再用本地代码、请求结果或已授权观测进行交叉验证。
-6. **联合输出**：报告分别展示客户端事实、服务端 Agent 结论、跨侧综合判断和未解决缺口。远端结果永远不进入 `evidence_refs`；只有实际本地观测才能支撑客户端根因候选。
+1. **初始分流**：Runtime 先确认客户端平台、入口、时间范围、服务/环境和请求关联标识，生成客户端、服务端、并行或未知的调查计划。初始分流只决定可用分支，不直接生成根因结论。
+2. **分支启动**：客户端分支使用客户端知识、仓库和本地观测；服务端分支通过 A2A 使用服务端 Agent 自己的知识、代码和日志。服务端上下文足够且用户授权后，两侧可以并行运行；缺少上下文或授权时只运行安全的本地分支。
+3. **授权确认**：会话级 `consult_compass` 开关默认关闭，只控制本会话是否允许咨询。每个服务端调查分支首次启动前，Runtime 展示咨询原因、调查范围和准确的脱敏出站摘要，并取得用户确认；确认后，服务端 Agent 可以在已批准的服务、环境、任务和预算范围内自主使用自己的知识、代码和日志继续探索，不要求用户为每个内部步骤重复确认。打开会话开关不授权扩大调查范围。
+4. **受控发送**：Runtime 生成 `server_consult_context`，绑定当前轮问题、会话端、服务、环境、已确认的关联标识和时间范围。模型不能自由传入历史消息、源码、日志或其他上下文。若服务端查询必须使用原始关联标识，确认摘要必须明确展示该值；若标识已脱敏或伪名化到无法查询，不得声称完成了针对该请求的服务端关联。新增客户端材料、切换服务/环境或扩大范围时，必须创建新的确认记录。
+5. **条件交接和复核**：任一分支发现跨侧线索时，只能由 Runtime 发起有界的补充 A2A 调查。Runtime 将服务端结果保存为独立的 `remote_conclusion` / `external_findings`，客户端 Agent 把服务端主张拆成可本地验证和只能服务端验证两类，再用本地代码、请求结果或已授权观测进行交叉验证。
+6. **联合输出**：Runtime 聚合两侧结果，报告分别展示客户端事实、服务端 Agent 结论、跨侧综合判断和未解决缺口。远端结果永远不进入 `evidence_refs`；只有实际本地观测才能支撑客户端根因候选。任一分支失败不能覆盖另一侧已经完成的结果。
 
 Runtime 层的最小结果形态为：
 
@@ -142,7 +142,7 @@ Runtime 层的最小结果形态为：
 用户 <-> Web (AG-UI SSE)
          |
          v
-   Mastra DiagnosisAgent
+   Mastra ClientDiagnosisAgent
          |  （未来）tool: ask_compass
          v
    CompassA2AClient  （P0 — 已有）
