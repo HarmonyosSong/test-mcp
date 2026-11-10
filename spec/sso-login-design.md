@@ -4,7 +4,7 @@
 > 日期：2026-11-05  
 > 目标：未登录禁止使用诊断工作台；登录后每次业务请求持续鉴权  
 > 范围：仅网页 SSO 认证，不含数字伙伴 IM、不含会话按人工号隔离  
-> 数字伙伴 IM：见同目录 [`yach-im-lightweight.md`](./yach-im-lightweight.md)（独立规格，不在本 SSO 方案内实现）  
+> 数字伙伴 IM：见同目录 [`yach-cli-channel.md`](./yach-cli-channel.md)（独立规格，不在本 SSO 方案内实现）  
 > 来源：`feat/yach_sso`（Python FastAPI）→ 当前 `feat/yach-sso`（Node Hono `runtime/`）  
 > 契约对齐：旧分支设计 / `server/.../auth/*` / `web/src/auth/*`
 
@@ -367,7 +367,7 @@ make dev-web
 
 - local 免登 / 固定假工号
 - conversation / 仓库 / 模型配置按 `workcode` 隔离
-- 知音楼数字伙伴 IM / 机器人（见 [`yach-im-lightweight.md`](./yach-im-lightweight.md)，与本 SSO 方案无关）
+- 知音楼数字伙伴 IM / 机器人（见 [`yach-cli-channel.md`](./yach-cli-channel.md)，与本 SSO 方案无关）
 - Compass A2A（见 [`compass-a2a-integration.md`](./compass-a2a-integration.md)，与本方案无关）
 - Redis 或外部会话存储
 - 把 auth 发成独立 npm 包

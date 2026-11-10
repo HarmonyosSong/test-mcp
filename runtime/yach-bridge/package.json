@@ -1,9 +1,0 @@
-{
-  "name": "compass-yach-receive-bridge",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Receive-only Yach SDK adapter; application logic lives in Odyssey runtime",
-  "engines": { "node": ">=22.13.0" },
-  "scripts": { "test": "node --test bridge.test.cjs" },
-  "dependencies": { "ws": "8.22.0" }
-}
