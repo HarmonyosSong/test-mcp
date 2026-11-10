@@ -1,6 +1,6 @@
 # 多能力扩展技术设计
 
-> 版本：v1（对应多能力扩展规划 v7，2026-11-06）  
+> 版本：v2（对应多能力扩展规划 v8，2026-11-10）
 > 状态：技术设计草案，待实施评审  
 > 上游规划：[`multi-capability-expansion-plan.md`](multi-capability-expansion-plan.md)  
 > 任务拆分：[`multi-capability-implementation-plan.md`](multi-capability-implementation-plan.md)
@@ -14,7 +14,7 @@
 
 ## 1. 设计目标和边界
 
-目标是让一次客户端故障排查可以按顺序使用五类能力：
+目标是让一次客户端故障排查可以由 Runtime 按调查计划动态使用五类能力：
 
 1. 本地 Knowledge MCP 负责客户端术语、现象、候选链路和排查判据。
 2. 仓库 MCP 负责在绑定的客户端快照中读取真实源码。
@@ -40,20 +40,21 @@
 flowchart LR
     U[用户 / Web / IM] --> H[Hono API + SSE]
     H --> R[runDiagnosisRound]
-    R --> A[Mastra DiagnosisAgent]
+    R --> O[Runtime Supervisor]
+    O --> A[客户端 DiagnosisAgent]
     A --> K[本地 Knowledge MCP]
     A --> S[仓库 MCP]
     A --> G[code_graph 只读适配器]
     A --> L[LogCenter MCP]
-    A -.用户确认后.-> C[ask_compass]
+    O -.计划满足且用户确认后.-> C[服务端调查分支 / ask_compass]
     C --> X[Compass A2A Client]
     X --> Y[云学习服务端 Agent]
     Y --> Z[服务端知识 / 代码 / 日志]
     G --> S
     A --> E[EvidenceLedger]
-    A --> O[ExternalFindings]
+    X --> F[ExternalFindings]
     E --> P[客户端证据报告]
-    O --> P
+    F --> P
     R --> D[ProductStore / LibSQL]
 ```
 
@@ -61,7 +62,8 @@ flowchart LR
 
 - Hono 负责产品路由、认证、CSRF、SSE 和用户确认接口。
 - `runDiagnosisRound` 负责一轮的准入、能力创建与销毁、终态持久化和取消。
-- `DiagnosisAgent` 负责模型编排；能力的安全约束由 runtime wrapper 和服务端校验保证。
+- `Runtime Supervisor` 负责轻量分流、分支启动、fan-in 聚合、handoff 上限、预算、取消和最终状态；A2A 只负责服务端任务通信。
+- 客户端 `DiagnosisAgent` 负责本地模型编排；能力的安全约束由 runtime wrapper 和服务端校验保证。
 - `EvidenceLedger` 只接收实际源码和通过关联门禁的日志观测。
 - `ExternalFindingsStore` 或报告中的外部字段保存 A2A 结果，与 `EvidenceLedger` 分离。
 - ProductStore 是用户可见会话、报告、仓库绑定、确认请求和能力状态的事实来源。
@@ -373,11 +375,24 @@ service binding confirmed
 
 ### 7.1 触发规则
 
-客户端先完成本地初筛。只有发现 API、Bridge、服务端任务、服务端数据或用户明确请求服务端咨询等关联线索，才生成服务端咨询提案；没有关联线索时不调用 Compass。
+Runtime 先做轻量分流，不要求客户端 Agent 先完成完整诊断。根据当前轮问题、服务/环境、时间范围和关联标识，生成客户端、服务端、并行或未知的调查计划。服务端分支只有在上下文足够且用户确认外发后才能启动；没有必要上下文或授权时只运行安全的本地分支。
+
+```ts
+type InvestigationPlan = {
+  mode: 'local' | 'server' | 'parallel' | 'unknown';
+  branches: Array<'client' | 'server'>;
+  reason: string;
+  correlation_ready: boolean;
+  max_handoff_rounds: number;
+  budget: { max_seconds: number; max_remote_calls: number };
+};
+```
+
+客户端和服务端分支各自拥有自己的工具、知识和证据边界。满足条件时，两侧并行执行；一侧发现跨侧线索时，只能由 Runtime 发起有界的 handoff。A2A 只承载服务端任务通信，不负责决定本地工作流顺序，也不允许远端结果修改客户端能力权限。
 
 ### 7.2 两阶段用户确认
 
-模型提出 `ask_compass` 后，runtime 不立即发 HTTP，而是生成：
+调查计划需要服务端分支时，模型或规划器提出 `ask_compass` 后，runtime 不立即发 HTTP，而是先校验计划、授权状态和外发内容，再生成服务端调查分支记录：
 
 ```ts
 type ExternalConsultation = {
@@ -410,6 +425,10 @@ POST /api/conversations/:id/consultations/:consultationId/reject
 服务端必须校验：当前登录主体拥有该会话；咨询记录属于该会话和当前未完成轮次；记录未过期；请求摘要未被修改；审批请求带有效 CSRF token。审批接口只能改变状态，不能接收新的自由文本、URL、token、仓库路径或模型参数。
 
 批准后由 runtime 依据已保存的 `outbound_text` 发起 A2A；不重新从模型消息拼接，不允许前端覆盖摘要。首版外发内容只包含当前轮用户问题的脱敏版本和必要的服务/环境/关联信息，不包含客户端源码、日志、Knowledge MCP 结果或工具原文。若未来开放附加材料，必须逐项展示并再次确认。
+
+一次批准绑定一个有界的服务端调查范围，而不是绑定单个服务端工具调用。服务端 Agent 在批准的服务、环境、关联标识、时间范围和预算内可以自主使用自己的知识、代码和日志继续探索；这些内部步骤不需要重复弹窗确认。若 Runtime 需要新增客户端材料、切换服务/环境、扩大时间范围或发起超出原范围的 handoff，必须创建新的 `ExternalConsultation` 并重新确认。
+
+用户等待服务端确认时，客户端分支可以继续执行；确认拒绝、超时或脱敏失败只阻止服务端分支，不应丢弃已经完成的客户端事实。服务端分支返回后由 Runtime 聚合两侧结果，必要时再发起一次有界 handoff，不得进入无限 Agent 对话。
 
 ### 7.3 A2A 请求和返回
 
@@ -571,9 +590,11 @@ type ConversationExtensions = {
 
 ### 11.3 A2A 联合排查
 
-- Token 缺失、会话开关关闭或没有服务端关联线索时，`ask_compass` 不存在或不发请求。
+- Token 缺失、会话开关关闭、调查计划不包含服务端分支或缺少可靠服务端上下文时，`ask_compass` 不存在或不发请求。
 - 用户未确认时 mock Compass 收到零 HTTP 请求；拒绝后也保持零请求。
 - 普通聊天文本和模型输出不能打开会话开关或改写出站摘要。
+- 客户端单侧、服务端单侧和双侧并行三种计划的分支选择可复现；服务端分支不要求客户端先返回“没有问题”。
+- 一侧分支失败时另一侧结果仍可聚合；跨侧 handoff 受最大轮次、远端调用次数、总耗时和取消信号约束。
 - 取消、超时和客户端断开后尽力收到 `CancelTask`；远端状态不确定时保存 `unknown`。
 - 返回文本限长并标记截断；`remote_conclusion` 不进入 `evidence_refs`。
 - 本地事实、远端结论、综合判断、责任状态和缺口分栏展示；`responsibility` 与诊断 verdict 独立。
@@ -608,7 +629,7 @@ uv run --project mcp_server pytest -q \
 
 1. **契约与基线**：对齐当前 SLS 查询工具与目标日志取证契约，修复既有会话路由回归；日志形态决策只阻塞日志支线。
 2. **最小会话上下文**：增加端绑定和旧数据兼容默认值，给后续 A2A 提供确定上下文。
-3. **A2A P1 主线**：按确认记录/API、恢复轮次、受控调用/取消、外部结果隔离、联合报告/UI 的顺序交付；验收前不开放聊天调用。
+3. **A2A P1 主线**：按调查计划与分流、确认记录/API、并行分支、恢复轮次、受控调用/取消、外部结果隔离、联合报告/UI 的顺序交付；验收前不开放聊天调用。
 4. **并行能力**：Graphify P0 实现产物校验、快照匹配和证据隔离；日志支线在契约固定后完成脱敏、观测上下文及关联门禁。两者均不阻塞 A2A 使用现有本地观测开展首版联合排查。
 5. **多端接线**：完成提示词、Skill、知识上下文注入和 Android/iOS 用例后，才对外开放其他端；不把全量多端路由作为 A2A 的前置依赖。
 6. **按能力验收**：分别完成对应离线/真实服务验证与灰度。Graphify 用固定真实问题比较“知识 + 源码”与“知识 + 图 + 源码”，同时报告命中、误选、有效证据、模型请求、Token、工具载荷和耗时。

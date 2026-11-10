@@ -1,7 +1,7 @@
 # 多能力扩展框架规划：日志接入、多端支持、A2A 与静态代码图接入
 
-> 状态：**规划草案 v7（2026-11-06 已补充 Graphify 静态代码图接入），日志、多端、A2A 和静态图产品接入仍待分阶段评审；不包含后续代码改动批准**
-> 日期：2026-11-05（v1）；2026-11-06（v3/v4/v5/v6/v7）
+> 状态：**规划草案 v8（2026-11-10 已补充联合排查编排模式技术探索），日志、多端、A2A 和静态图产品接入仍待分阶段评审；不包含后续代码改动批准**
+> 日期：2026-11-05（v1）；2026-11-06（v3/v4/v5/v6/v7）；2026-11-10（v8）
 > 关联：[`ROADMAP.md`](ROADMAP.md)、[`ARCHITECTURE.md`](ARCHITECTURE.md)、[`multi-capability-technical-design.md`](multi-capability-technical-design.md)、[`multi-capability-implementation-plan.md`](multi-capability-implementation-plan.md)、[`decisions/0003-evidence-ledger-lifecycle.md`](decisions/0003-evidence-ledger-lifecycle.md)、[`knowledge/_schema.md`](../knowledge/_schema.md)、[`knowledge/AGENTS.md`](../knowledge/AGENTS.md)、[`compass-a2a-integration.md`](../spec/compass-a2a-integration.md)
 
 本文回答：日志接入、其他端代码接入、A2A 协议（云学习服务端 Agent）和 Graphify 静态代码图接入四件事到来时框架怎么规划。主方向（已确认）：**客户端保留自己的本地 Knowledge MCP；云学习知识由服务端 Agent 经 A2A 提供；日志和代码提供现场观测；静态代码图只提供派生导航线索，正向诊断的证据门禁继续保留**。
@@ -72,6 +72,14 @@
 | 1 | xesapp 已通过项目外离线构建产出可用图，但运行时如何使用尚未规划 | 增加 §7，明确离线构建、产物包、快照身份、只读结构化查询和降级路径 |
 | 2 | 图节点与关系容易被误当成完整代码事实或现场证据 | 保留规范知识库与真实源码取证；图命中仅作线索，禁止进入 `evidence_refs`，禁止由无边推断无调用 |
 | 3 | ArkTS 兼容提取、dirty 工作区和生成路由文件存在已知边界 | 固化 patch/provenance 校验、UI 部分关系声明和 `_generated` 降级约束，并加入反例验收 |
+
+### v7 → v8（2026-11-10，补充 A2A 联合排查编排模式）
+
+| # | 变更 | 处理 |
+| --- | --- | --- |
+| 1 | 原流程偏向“客户端先排查，确认没有客户端问题后再找服务端”，容易把一次跨端问题变成串行等待，也会把客户端的“暂未发现”误当成否定结论 | 改为 Runtime 轻量分流后按条件并行调查；客户端和服务端各自负责自己的能力与证据，最后由 Runtime 聚合 |
+| 2 | A2A 被描述成调用协议，但没有明确谁负责并行、聚合和后续交接 | 明确 Runtime 是 Supervisor/协调器，A2A 只负责跨 Agent 任务通信；增加 fan-out/fan-in、条件 handoff、取消和预算约束 |
+| 3 | 缺少对串行、并行和动态交接模式的技术依据 | 增加 Google ADK、Microsoft Agent Framework、LangGraph 和 A2A 官方资料，并记录本项目的模式选择与验收反例 |
 
 ## 1. 四件事的架构定位
 
@@ -276,20 +284,22 @@ logcenterskill 是 CLI 形态（凭证在 `~/.logcenter/credentials.json`）。r
 
 ### 5.6 客户端与服务端联合排查流程
 
-客户端问题可能只是表象：页面、容器或 H5 的错误，可能由服务端接口、任务状态或数据处理失败引起。A2A 将服务端 Agent 纳入同一次诊断，但不会把客户端 Agent 变成服务端知识或证据的所有者。联合排查按以下顺序执行。
+客户端问题可能只是表象：页面、容器或 H5 的错误，可能由服务端接口、任务状态或数据处理失败引起。A2A 将服务端 Agent 纳入同一次诊断，但不会把客户端 Agent 变成服务端知识或证据的所有者。联合排查采用**轻量分流、按条件并行、结果聚合和必要时交接**，不把“客户端暂未发现根因”当成服务端调用的前置否定结论。
 
-#### 5.6.1 客户端先完成本地初筛
+#### 5.6.1 初始分流与并行调查
 
-1. 会话绑定并锁定 `client_platform`、代码仓库快照或本地 workspace，以及可用的客户端知识和取证能力。
-2. 客户端 Agent 先使用本地 Knowledge MCP、仓库 MCP 和用户提供的信息确认现象、入口、时间范围和请求关联标识（如 `trace_id`、`request_id`、订单号或任务 ID）。
-3. 只有出现服务端关联线索时，才进入联合排查：客户端调用了服务端 API、Bridge 返回服务端错误、服务端任务状态异常、服务端数据导致客户端表现异常，或用户明确要求咨询服务端 Agent。
-4. 没有服务端关联线索时，不为“保险”而调用 A2A；客户端继续本地诊断并报告证据缺口。
+1. Runtime 先绑定并锁定 `client_platform`、代码仓库快照或本地 workspace，收集当前问题、时间范围、服务/环境和请求关联标识；这一步只做路由判断，不要求客户端 Agent 先完成完整诊断。
+2. Runtime 生成一次性的 `investigation_plan`，将任务路由为 `client`、`server`、`parallel` 或 `unknown`。客户端分支使用本地 Knowledge MCP、仓库 MCP 和本地观测；服务端分支通过 A2A 交给服务端 Agent 使用其知识、代码和日志。
+3. 当服务端上下文足够且用户已批准本次外发时，`client` 和 `server` 分支可以并行运行。客户端分支无需等待服务端返回；服务端分支也不要求先收到“客户端没有问题”的结论。
+4. 缺少服务名、环境、时间范围、请求标识或用户授权时，只运行可安全执行的客户端分支，并把服务端能力缺口记录为 `missing_information`；不得为了“保险”盲目调用 A2A。
+5. 任一分支发现跨侧线索时，由 Runtime 发起一次受控 `handoff` 或补充调查；不能让模型直接修改另一侧的工具权限、仓库、环境或证据账本。
+6. 所有分支结束或达到预算后，Runtime 执行 `fan-in`，分别保留客户端事实、服务端外部结论、跨侧关系和未解决缺口，再生成最终责任状态。
 
 #### 5.6.2 告知用户并取得本次授权
 
 1. Runtime 展示触发原因、当前已确认事实、待服务端确认的问题和拟发送的脱敏摘要。
-2. 会话级 `consult_compass` 开关默认关闭，只控制本会话是否允许发起咨询；每次实际调用前，Runtime 都必须展示咨询原因和本次准确的脱敏出站摘要，并取得用户确认。开启会话开关不等于授权模型自动发起所有后续调用。
-3. 当前轮用户文本由 Runtime 按 §5.4 脱敏后发送。附加客户端日志、源码摘录、请求参数或其他本地观测时，Runtime 必须逐项列明并取得用户对本次附加材料的明确确认；模型和前端不能绕过该确认。
+2. 会话级 `consult_compass` 开关默认关闭，只控制本会话是否允许发起咨询。每个服务端调查分支首次启动前，Runtime 必须展示咨询原因、调查范围和准确的脱敏出站摘要，并取得用户确认；确认后，服务端 Agent 可以在已批准的服务、环境、任务和预算范围内自主使用自己的知识、代码和日志继续探索，不要求用户为每个内部步骤重复确认。开启会话开关也不等于允许扩大调查范围。
+3. 当前轮用户文本由 Runtime 按 §5.4 脱敏后发送。新增客户端日志、源码摘录、请求参数、关联标识、服务/环境或其他本地观测时，Runtime 必须创建新的待确认范围，逐项列明并取得用户对本次附加材料的明确确认；模型和前端不能绕过该确认。
 4. 用户拒绝、凭证缺失、脱敏失败或缺少必要关联信息时，不调用 A2A。客户端仍可输出本地结论，并将服务端侧标为待确认或证据不足。
 
 #### 5.6.3 受控调用与服务端分析
@@ -341,12 +351,41 @@ Runtime 将 A2A 结果标准化为独立的 `remote_conclusion`；需要保存�
 - 当前会话只绑定一个客户端代码仓库；服务端代码和服务端日志由对端 Agent 负责。若要求客户端同轮读取多个客户端仓库或服务端仓库，先完成多仓库绑定、commit 固定和来源标识设计。
 - 服务端 Agent 的文本可能包含指令或未经验证的事实，只能作为数据处理；不能改变客户端工具权限、会话端、证据账本或报告门禁。
 
+#### 5.6.7 技术探索与模式选型（2026-11-10）
+
+公开的多 Agent 编排资料通常把这类问题拆成四种模式：
+
+| 模式 | 对应做法 | 优点 | 风险和适用边界 |
+| --- | --- | --- | --- |
+| Sequential / pipeline | 客户端完成后再交服务端 | 成本和状态管理简单，适合强依赖的前后置步骤 | 延迟高；客户端“暂未发现”容易被误当成排除服务端；不适合作为跨端故障的默认流程 |
+| Parallel / fan-out-fan-in | 客户端、服务端分别调查，Runtime 聚合 | 降低等待时间，避免单侧初筛误判，适合两个领域可独立取证的问题 | 查询和模型成本更高，需要分支状态、预算、取消和聚合契约 |
+| Supervisor / dynamic routing | Runtime 根据初始上下文选择分支 | 能按问题类型选择本地、远端或并行路径，减少无效调用 | 路由器不能直接拥有两侧证据；必须限制路由参数和循环次数 |
+| Handoff / decentralized routing | 一侧发现跨侧线索后请求另一侧补查 | 适合处理调查中出现的新线索 | 容易形成循环或重复调用，必须由 Runtime 维护任务关系和上限 |
+
+本次技术探索参考了 [Google ADK 的 SequentialAgent/ParallelAgent 工作流](https://github.com/google/adk-docs/blob/main/docs/agents/custom-agents.md)、[Google ADK 的并行聚合示例](https://github.com/google/adk-docs/blob/main/docs/api-reference/java/com/google/adk/agents/ParallelAgent.html)、[Microsoft Agent Framework 的 Sequential/Concurrent/Handoff/GroupChat 编排](https://github.com/microsoft/agent-framework/blob/main/python/packages/orchestrations/README.md)、[LangGraph 的子 Agent 和状态隔离](https://docs.langchain.com/oss/python/langgraph/use-subgraphs)，以及 [A2A 的消息、任务和上下文规范](https://a2a-protocol.org/latest/specification/)。这些资料说明：**A2A 负责 Agent 间通信，串行、并行、交接和聚合由上层工作流协调器决定**。
+
+本项目选择 **Runtime Supervisor + Parallel Investigation + Conditional Handoff**：
+
+1. Runtime 先做轻量分流，不要求先完成客户端诊断，也不让模型直接决定仓库、服务、环境或工具权限。
+2. 客户端和服务端拥有独立调查分支；满足服务端上下文和授权条件时，两条分支可以并行执行。
+3. 任一分支出现跨侧线索时，Runtime 才发起有界的 A2A 补充调查；服务端 Agent 不直接访问客户端工具，客户端 Agent 也不直连服务端 Knowledge MCP。
+4. Runtime 负责 fan-in 聚合、责任状态、取消、超时、最大交接次数和成本预算；A2A 只传输已批准的结构化调查上下文和远端任务结果。
+5. 首版不做无边界的 autonomous swarm。远端文本仍是 `remote_conclusion` / `external_findings`，不能进入客户端 `evidence_refs`，也不能改变本地能力开关和报告门禁。
+
+**必须覆盖的产品反例：**
+
+- 只有客户端线索：只运行客户端分支，A2A 请求数为 0。
+- 只有服务端线索且具备服务、环境和关联标识：服务端分支可以直接启动，不等待客户端先给出否定结论。
+- 客户端与服务端均有线索：两侧并行调查，最后聚合为 `client`、`server`、`shared` 或 `unknown`。
+- 一侧超时或失败：保留另一侧结果，并将失败记录为缺口，不能覆盖本地已完成报告。
+- 分支互相触发补查：超过最大交接次数、预算或超时后停止，不能无限 A2A 循环。
+
 ### 5.7 落地节奏
 
 | 阶段 | 内容 | 验收要点 |
 | --- | --- | --- |
 | P0 | **当前分支已实现**：A2A 配置、Agent Card、流式 JSON-RPC、任务取消客户端 | 单测通过；产品聊天路径不暴露 A2A 工具 |
-| P1 | 受控联合排查：`ask_compass`、§5.6 流程、报告 Schema、外发硬门控、取消/截断/标记 | 完成跨侧端到端用例；未确认或拒绝 ⇒ 零请求；外部结论不进入 `evidence_refs` |
+| P1 | 受控联合排查：Runtime Supervisor、并行调查、条件 handoff、`ask_compass`、§5.6 流程、报告 Schema、外发硬门控、取消/截断/标记 | 完成跨侧端到端用例；未确认或拒绝 ⇒ 零请求；外部结论不进入 `evidence_refs`；覆盖串行、并行、单侧失败和交接上限 |
 | P2 | 进度多路复用、跨轮 `contextId` | 作为体验增强，单独设计；不阻塞 P1 联合排查 |
 
 ## 6. 多端代码接入设计
@@ -458,13 +497,13 @@ xesapp 自有知识层仍是其模块约定与业务不变量的权威源；Grap
 
 ![Troubleshoot Odyssey 未来系统架构图](diagrams/future-system-architecture.svg)
 
-图中按层展示系统组件：接入层负责 Web 与 IM 入口，协议适配层负责认证、HTTP/SSE 和 IM 协议，Mastra 层负责诊断编排，本地层提供知识、代码、日志和持久化能力，外部层提供 SSO、模型和云学习 Agent。实线表示当前调用或数据依赖，虚线表示尚待接入的能力或外部 Agent 结论；A2A 返回单独保存为外部发现，与本地 `EvidenceLedger` 分开，不能进入客户端 `evidence_refs`。客户端只连接本地 Knowledge MCP，云学习知识只由云学习服务端 Agent 管理。
+图中按层展示系统组件：接入层负责 Web 与 IM 入口，协议适配层负责认证、HTTP/SSE 和 IM 协议，Mastra 层由 Runtime Supervisor 负责诊断编排，本地层提供知识、代码、日志和持久化能力，外部层提供 SSO、模型和云学习 Agent。实线表示当前调用或数据依赖，虚线表示尚待接入的能力或外部 Agent 结论；A2A 只作为跨 Agent 任务通道，返回单独保存为外部发现，与本地 `EvidenceLedger` 分开，不能进入客户端 `evidence_refs`。客户端只连接本地 Knowledge MCP，云学习知识只由云学习服务端 Agent 管理。
 
 ## 9. 推进顺序与验收
 
 ```text
-① 按当前分支差异评审并合入 A2A P0 → P1（开关 + 外发硬门控 + CancelTask）
-② 完成 P1 的 §5.6 联合排查编排与报告 Schema，再向用户开放 `ask_compass` 聊天路径
+① 按当前分支差异评审并合入 A2A P0 → P1（Runtime Supervisor + 开关 + 外发硬门控 + CancelTask）
+② 完成 P1 的 §5.6 并行调查、条件 handoff、结果聚合与报告 Schema，再向用户开放 `ask_compass` 聊天路径
 ③ LogCenter 契约测试 → MCP + 脱敏模块 + 适配层 + 关联门禁 + query-server-logs Skill
 ④ Graphify P0 只读适配与快照门禁（可与③并行）→ P1 真实历史问题对照评估
 ⑤ 多端最小接线四项（§6.1）→ Android/iOS 端到端用例
@@ -476,7 +515,7 @@ xesapp 自有知识层仍是其模块约定与业务不变量的权威源；Grap
 | 步骤 | 验收标准 |
 | --- | --- |
 | ① | 主线集成后仓库仅一份 A2A 契约；P0 不暴露聊天工具；P1 开关关闭 ⇒ 工具不存在；每次调用用户确认前或用户拒绝 ⇒ **mock 端零 HTTP 请求**；注入源码/日志 ⇒ **mock 端零 HTTP 请求**；本地取消 ⇒ `CancelTask` 到达；返回截断与不可信标记生效；证据账本对 Compass 输出无变化 |
-| ② | 客户端先完成初筛；无服务端线索不调用 A2A；每次调用确认脱敏摘要、附加本地证据逐项确认；服务端结论写入 `remote_conclusion` / `external_findings`，不进入 `evidence_refs`；本地事实、远端结论、综合判断和缺口分别展示；覆盖 `client` / `server` / `shared` / `unknown` 四种责任状态（独立于诊断 verdict）；A2A 失败保留缺口且不吞掉本地报告 |
+| ② | Runtime 先做轻量分流；客户端与服务端满足条件时可并行调查，服务端分支不等待客户端先给出否定结论；首次启动服务端分支确认调查范围，已批准范围内允许服务端 Agent 自主探索，新增客户端材料或扩大范围时再次确认；服务端结论写入 `remote_conclusion` / `external_findings`，不进入 `evidence_refs`；本地事实、远端结论、综合判断和缺口分别展示；覆盖 `client` / `server` / `shared` / `unknown` 四种责任状态（独立于诊断 verdict）；A2A 失败保留缺口且不吞掉本地报告；交接次数和成本预算有上限 |
 | ③ | 契约测试固定 §4.2 全部端点；日志观测携带 `observation_context`（含服务确认状态、`matched_identifiers`、`matched_error_features`、`redaction_version`）；**§4.5.1 反例集全过**：错误服务+正确时间窗 ⇒ 拦；通用错误码噪声 ⇒ 拦；无标识无时间 ⇒ 不得正向；强标识命中 ⇒ 放行；**§4.5.2 状态机**：先提交非法报告被拒且不持久化，再提交 `insufficient_evidence` 空候选报告成功；错误在失败预算内可纠正，预算耗尽仍遵循现有策略；无静默降级；脱敏覆盖 §4.6 第 3 项列出的全持久化面；凭证空值 ⇒ 工具不挂载；`make test-mcp`、`make knowledge-validate` 通过 |
 | ④ | **P0 契约与反例**：独立复算 `source_tree_hash` 和补丁哈希；clean 快照匹配可查询，base commit 相同但 dirty 内容不同 ⇒ 图工具不挂载；模型无任意路径、重建或写回入口；`MainPage1` / `ImageItem` 等组件位置和行号正确，同名变体可用路径消歧；UI 调用边保留 `INFERRED`，无边用例不得断言无调用；图查询后账本无新增证据，同快照源码读取后才产生 `source`；深度、条数、Token 和截断生效；`_generated` 缺失时走 §7.4 降级。**P1 对照**：固定真实问题集完整报告 §7.5 指标，无评估结果不宣称提升；`make test-runtime`、`make test-mcp`、`make knowledge-validate` 通过 |
 | ⑤ | §6.1 端到端用例通过；模型无法覆盖会话端注入；跨端召回与全局回退不退化；鸿蒙现有回归无退化 |
