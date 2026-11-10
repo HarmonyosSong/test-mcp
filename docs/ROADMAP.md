@@ -29,6 +29,8 @@
 `diagnosis_cases.jsonl` 已增加无端/入口的两轮追问、工具失败恢复、预算耗尽和预检失败案例；
 离线测试验证工具与历史传递合同，不代替模型行为验收。当前 Mastra runtime 的真实模型评测入口是仓库根目录的 `make live-eval`；评测数据、指标和未完成门槛见 [`mastra-runtime-migration-spec.md`](mastra-runtime-migration-spec.md)。
 
+> **当前知识接入决策（2026-11-06）**：客户端只运行本项目本地 Knowledge MCP。早期客户端直连 `dev-knowledge` MCP 的阶段 2 方案已撤销；云学习知识能力由云学习服务端 Agent 负责，并通过 Compass A2A 提供。本文其余旧阶段细节仍是历史路线，不作为当前实现契约。
+
 ## 阶段 1：检索层成熟度
 
 从 dev-knowledge 搬三条设计，加一条消费侧复核，全部落在 `mcp_server/src/harmony_knowledge_mcp/`：
@@ -40,15 +42,9 @@
 
 验收：基线测试护住检索改版；三态接入证据门禁，`resolved` 之外的命中不进正向结论。
 
-## 阶段 2：dev-knowledge 前置层
+## 阶段 2：云学习 Agent 对接（历史方案，已由 A2A 方向取代）
 
-判责任侧，把 H5 / 服务端侧的问题路由过去。按「做厚」准备：只接它的 MCP（协议兼容已实测，`mcp==2.0.0` 与我们 `mcp>=1.29.1,<2` 协商到 `2025-11-25`），术语翻译自己做——把 `knowledge/facts/cloudlearn/cloudlearn-terms-vs-user-words.md` 的对照表变成机器可读的查询改写规则，消费侧校验复用阶段 1 的成果。不 fork，不复制它的内容。
-
-收窄后的路由范围：只有命中人文阅读（`picture-expression` 等）和背单词（`recite-word`）的问题才路由；口语岛侧它没有内容，靠我们自己的接缝层条目。
-
-待决：对方 Agent（dev-agent，`xes_enterprise_agent`）能否以服务身份开放调用。它有完整 HTTP 接口，但身份模型是 SSO 员工命名空间，是交互产品不是服务间 API。若合作谈成，前置层做薄成纯路由；谈不成就维持做厚。代码层面两条路都留口。
-
-验收：回归 case 证明裸调风险被拦住——「朗读完没有分数」裸调对方 MCP 会返回错误 Topic 的 `resolved`，前置层必须改写查询并复核后才采信。
+早期方案曾计划由客户端直连 `dev-knowledge` MCP，并在本地做产品覆盖判断、术语改写和结果复核。该方案已撤销：客户端只保留自己的本地 Knowledge MCP；云学习知识能力归属云学习服务端 Agent，跨边界通过 Compass A2A 另行设计。下面的阶段记录仅保留决策历史，不能作为当前接入契约。
 
 ## 阶段 3：双受众输出
 
@@ -70,7 +66,7 @@
 
 - 条目来源：真实排查案例提炼，确认过的根因才入库；第一次入 `auto`，重复确认后升级。
 - 不入库的：源码位置、诊断中间过程、排查步骤、工单原文、未标 `auto` 的模型结论。
-- xesapp 的 `harness_Engineering/knowledge/` 只引用不复制；dev-knowledge 的内容只路由不搬运。
+- xesapp 的 `harness_Engineering/knowledge/` 只引用不复制；云学习知识由服务端 Agent 持有，客户端通过 A2A 使用服务能力，不复制其内容。
 - CI 校验（`harmony-knowledge-validate`）必须通过：断引用是知识库最常见的腐烂方式。
 - **失效回写**：排查中候选被当前证据证伪时，案例记录证伪，条目跟着更新——已修复的原因圈 `applicable_versions` 上界（老版本用户还会遇到，不删条目）、刷新 `verified_at`、或挪进「注意」。证伪不回写，库只能靠 180 天告警被动腐烂。
 - 退款、订单、支付类现象是目前完全空白的领域，xesapp 知识层里有现成不变量可引用（状态码不得凭字段名猜测），建条目时优先用。

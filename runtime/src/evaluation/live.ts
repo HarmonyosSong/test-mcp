@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 
 import { loadRuntimeConfig } from '../config.js';
 import { createRuntimeApp } from '../app.js';
+import { createRoundCapabilitySession } from '../capabilities/session.js';
 import { ChatMessageSchema, type ChatMessage } from '../domain/schemas.js';
 import { redactRecord } from '../security/redaction.js';
 import type { DiagnosisRunInput } from '../diagnosis/agent.js';
@@ -179,30 +180,23 @@ export async function runLive(datasetPath: string, outputPath: string, timeoutSe
         const row: Record<string, unknown> = { case_id: `${item.id}:${turn}`, status: 'failed' };
         let final: any;
         let text = '';
-        let knowledge: Awaited<ReturnType<typeof runtime.capabilities.createKnowledgeSession>> = null;
-        let repository: Awaited<ReturnType<typeof runtime.capabilities.createRepositorySession>> | null = null;
-        let external: Awaited<ReturnType<typeof runtime.capabilities.createExternalKnowledgeTools>> = null;
+        let capabilitySession: Awaited<ReturnType<typeof createRoundCapabilitySession>> | undefined;
         try {
           conversation.messages = [...conversation.messages, user];
-          const clients: Array<{ disconnect(): Promise<void> }> = [];
-          const toolsets: Record<string, any> = {};
-          knowledge = await runtime.capabilities.createKnowledgeSession(conversation.id, message.id);
-          if (knowledge) { clients.push(knowledge.client); Object.assign(toolsets, knowledge.toolsets); }
-          if (conversation.workspace_path) {
-            repository = await runtime.capabilities.createRepositorySession(conversation.id, conversation.workspace_path);
-            clients.push(repository.client); Object.assign(toolsets, repository.toolsets);
-          }
-          external = await runtime.capabilities.createExternalKnowledgeTools([prompt], config.projectRoot);
-          if (external) { if (external.client) clients.push(external.client); toolsets.external_knowledge = external.tools; }
-          const logCatalog = await runtime.capabilities.createLogCatalogTools?.();
-          if (logCatalog) toolsets.log_catalog = logCatalog.tools;
-          const run = runtime.diagnosisAgent.stream({ conversation, content: prompt, toolsets: toolsets as DiagnosisRunInput['toolsets'], abortSignal: AbortSignal.timeout(timeoutSeconds * 1000) });
+          const abortSignal = AbortSignal.timeout(timeoutSeconds * 1000);
+          capabilitySession = await createRoundCapabilitySession(runtime.capabilities, {
+            conversationId: conversation.id,
+            messageId: message.id,
+            runId: `eval-${item.id}-${turn}`,
+            workspacePath: conversation.workspace_path ?? null,
+            abortSignal,
+          });
+          const run = runtime.diagnosisAgent.stream({ conversation, content: prompt, toolsets: capabilitySession.toolsets, abortSignal });
           for await (const event of run) {
             if (event.type === 'text') text += event.delta;
             else if (event.type === 'tool-end') message.steps.push(event.event);
             else if (event.type === 'completed' || event.type === 'failed') final = event;
           }
-          for (const client of clients) await client.disconnect().catch(() => undefined);
           if (final?.type === 'completed') {
             message.content = final.text || text;
             message.report = final.report;
@@ -225,9 +219,7 @@ export async function runLive(datasetPath: string, outputPath: string, timeoutSe
           message.error = error instanceof Error ? runtime.modelConfiguration.redact(error.message) : 'evaluation turn failed';
           quotaExhausted = isProviderQuotaExhausted(message.error);
         } finally {
-          await knowledge?.client.disconnect().catch(() => undefined);
-          await repository?.client.disconnect().catch(() => undefined);
-          await external?.client?.disconnect().catch(() => undefined);
+          await capabilitySession?.close().catch(() => undefined);
         }
         message.created_at = new Date().toISOString();
         conversation.messages = [...conversation.messages, message];

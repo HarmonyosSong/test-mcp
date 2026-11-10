@@ -44,7 +44,7 @@ Odyssey 已具备网页 SSO 与 `DiagnosisAgent` 诊断能力，但知音楼数�
 | 收信宿主 | Compass 式薄桥 + Channel/TalMsg SDK；不上完整 OpenClaw；不手写 WSS 协议 |
 | 回信 | Node OAPI：`gettoken`、私聊 markdown、进度卡 create / push / close |
 | 会话范围 | **仅私聊**（`conversationType=1`）；群消息直接丢弃 |
-| 进度粒度 | **中**：收到 → 知识库 / 代码证据 / 外部知识 / 收集证据 → 生成报告 |
+| 进度粒度 | **中**：收到 → 客户端知识库 / 代码证据 / A2A 外部 Agent / 收集证据 → 生成报告 |
 | 控制命令 | `/new` 开新映射会话；`/stop` 取消当前诊断轮（`AbortSignal`） |
 | 并发 | 同员工串行；额外最多排队 **1** 条；再来则提示忙碌 |
 | 会话键 | `im:{appKey}:{workCode}` → 复用/创建一条 product conversation |
@@ -144,7 +144,7 @@ sequenceDiagram
 | 进队成功 / 建卡 | 已收到问题，正在处理 |
 | `tool-start`，工具名匹配知识检索 / knowledge / `resolve_*` / `search_*`（非外部） | 正在查阅知识库 |
 | `tool-start`，仓库 / 工作区 / repository / 源码读取类 | 正在读取代码证据 |
-| `tool-start`，外部知识 / external | 正在查阅外部知识 |
+| `tool-start`，Compass / A2A | 正在请求服务端 Agent |
 | 其它 `tool-start` | 正在收集证据 |
 | 持续出现 `text` 且本阶段无新的工具类进度 | 正在生成诊断报告 |
 | `completed` | 诊断完成（随后关卡） |

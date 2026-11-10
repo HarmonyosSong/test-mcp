@@ -186,7 +186,7 @@ export const SendMessageRequestSchema = z.object({
   content: z.string().trim().min(1).max(20_000),
 });
 export const UpdateConversationRequestSchema = z.object({
-  title: z.string().trim().min(1).max(120).nullable().default(null),
+  title: z.string().trim().min(1).max(120).nullable().optional(),
   model_override: z.string().trim().max(250).nullable().optional(),
 });
 

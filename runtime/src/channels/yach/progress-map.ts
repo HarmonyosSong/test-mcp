@@ -11,13 +11,6 @@ export function progressLabelForTool(toolName: string): string {
     return '正在查询远程日志';
   }
   if (
-    name.includes('external')
-    || name.includes('dev_knowledge')
-    || name.includes('dev-knowledge')
-  ) {
-    return '正在查阅外部知识';
-  }
-  if (
     name.includes('repository')
     || name.includes('workspace')
     || name.includes('read_file')

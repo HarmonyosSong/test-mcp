@@ -52,7 +52,6 @@ export const runtimeConfigSchema = z.object({
   legacyRepositoriesFile: z.string().default('.data/repositories.json'),
   legacySnapshotDir: z.string().default('.data/workspaces'),
   modelConfigFile: z.string().default('.data/model-config.json'),
-  externalKnowledgeConfigFile: z.string().optional(),
   knowledgeQueryLog: z.string().default('.data/knowledge-queries.jsonl'),
   caseArchiveDir: z.string().default('.data/knowledge-cases'),
   projectRoot: z.string().default(repositoryRoot),
@@ -98,6 +97,7 @@ export const runtimeConfigSchema = z.object({
   logcenterAppId: z.string().default(''),
   logcenterAppSecret: z.string().default(''),
   logcenterBaseUrl: z.string().default('https://logcenter-api.tal.com/api'),
+  logcenterTimeoutMs: z.coerce.number().int().min(100).max(120_000).default(15_000),
 });
 
 export type RuntimeConfig = z.infer<typeof runtimeConfigSchema> & {
@@ -116,7 +116,6 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     legacyRepositoriesFile: env.HARMONY_MASTRA_LEGACY_REPOSITORIES_FILE,
     legacySnapshotDir: env.HARMONY_MASTRA_LEGACY_SNAPSHOT_DIR,
     modelConfigFile: env.HARMONY_AGENT_MODEL_CONFIG_FILE,
-    externalKnowledgeConfigFile: env.HARMONY_AGENT_DEV_KNOWLEDGE_CONFIG ?? env.HARMONY_AGENT_EXTERNAL_KNOWLEDGE_CONFIG,
     knowledgeQueryLog: env.HARMONY_AGENT_KNOWLEDGE_QUERY_LOG,
     caseArchiveDir: env.HARMONY_AGENT_KNOWLEDGE_CASES_DIR,
     projectRoot: env.HARMONY_MASTRA_PROJECT_ROOT,
@@ -155,6 +154,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     logcenterAppId: env.HARMONY_AGENT_LOGCENTER_APP_ID,
     logcenterAppSecret: env.HARMONY_AGENT_LOGCENTER_APP_SECRET,
     logcenterBaseUrl: env.HARMONY_AGENT_LOGCENTER_BASE_URL,
+    logcenterTimeoutMs: env.HARMONY_AGENT_LOGCENTER_TIMEOUT_MS,
   });
   const projectRoot = resolve(repositoryRoot, config.projectRoot);
   const fromRoot = (path: string) => resolve(projectRoot, path);
@@ -182,7 +182,6 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     legacyRepositoriesFile: fromRoot(config.legacyRepositoriesFile),
     legacySnapshotDir: fromRoot(config.legacySnapshotDir),
     modelConfigFile: fromRoot(config.modelConfigFile),
-    externalKnowledgeConfigFile: config.externalKnowledgeConfigFile ? fromRoot(config.externalKnowledgeConfigFile) : undefined,
     knowledgeQueryLog: fromRoot(config.knowledgeQueryLog),
     caseArchiveDir: fromRoot(config.caseArchiveDir),
     knowledgeRoot: fromRoot(config.knowledgeRoot),

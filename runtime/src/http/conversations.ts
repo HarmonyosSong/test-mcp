@@ -9,7 +9,7 @@ import {
 } from '../domain/schemas.js';
 import { ProductNotFoundError, ProductStore } from '../product/store.js';
 import { DiagnosisAgent } from '../diagnosis/agent.js';
-import { runDiagnosisRound } from '../diagnosis/run-round.js';
+import { prepareDiagnosisRound, runDiagnosisRound } from '../diagnosis/run-round.js';
 import { CapabilityMcp } from '../capabilities/mcp.js';
 import type { ModelConfiguration } from '../model/configuration.js';
 import { RepositoryGitError, RepositoryNotFoundError } from '../capabilities/repository.js';
@@ -70,7 +70,10 @@ export function createConversationRoutes(
   routes.get('/conversations', async (context) => {
     const items = (await store.listConversations())
       .filter((item) => item.channel !== 'yach_im')
-      .map((item) => redactRecord(item, redact));
+      .map((item) => {
+        const { channel: _channel, ...publicItem } = item;
+        return redactRecord(publicItem, redact);
+      });
     return context.json(items);
   });
 
@@ -92,7 +95,8 @@ export function createConversationRoutes(
       const conversation = await store.createConversation({ title: parsed.data.title ?? '新会话', ...source });
       return context.json(publicView(redactRecord(conversation, redact)), 201);
     } catch (error) {
-      if (error instanceof RepositoryNotFoundError) return jsonError(error.message, 404);
+      if (error instanceof ProductNotFoundError) return jsonError('repository not found', 404);
+      if (error instanceof RepositoryNotFoundError) return jsonError('repository not found', 404);
       if (error instanceof RepositoryGitError) return jsonError(error.message, 422);
       throw error;
     }
@@ -121,7 +125,9 @@ export function createConversationRoutes(
     try {
       const conversation = await store.getConversation(context.req.param('id'));
       if (conversation.channel === 'yach_im') return jsonError('conversation not found', 404);
-      Object.assign(conversation, parsed.data, { updated_at: new Date().toISOString() });
+      if (parsed.data.title != null) conversation.title = parsed.data.title;
+      if (parsed.data.model_override !== undefined) conversation.model_override = parsed.data.model_override || null;
+      conversation.updated_at = new Date().toISOString();
       await saveConversation(conversation);
       return context.json(publicView(redactRecord(conversation, redact)));
     } catch (error) {
@@ -168,6 +174,13 @@ export function createConversationRoutes(
       return jsonError('上一条回复尚未完成，请稍后再发送', 409);
     }
     activeRuns.add(id);
+    let prepared;
+    try {
+      prepared = await prepareDiagnosisRound({ store, modelConfiguration, conversation, content: parsedInput.data.content });
+    } catch (error) {
+      activeRuns.delete(id);
+      throw error;
+    }
     const runController = new AbortController();
     const signal = AbortSignal.any([context.req.raw.signal, runController.signal]);
 
@@ -198,6 +211,7 @@ export function createConversationRoutes(
             capabilities,
             modelConfiguration,
             conversation,
+            prepared,
             content: parsedInput.data.content,
             abortSignal: signal,
             options: {

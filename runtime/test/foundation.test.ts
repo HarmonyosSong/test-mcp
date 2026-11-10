@@ -148,16 +148,6 @@ test('rejects invalid ports before server startup', () => {
   );
 });
 
-test('retains the legacy external development knowledge config environment variable', () => {
-  const config = loadRuntimeConfig({ HARMONY_AGENT_DEV_KNOWLEDGE_CONFIG: '.data/dev-knowledge.json' });
-  assert.equal(config.externalKnowledgeConfigFile, `${config.projectRoot}/.data/dev-knowledge.json`);
-  const alias = loadRuntimeConfig({
-    HARMONY_AGENT_DEV_KNOWLEDGE_CONFIG: '.data/legacy.json',
-    HARMONY_AGENT_EXTERNAL_KNOWLEDGE_CONFIG: '.data/alias.json',
-  });
-  assert.equal(alias.externalKnowledgeConfigFile, `${alias.projectRoot}/.data/legacy.json`);
-});
-
 test('loads knowledge retrieval and preview strategy settings from environment', () => {
   const config = loadRuntimeConfig({
     HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE: 'v2',

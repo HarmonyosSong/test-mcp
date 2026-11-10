@@ -15,12 +15,13 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 - 多轮对话和 SSE 流式回复；单进程 runtime 的中断状态修复与重启续聊已通过自动化和生产冒烟验证，多进程并发准入尚不支持。
 - 证据账本：正向根因只能引用本轮或历史工具实际观测到的源码/日志证据。
 - 本地 Markdown 知识库和声明式 `skills/*/SKILL.md`。
-- 可选外部开发知识 MCP，按显式产品覆盖配置路由；静态知识仅作线索，不作为故障现场证据。
+- 客户端本地 Markdown 知识库通过 Knowledge MCP 提供检索；云学习知识能力由后续 A2A 对端 Agent 提供，不在客户端直连第二套知识 MCP。
+- 可选 LogCenter / Aliyun SLS 日志目录与查询框架：已接入共享能力会话，支持超时和取消；真实平台联调待完成，返回日志当前仅作辅助信息，不进入证据账本。
 - 本地工作区只读检查，以及 Git 分支查询和 detached Commit 快照；本地目录绑定读取实时工作区，Git 会话读取固定 Commit 快照。
 - 正式支持 DeepSeek `deepseek-flash`；同时保留 OpenAI、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 配置入口作为实验/未验收选项。可配置不等于正式支持，当前 provider 范围和证据见迁移规格。
 - 会话、仓库、快照和证据状态保存在 runtime 的 LibSQL；模型配置仍保存在 owner-only 的 `.data/model-config.json`，旧 `.data` JSON 可通过迁移命令导入。
 - 知音楼网页 SSO：未登录不可用业务 API；应用挂在 `/xesapp-agent` 前缀下。设计见 [`spec/sso-login-design.md`](spec/sso-login-design.md)。
-- Compass A2A：P0 客户端与配置已落地；产品内工具挂载与调用流程尚未接入。规格与后续接入流程见 [`spec/compass-a2a-integration.md`](spec/compass-a2a-integration.md)。
+- 云学习服务端 Agent 通过 Compass A2A 对接；当前仓库已实现 P0 客户端和配置，聊天调用尚未接入。目标流程是客户端先初筛，用户确认本次出站摘要后再咨询服务端 Agent，返回结论由客户端交叉验证，并与本地证据分开呈现。客户端保留自己的本地知识库，不直连云学习 Knowledge MCP。规划见 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)，接入契约见 [`spec/compass-a2a-integration.md`](spec/compass-a2a-integration.md)。
 
 ## 技术栈
 
@@ -144,7 +145,6 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_KNOWLEDGE_ROOT` | `knowledge` | 知识 MCP 根目录 |
 | `HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE` | `legacy` | 知识召回模式：`legacy` 或实验性的 `v2`；`shadow` 尚未支持 |
 | `HARMONY_AGENT_KNOWLEDGE_PREVIEW_STRATEGY` | 随召回模式 | 知识正文预览策略：`legacy` 或 `ranked` |
-| `HARMONY_AGENT_DEV_KNOWLEDGE_CONFIG` | 未配置 | 可选外部开发知识 MCP 覆盖配置；工具仅在明确覆盖时挂载，详见 [`docs/mastra-external-knowledge.md`](docs/mastra-external-knowledge.md) |
 | `HARMONY_AGENT_KNOWLEDGE_QUERY_LOG` | `.data/knowledge-queries.jsonl` | 知识查询和诊断 outcome 的 JSONL 日志 |
 | `HARMONY_AGENT_KNOWLEDGE_CASES_DIR` | `.data/knowledge-cases` | 终态诊断案例归档目录 |
 | `HARMONY_AGENT_MODEL` | `deepseek:deepseek-flash` | 环境模式使用的正式支持模型；其他 provider/model 仍可配置但处于实验或未验收状态 |
@@ -155,10 +155,17 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_SSO_BASE_URL` | 空 | 知音楼 SSO 网关，如 `https://sso.zhiyinlou.com` |
 | `HARMONY_AGENT_SSO_APP_ID` | 空 | 平台下发的应用 ID |
 | `HARMONY_AGENT_SSO_APP_KEY` | 空 | 平台下发的应用密钥（禁止提交仓库） |
+| `HARMONY_AGENT_LOG_CATALOG` | `runtime/contracts/log-catalog/catalog.yaml` | 日志业务目录路径 |
+| `HARMONY_AGENT_LOGCENTER_APP_ID` | 空 | LogCenter 应用 ID；与 Secret 同时配置才挂载工具 |
+| `HARMONY_AGENT_LOGCENTER_APP_SECRET` | 空 | LogCenter 应用密钥，只在本地配置 |
+| `HARMONY_AGENT_LOGCENTER_BASE_URL` | `https://logcenter-api.tal.com/api` | 日志平台网关地址 |
+| `HARMONY_AGENT_LOGCENTER_TIMEOUT_MS` | `15000` | 单次日志 HTTP 请求超时，范围 100–120000 毫秒；随诊断轮取消 |
 
 网页设置写入 `.data/model-config.json`，文件权限为 `0600`。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key；Mastra 内部日志已关闭，应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证，不能据此保证所有日志都不含敏感内容。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
 
 知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续。仓库 MCP 按会话工作区启动：Git 仓库会绑定 detached Commit 快照，本地目录则读取授权根目录中的实时文件，诊断过程中工作区变化可能影响后续读取。知识检索和仓库代码检查需要 Python/uv 已安装，并已通过 `make setup` 安装 `mcp_server/` 依赖。
+
+LogCenter 当前处于框架完成、待真实联调阶段。AppID / AppSecret 留空即可使用其余功能；框架验收使用本机模拟 HTTP，不依赖日志平台权限。后续联调时在本地 `.env` 配置上表变量，并核对 Catalog 的业务坐标、查询条件、响应格式和权限。现有三个工具是 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`，不等于规划中的 `service_id` 服务发现或日志证据门禁，契约见 [`日志目录与查询规格`](spec/log-catalog-query-capability.md)。
 
 ## 仓库与快照
 
@@ -212,4 +219,4 @@ skills/       声明式诊断 Skill
 docs/         当前架构、迁移规格、运维文档和历史设计记录
 ```
 
-设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 和 [`docs/mastra-runtime-migration-spec.md`](docs/mastra-runtime-migration-spec.md)。
+设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)、[`docs/mastra-runtime-migration-spec.md`](docs/mastra-runtime-migration-spec.md) 和 [`docs/multi-capability-technical-design.md`](docs/multi-capability-technical-design.md)。多能力扩展的产品规划见 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)。

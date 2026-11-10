@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
@@ -156,3 +157,37 @@ test('progress map labels log tools separately from knowledge', () => {
   assert.equal(progressLabelForTool('search_cloud_logs'), '正在查询远程日志');
   assert.equal(progressLabelForTool('search_knowledge'), '正在查阅知识库');
 });
+
+for (const mode of ['cancel', 'timeout'] as const) {
+  test(`log requests stop on round ${mode}`, { timeout: 5_000 }, async () => {
+    let markRequested!: () => void;
+    const requested = new Promise<void>((resolve) => { markRequested = resolve; });
+    const server = createServer(() => markRequested());
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    const controller = new AbortController();
+    const tools = await createLogCatalogTools(loadRuntimeConfig({
+      HARMONY_AGENT_LOGCENTER_APP_ID: 'test-app',
+      HARMONY_AGENT_LOGCENTER_APP_SECRET: 'test-secret',
+      HARMONY_AGENT_LOGCENTER_BASE_URL: `http://127.0.0.1:${address.port}/api`,
+      HARMONY_AGENT_LOGCENTER_TIMEOUT_MS: mode === 'timeout' ? '100' : '3000',
+      HARMONY_AGENT_LOG_CATALOG: catalogPath,
+    }), { abortSignal: controller.signal });
+    assert.ok(tools);
+    try {
+      const request = tools.count_cloud_logs.execute!({
+        vendor: 'aliyun', region: 'cn-beijing', account: 'test-account',
+        collection: 'test-collection', topic: 'test-topic', time: '15m',
+      }, {} as never);
+      const rejected = assert.rejects(request, { name: mode === 'timeout' ? 'TimeoutError' : 'AbortError' });
+      await requested;
+      if (mode === 'cancel') controller.abort();
+      await rejected;
+    } finally {
+      controller.abort();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+}

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { ChatMessage, ConversationRecord } from '../domain/schemas.js';
 import type { CapabilityMcp } from '../capabilities/mcp.js';
+import { createRoundCapabilitySession, type CapabilitySession } from '../capabilities/session.js';
 import type { ModelConfiguration } from '../model/configuration.js';
 import type { ProductStore } from '../product/store.js';
 import { redactRecord, redactRecordInPlace, redactSensitiveText } from '../security/redaction.js';
@@ -29,6 +30,14 @@ export interface RunDiagnosisRoundInput {
   }) => void | Promise<void>;
   onEvent?: (event: DiagnosisStreamEvent) => void | Promise<void>;
   options?: RunDiagnosisRoundOptions;
+  prepared?: PreparedDiagnosisRound;
+}
+
+export interface PreparedDiagnosisRound {
+  conversation: ConversationRecord;
+  userMessage: ChatMessage;
+  assistantMessage: ChatMessage;
+  runId: string;
 }
 
 export interface RunDiagnosisRoundResult {
@@ -69,18 +78,11 @@ async function recordTerminalCase(
   ]);
 }
 
-/** Shared diagnosis round used by web SSE and Yach IM; no HTTP/SSE encoding here. */
-export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<RunDiagnosisRoundResult> {
-  const {
-    store,
-    diagnosisAgent,
-    capabilities,
-    modelConfiguration,
-    abortSignal,
-    onPrepared,
-    onEvent,
-    options = {},
-  } = input;
+/** Persist admission before Web sends HTTP 200 or starts any capability clients. */
+export async function prepareDiagnosisRound(
+  input: Pick<RunDiagnosisRoundInput, 'store' | 'modelConfiguration' | 'content' | 'conversation'>,
+): Promise<PreparedDiagnosisRound> {
+  const { store, modelConfiguration } = input;
   const redact = (text: string) => modelConfiguration.redact?.(text) ?? redactSensitiveText(text);
   const saveConversation = async (conversation: ConversationRecord) => {
     await store.saveConversation(redactRecordInPlace(conversation, redact));
@@ -122,41 +124,38 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
   await saveConversation(conversation);
 
   const runId = `run-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
+  return { conversation, userMessage, assistantMessage, runId };
+}
+
+/** Shared diagnosis round used by web SSE and Yach IM; no HTTP/SSE encoding here. */
+export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<RunDiagnosisRoundResult> {
+  const { store, diagnosisAgent, capabilities, modelConfiguration, abortSignal, onPrepared, onEvent, options = {} } = input;
+  const redact = (text: string) => modelConfiguration.redact?.(text) ?? redactSensitiveText(text);
+  const saveConversation = async (conversation: ConversationRecord) => {
+    await store.saveConversation(redactRecordInPlace(conversation, redact));
+  };
+  const { conversation, userMessage, assistantMessage, runId } = input.prepared ?? await prepareDiagnosisRound(input);
+  const content = userMessage.content;
   await onPrepared?.({ conversation, userMessage, assistantMessage, runId });
   let text = '';
-  let knowledgeClient: { disconnect(): Promise<void> } | undefined;
-  let repositoryClient: { disconnect(): Promise<void> } | undefined;
-  let externalKnowledgeClient: { disconnect(): Promise<void> } | undefined;
+  let capabilitySession: CapabilitySession | undefined;
   let terminal: 'completed' | 'failed' | null = null;
 
   try {
-    const knowledgeSession = await capabilities.createKnowledgeSession(conversation.id, assistantMessage.id);
-    knowledgeClient = knowledgeSession?.client;
-    let toolsets = knowledgeSession?.toolsets ?? {};
-    if (conversation.workspace_path) {
-      const repository = await capabilities.createRepositorySession(conversation.id, conversation.workspace_path);
-      repositoryClient = repository.client;
-      toolsets = { ...toolsets, ...repository.toolsets };
-    }
-    const externalKnowledge = await capabilities.createExternalKnowledgeTools?.(
-      [...conversation.messages.filter((message) => message.role === 'user').map((message) => message.content), content],
-    );
-    if (externalKnowledge) {
-      externalKnowledgeClient = externalKnowledge.client;
-      toolsets = { ...toolsets, external_knowledge: externalKnowledge.tools };
-    }
-    const logCatalog = await capabilities.createLogCatalogTools?.();
-    if (logCatalog) {
-      toolsets = { ...toolsets, log_catalog: logCatalog.tools };
-    }
+    capabilitySession = await createRoundCapabilitySession(capabilities, {
+      conversationId: conversation.id,
+      messageId: assistantMessage.id,
+      runId,
+      workspacePath: conversation.workspace_path,
+      abortSignal,
+    });
 
     for await (const event of diagnosisAgent.stream({
       conversation,
       content,
-      toolsets,
+      toolsets: capabilitySession.toolsets,
       abortSignal,
     })) {
-      await onEvent?.(event);
       if (event.type === 'text') {
         text += redact(event.delta);
       } else if (event.type === 'tool-start') {
@@ -203,6 +202,7 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
         await recordTerminalCase(options, conversation, assistantMessage.id, null, 'failed');
         terminal = 'failed';
       }
+      await onEvent?.(event);
     }
     if (!terminal) throw new Error('诊断流在终态事件前结束');
   } catch (error) {
@@ -229,9 +229,7 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
       terminal = 'failed';
     }
   } finally {
-    await knowledgeClient?.disconnect().catch(() => undefined);
-    await repositoryClient?.disconnect().catch(() => undefined);
-    await externalKnowledgeClient?.disconnect().catch(() => undefined);
+    await capabilitySession?.close().catch(() => undefined);
   }
 
   return {

@@ -1,12 +1,14 @@
 # 日志目录与查询能力规格
 
-> 状态：已批准实施P0/P1 实现中）  
+> 状态：P0/P1 框架和离线验证已具备；真实 LogCenter 联调待完成。
 > 日期：2026-11-06  
 > 范围：Mastra TypeScript runtime（`runtime/`）内的**可选日志查询能力** + **仓内日志分类目录（Catalog）**  
-> 关联：日志中心 / 云日志 skill（Cursor `logcenterskill`，协议与 API 参考）；外部知识可选挂载见 [`docs/mastra-external-knowledge.md`](../docs/mastra-external-knowledge.md)；Compass 分阶段能力见 [`compass-a2a-integration.md`](./compass-a2a-integration.md)  
+> 关联：日志中心 / 云日志 skill（`logcenterskill`，协议与 API 参考）；能力框架见 [`ARCHITECTURE.md`](../docs/ARCHITECTURE.md)；Compass 分阶段能力见 [`compass-a2a-integration.md`](./compass-a2a-integration.md)
 > 硬约束：**仅提供能力**；不修改现有排查/取证链路；不与现有工具抢语义或改其行为；EvidenceLedger / 根因编排留给后续接入方
 
 本文是 Troubleshoot Odyssey 中「查日志」能力的发布契约：解决**用户不知道 account / project / logstore / appid** 时，如何靠内置分类快速定位并查询。交付物是可挂载的工具 + Skill + Catalog；**不改**现有分层取证、报告校验与证据账本主流程。
+
+当前默认采用已有原生 Mastra Catalog/SLS 工具，由 `capabilities/session.ts` 统一管理挂载和轮次取消。日志凭证为空不影响其余功能，默认单次 HTTP 超时 15 秒，可通过 `HARMONY_AGENT_LOGCENTER_TIMEOUT_MS` 配置。框架测试只访问 mock 或本机 HTTP；查询参数、真实响应结构、权限与业务坐标仍待平台联调。规划中的 `service_id` MCP、PII 脱敏闭环和日志证据门禁尚未实施，不因现有框架测试通过而自动启用。
 
 ---
 
@@ -46,7 +48,7 @@
 | 项 | 决策 |
 | --- | --- |
 | 产品定位 | 查日志能力 = **可选、正交的数据源能力**；**仅提供能力**，具体取证链路不修改 |
-| 与现有工具关系 | 并存不冲突：粘贴 hilog 仍走 `parse_hilog`；知识/仓库/外部知识行为不变；本能力未配置则完全不出现 |
+| 与现有工具关系 | 粘贴 hilog 仍走 `parse_hilog`；本地知识/仓库行为保持现有契约；日志能力未配置则不出现。云学习知识由 A2A 对端管理 |
 | 排查链路 | **不修改**主诊断编排与 EvidenceLedger；后续同事若要接入取证，另开规格 |
 | Catalog 存放 | [`runtime/contracts/log-catalog/catalog.yaml`](../runtime/contracts/log-catalog/catalog.yaml)（可进 Git） |
 | Catalog 更新 | MVP：**改文件 + 发版/重启**；不接受必须热更新 |
@@ -107,6 +109,7 @@ runtime/contracts/log-catalog/
 | `HARMONY_AGENT_LOGCENTER_APP_ID` | 是 | 日志中心 Skill AppID |
 | `HARMONY_AGENT_LOGCENTER_APP_SECRET` | 是 | 日志中心 Skill AppSecret |
 | `HARMONY_AGENT_LOGCENTER_BASE_URL` | 否 | 可选；区分生产/测试网关 |
+| `HARMONY_AGENT_LOGCENTER_TIMEOUT_MS` | 否 | 单次 HTTP 超时；默认 15000，范围 100–120000 毫秒 |
 
 未配置 AppID/AppSecret → **不创建**日志 toolset（与外部知识「未配置不挂载」一致）。
 
@@ -207,7 +210,7 @@ Resolve 规则（实现必须遵守）：
 
 - 签名与网关调用逻辑可参考 logcenterskill，但应落在 `runtime/src/capabilities/log-center.ts`（或同级模块）内的 TypeScript 客户端，便于测试与预算包装。  
 - 允许后续抽共享 Python 库，但 **Agent 默认路径不依赖** 调用本机 `~/.logcenter/credentials.json`。  
-- 超时、重试、错误脱敏与外部知识适配层同级要求。
+- HTTP 请求使用轮次 AbortSignal 和可配置超时；不增加自动重试。日志正文的专用 PII 脱敏和证据接入按后续规格实施，当前截断不等于脱敏。
 
 ---
 
@@ -259,7 +262,8 @@ metadata:
 | --- | --- |
 | `runtime/src/config.ts` | 增加 catalog 路径与 logcenter 凭据字段 |
 | `runtime/src/capabilities/log-center.ts`（新） | HTTP 客户端 + createTool 包装 + Catalog 加载/resolve |
-| `runtime/src/capabilities/mcp.ts` 或 `run-round.ts` | 有配置时 merge 日志 toolset（命名建议 `log_catalog`） |
+| `runtime/src/capabilities/session.ts` | Web/IM/评测统一挂载 `log_catalog`；可选能力降级、工具冲突拒绝与每轮清理 |
+| `runtime/src/capabilities/mcp.ts` | 创建本地知识、仓库 MCP 和原生日志工具，接收本轮 AbortSignal |
 | `runtime/src/diagnosis/agent.ts` | **不得**改排查主约束/证据规则。仅允许：有日志工具时追加与外部知识同级的短提示（先 load `use-log-catalog`）；预算集合纳入新工具名。若评审要求零 prompt 改动，可只靠 Skill 可见性，不做主 prompt 追加 |
 | `skills/use-log-catalog/SKILL.md`（新） | 见 §6 |
 | `runtime/contracts/log-catalog/*`（新） | 见 §4 |

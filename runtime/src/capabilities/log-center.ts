@@ -213,10 +213,11 @@ export type LogCenterHttp = (input: {
   method: 'GET';
   url: string;
   headers: Record<string, string>;
+  signal?: AbortSignal;
 }) => Promise<{ status: number; body: unknown }>;
 
-async function defaultHttp(input: { method: 'GET'; url: string; headers: Record<string, string> }): Promise<{ status: number; body: unknown }> {
-  const response = await fetch(input.url, { method: input.method, headers: input.headers });
+const defaultHttp: LogCenterHttp = async (input) => {
+  const response = await fetch(input.url, { method: input.method, headers: input.headers, signal: input.signal });
   const text = await response.text();
   let body: unknown = text;
   try {
@@ -225,7 +226,7 @@ async function defaultHttp(input: { method: 'GET'; url: string; headers: Record<
     body = { raw: text.slice(0, 500) };
   }
   return { status: response.status, body };
-}
+};
 
 export class LogCenterClient {
   constructor(
@@ -233,6 +234,7 @@ export class LogCenterClient {
     private readonly appSecret: string,
     private readonly baseUrl: string,
     private readonly http: LogCenterHttp = defaultHttp,
+    private readonly options: { abortSignal?: AbortSignal; timeoutMs?: number } = {},
   ) {}
 
   private endpoint(path: string, params: Record<string, string | number | boolean>): string {
@@ -242,6 +244,9 @@ export class LogCenterClient {
   }
 
   private async request(path: string, params: Record<string, string | number | boolean>): Promise<Record<string, unknown>> {
+    this.options.abortSignal?.throwIfAborted();
+    const deadline = AbortSignal.timeout(this.options.timeoutMs ?? 15_000);
+    const signal = this.options.abortSignal ? AbortSignal.any([this.options.abortSignal, deadline]) : deadline;
     const url = this.endpoint(path, params);
     integrationInfo('logcenter', 'request start', {
       path,
@@ -255,6 +260,7 @@ export class LogCenterClient {
       method: 'GET',
       url,
       headers: signHeaders(this.appId, this.appSecret),
+    signal,
     });
     if (status === 403 || (typeof body === 'object' && body && (body as { code?: number }).code === 403)) {
       integrationWarn('logcenter', 'permission denied', { path, status });
@@ -355,7 +361,7 @@ const TargetFields = {
 
 export async function createLogCatalogTools(
   config: RuntimeConfig,
-  options?: { http?: LogCenterHttp; catalog?: LogCatalog },
+  options?: { http?: LogCenterHttp; catalog?: LogCatalog; abortSignal?: AbortSignal },
 ): Promise<{
   resolve_log_target: ReturnType<typeof createTool>;
   count_cloud_logs: ReturnType<typeof createTool>;
@@ -390,6 +396,7 @@ export async function createLogCatalogTools(
     config.logcenterAppSecret,
     config.logcenterBaseUrl || LOGCENTER_DEFAULT_BASE_URL,
     options?.http,
+    { abortSignal: options?.abortSignal, timeoutMs: config.logcenterTimeoutMs },
   );
 
   return {
