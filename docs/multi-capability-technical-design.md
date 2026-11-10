@@ -1,14 +1,14 @@
 # 多能力扩展技术设计
 
-> 版本：v2（对应多能力扩展规划 v8，2026-11-10）
+> 版本：v3（对应多能力扩展规划 v9，2026-11-10）
 > 状态：技术设计草案，待实施评审  
 > 上游规划：[`multi-capability-expansion-plan.md`](multi-capability-expansion-plan.md)  
 > 任务拆分：[`multi-capability-implementation-plan.md`](multi-capability-implementation-plan.md)
 > 相关契约：[`compass-a2a-integration.md`](../spec/compass-a2a-integration.md)、[`ARCHITECTURE.md`](ARCHITECTURE.md)
 
-本文把日志接入、多端代码、Compass A2A 联合排查和 Graphify 静态代码图转成可实现的 runtime 设计。规划文档负责架构决策和阶段顺序；本文负责模块、数据结构、调用流程、失败语义和测试边界。
+本文把日志接入、多端代码、A2A Agent 插槽、联合排查和 Graphify 静态代码图转成可实现的 runtime 设计。规划文档负责架构决策和阶段顺序；本文负责模块、数据结构、调用流程、失败语义和测试边界。
 
-当前仓库已有本地 Knowledge MCP、仓库 MCP、Compass A2A P0 客户端，以及 SSO 分支带入的原生 Mastra Aliyun SLS Catalog 查询工具。后者当前只返回辅助信息，不进入 EvidenceLedger；它与本文按 `service_id` 服务发现的日志 MCP 属于不同工具契约。两者的复用或并存关系应先完成实施任务 T0 的契约对齐。本文中的日志取证、`code_graph`、`ask_compass` 聊天工具、联合报告字段和用户确认流程均属于目标实现，不能当作当前已上线能力。
+当前仓库已有本地 Knowledge MCP、仓库 MCP、Compass A2A P0 客户端，以及 SSO 分支带入的原生 Mastra Aliyun SLS Catalog 查询工具。Compass 是第一个 A2A Agent Slot；后者当前只返回辅助信息，不进入 EvidenceLedger；它与本文按 `service_id` 服务发现的日志 MCP 属于不同工具契约。两者的复用或并存关系应先完成实施任务 T0 的契约对齐。本文中的日志取证、`code_graph`、远端 Agent Slot 聊天工具、联合报告字段和用户确认流程均属于目标实现，不能当作当前已上线能力。
 
 公共基础已先落到 `runtime/src/capabilities/session.ts`：Web、IM 和评测共享能力挂载、不可变轮次上下文、冲突检查、取消和清理。当前 LogCenter 沿用原生 Catalog/SLS 适配器并补齐超时与取消；真实平台联调后置。以下包含端绑定、结构化日志证据和受控联合排查的完整接口仍属目标设计，不能把公共基础实现等同于整份设计完成。
 
@@ -20,7 +20,7 @@
 2. 仓库 MCP 负责在绑定的客户端快照中读取真实源码。
 3. LogCenter MCP 负责按服务、环境、时间和关联标识读取服务端日志。
 4. `code_graph` 负责在同一代码快照的 Graphify 产物中导航组件、方法、文件和关系。
-5. Compass A2A 负责在用户授权后咨询云学习服务端 Agent。
+5. A2A Agent Slot 负责在用户授权后咨询已注册的远端 Agent；Compass 是第一个具体槽位。
 
 这些能力的证据地位不同：
 
@@ -30,7 +30,7 @@
 | 仓库 MCP | 当前快照中的源码观测 | 是，`kind: source` |
 | LogCenter MCP | 服务端日志观测 | 是，`kind: log`，但必须通过日志关联门禁 |
 | `code_graph` | 派生节点、边和导航关系 | 否；回读源码后才由仓库工具产生 `source` |
-| Compass A2A | 服务端 Agent 的结论和限制 | 否，独立保存为外部结论 |
+| A2A Agent Slot | 远端 Agent 的结论和限制 | 否，独立保存为外部结论 |
 
 以下能力不在本文范围内：客户端 hilog 自动采集、服务端代码仓库直接挂载到客户端、Graphify 在线重建或写回、自动修复、任意 Shell/构建/设备操作，以及跨多个代码仓库的同轮联合证据。
 
@@ -41,14 +41,14 @@ flowchart LR
     U[用户 / Web / IM] --> H[Hono API + SSE]
     H --> R[runDiagnosisRound]
     R --> O[Runtime Supervisor]
-    O --> A[客户端 DiagnosisAgent]
+    O --> A[统一 ClientDiagnosisAgent]
     A --> K[本地 Knowledge MCP]
     A --> S[仓库 MCP]
     A --> G[code_graph 只读适配器]
     A --> L[LogCenter MCP]
-    O -.计划满足且用户确认后.-> C[服务端调查分支 / ask_compass]
-    C --> X[Compass A2A Client]
-    X --> Y[云学习服务端 Agent]
+    O -.计划满足且用户确认后.-> C[远端 Agent Slot]
+    C --> X[A2A Slot Adapter]
+    X --> Y[远端 Agent]
     Y --> Z[服务端知识 / 代码 / 日志]
     G --> S
     A --> E[EvidenceLedger]
@@ -62,8 +62,9 @@ flowchart LR
 
 - Hono 负责产品路由、认证、CSRF、SSE 和用户确认接口。
 - `runDiagnosisRound` 负责一轮的准入、能力创建与销毁、终态持久化和取消。
-- `Runtime Supervisor` 负责轻量分流、分支启动、fan-in 聚合、handoff 上限、预算、取消和最终状态；A2A 只负责服务端任务通信。
-- 客户端 `DiagnosisAgent` 负责本地模型编排；能力的安全约束由 runtime wrapper 和服务端校验保证。
+- `Runtime Supervisor` 负责轻量分流、分支启动、fan-in 聚合、handoff 上限、预算、取消和最终状态；A2A 只负责远端 Agent 任务通信。
+- 统一 `ClientDiagnosisAgent` 负责 HarmonyOS、iOS、Android 的客户端模型编排；平台差异由会话 facet、Skill、知识排序和仓库适配承载，安全约束由 runtime wrapper 和服务端校验保证。
+- `AgentSlotRegistry` 管理远端 Agent 槽位；Compass 是第一个 A2A 实例，新增符合契约的远端 Agent 只增加槽位配置或注册信息，不复制客户端 Agent 和主编排。
 - `EvidenceLedger` 只接收实际源码和通过关联门禁的日志观测。
 - `ExternalFindingsStore` 或报告中的外部字段保存 A2A 结果，与 `EvidenceLedger` 分离。
 - ProductStore 是用户可见会话、报告、仓库绑定、确认请求和能力状态的事实来源。
@@ -190,6 +191,31 @@ interface ReadOnlyCapability {
 ```
 
 适配器不得把上游原始错误、凭证、任意路径或未脱敏日志文本写进工具事件。工具摘要和审计记录使用脱敏后的输入、结果摘要或摘要哈希。
+
+### 4.1 Agent Slot Registry 与 A2A 适配器
+
+远端 Agent 采用统一槽位契约。客户端三端不分别注册 Agent；它们都由同一个 `ClientDiagnosisAgent` 处理，`client_platform` 只影响会话上下文、Skill、知识排序和仓库能力。
+
+```ts
+type RemoteAgentSlot = {
+  slotId: string;
+  agentCardUrl: string;
+  role: 'server' | 'specialist' | 'domain';
+  capabilities: string[];
+  authRef: string;
+  timeoutMs: number;
+  maxOutputChars: number;
+  evidenceMode: 'external_findings';
+};
+
+interface AgentSlotRegistry {
+  resolve(slotId: string, context: CapabilityContext): Promise<RemoteAgentSlot>;
+  invoke(slot: RemoteAgentSlot, task: unknown, context: CapabilityContext): Promise<CapabilityResult>;
+  cancel(slot: RemoteAgentSlot, taskId: string, context: CapabilityContext): Promise<void>;
+}
+```
+
+接入一个新远端 Agent 的最小工作是：提供 Agent Card、实现 A2A 任务/结果协议、配置鉴权和取消语义，然后注册槽位策略。Runtime 统一负责发现、授权、脱敏、预算、超时、取消、结果限长和 `external_findings` 归档。远端 Agent 如果要读取新的本地数据、产生新的证据类型或修改报告状态，必须另行扩展 Runtime 契约，不能仅靠注册槽位绕过门禁。
 
 ## 5. Graphify 静态代码图
 
@@ -371,7 +397,7 @@ service binding confirmed
 
 以下面都必须使用同一脱敏规则：工具入参、工具摘要、证据快照、SSE、案例归档、知识查询日志和 Compass 审计。日志文本按“不可信数据”处理；Skill 提示只是软防线，输出上限、脱敏和外发门控才是硬防线。
 
-## 7. Compass A2A 受控联合排查
+## 7. A2A Agent Slot 受控联合排查
 
 ### 7.1 触发规则
 
@@ -381,6 +407,7 @@ Runtime 先做轻量分流，不要求客户端 Agent 先完成完整诊断。�
 type InvestigationPlan = {
   mode: 'local' | 'server' | 'parallel' | 'unknown';
   branches: Array<'client' | 'server'>;
+  remoteSlots: string[];
   reason: string;
   correlation_ready: boolean;
   max_handoff_rounds: number;
@@ -426,7 +453,7 @@ POST /api/conversations/:id/consultations/:consultationId/reject
 
 批准后由 runtime 依据已保存的 `outbound_text` 发起 A2A；不重新从模型消息拼接，不允许前端覆盖摘要。首版外发内容只包含当前轮用户问题的脱敏版本和必要的服务/环境/关联信息，不包含客户端源码、日志、Knowledge MCP 结果或工具原文。若未来开放附加材料，必须逐项展示并再次确认。
 
-一次批准绑定一个有界的服务端调查范围，而不是绑定单个服务端工具调用。服务端 Agent 在批准的服务、环境、关联标识、时间范围和预算内可以自主使用自己的知识、代码和日志继续探索；这些内部步骤不需要重复弹窗确认。若 Runtime 需要新增客户端材料、切换服务/环境、扩大时间范围或发起超出原范围的 handoff，必须创建新的 `ExternalConsultation` 并重新确认。
+一次批准绑定一个有界的远端 Agent 调查范围，而不是绑定单个远端工具调用。远端 Agent 在批准的服务、环境、关联标识、时间范围和预算内可以自主使用自己的知识、代码和日志继续探索；这些内部步骤不需要重复弹窗确认。若 Runtime 需要新增客户端材料、切换服务/环境、扩大时间范围或发起超出原范围的 handoff，必须创建新的 `ExternalConsultation` 并重新确认。
 
 用户等待服务端确认时，客户端分支可以继续执行；确认拒绝、超时或脱敏失败只阻止服务端分支，不应丢弃已经完成的客户端事实。服务端分支返回后由 Runtime 聚合两侧结果，必要时再发起一次有界 handoff，不得进入无限 Agent 对话。
 
@@ -649,7 +676,7 @@ uv run --project mcp_server pytest -q \
 | [`multi-capability-expansion-plan.md`](multi-capability-expansion-plan.md) | 架构决策、风险、阶段和产品验收目标 |
 | 本文 | 模块、数据、接口、生命周期、失败语义和工程测试 |
 | [`multi-capability-implementation-plan.md`](multi-capability-implementation-plan.md) | 有依赖关系的实施任务、交付边界和逐项验收 |
-| [`compass-a2a-integration.md`](../spec/compass-a2a-integration.md) | Compass A2A 传输和受控联合排查唯一契约 |
+| [`compass-a2a-integration.md`](../spec/compass-a2a-integration.md) | Compass 具体 A2A Slot 的传输和受控联合排查契约 |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 当前 runtime 分层和已实现能力 |
 | [`ROADMAP.md`](ROADMAP.md) | 产品路线和历史决策 |
 

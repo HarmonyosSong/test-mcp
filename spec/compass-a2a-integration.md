@@ -4,11 +4,11 @@
 > 范围：Mastra TypeScript runtime（`runtime/`）  
 > 关联：Compass A2A 1.0 JSON-RPC；本仓库 AG-UI/SSE 聊天链路；[`多能力扩展规划`](../docs/multi-capability-expansion-plan.md)；[`多能力扩展技术设计`](../docs/multi-capability-technical-design.md)
 
-本文是 Troubleshoot Odyssey 中 Compass A2A 的唯一接入契约。客户端保留自己的本地 Knowledge MCP；云学习知识由云学习服务端 Agent 管理，客户端通过 Compass A2A 调用该 Agent，不直连云学习 Knowledge MCP。
+本文是 Troubleshoot Odyssey 中 Compass 这个具体 A2A Agent Slot 的唯一接入契约。通用槽位边界见 [`multi-capability-technical-design.md`](../docs/multi-capability-technical-design.md#41-agent-slot-registry-与-a2a-适配器)。客户端只有一个统一的 `ClientDiagnosisAgent`，HarmonyOS、iOS 和 Android 通过会话端上下文处理差异；客户端保留自己的本地 Knowledge MCP，远端知识由对应远端 Agent 管理，客户端通过 A2A Slot 调用，不直连远端 Knowledge MCP。
 
 ## 1. 目标与阶段
 
-本仓库的 Mastra runtime 是 A2A 客户端和客户端问题诊断归属方；Compass 对端是云学习服务端 Agent，负责其服务端知识与排查流程。A2A 输出属于外部 Agent 结论，不是客户端的现场观测证据。
+本仓库的 Mastra runtime 是 A2A 客户端和统一客户端问题诊断归属方；Compass 对端是当前第一个远端 Agent，负责其知识与排查流程。A2A 输出属于外部 Agent 结论，不是客户端的现场观测证据。
 
 | 阶段 | 交付物 | 状态 |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ Runtime 字段：`a2aBaseUrl`、`a2aClientId`、`a2aToken`、`a2aWaitSeconds`。
 - 单测：`runtime/test/compass-a2a.test.ts`（Mock Agent Card + SSE）
 - 联调冒烟（手工，仅本地 Token）：Agent Card HTTP 200；短问 `SendStreamingMessage` 返回带 `TASK_STATE_COMPLETED` 与 artifact 文本的 SSE
 
-P0 **不**注册工具，**不**注入 `toolsets`，**不**改 `DiagnosisAgent` 指令。
+P0 **不**注册工具，**不**注入 `toolsets`，**不**改统一客户端 `ClientDiagnosisAgent` 的指令（当前 TypeScript 实现类名为 `DiagnosisAgent`）。
 
 ## 4. 后续使用与接入流程（P1–P2）
 
@@ -142,7 +142,7 @@ Runtime 层的最小结果形态为：
 用户 <-> Web (AG-UI SSE)
          |
          v
-   Mastra DiagnosisAgent
+   Mastra ClientDiagnosisAgent
          |  （未来）tool: ask_compass
          v
    CompassA2AClient  （P0 — 已有）

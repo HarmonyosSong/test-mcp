@@ -11,7 +11,7 @@ runtime/src/server.ts
 runtime/src/app.ts                  Hono 产品 API 路由
   |-- ProductStore                  LibSQL 产品数据
   |-- ModelConfiguration             provider/model/API Key 解析
-  |-- DiagnosisAgent                Mastra Agent + 流事件适配
+  |-- ClientDiagnosisAgent          统一多端 Mastra Agent + 流事件适配
   |     |-- EvidenceLedger           证据 ID、逐字引用、报告门禁
   |     |-- SkillRegistry             Markdown SKILL.md
   |     `-- toolsets                  本地知识、仓库和可选日志查询
@@ -20,7 +20,8 @@ runtime/src/app.ts                  Hono 产品 API 路由
   |-- capabilities/session.ts        按轮注册、上下文、取消、冲突检查和清理
   |     |-- capabilities/mcp.ts       Python FastMCP：本地知识与仓库读取
   |     `-- log-center.ts             原生 Mastra Catalog/SLS 工具（待真实联调）
-  `-- compass-a2a                     云学习 Agent 的 A2A 客户端（聊天未接线）
+  |-- AgentSlotRegistry              远端 Agent 槽位发现、策略和生命周期（规划）
+  `-- compass-a2a                     Compass 首个 A2A Slot 适配器（聊天未接线）
 ```
 
 `migration/legacy.ts` 与 MCP 服务彼此独立：前者导入旧产品数据，后者按诊断请求提供只读能力。
@@ -30,8 +31,8 @@ Mastra 负责 Agent 编排、模型调用和 runtime storage 生命周期；Hono
 ## 一轮诊断
 
 1. `POST /api/conversations/{id}/messages` 在单进程内按 conversation ID 串行准入，由 `prepareDiagnosisRound` 先持久化用户消息和 streaming 占位，再返回 HTTP 200 / SSE 并启动模型工作。初始写入失败返回服务端错误且释放准入。多进程部署前必须改用数据库 lease/CAS。
-2. Web、IM 和评测统一使用 `createRoundCapabilitySession`。Runtime 以不可变的 conversation/message/run ID、工作区和取消信号创建本地知识、仓库与可选 LogCenter 能力；知识不可用时降级，已绑定仓库初始化失败时中止取证并清理已创建的 client。Git 会话使用 immutable detached snapshot，本地目录读取允许根目录内的实时文件。配置缺失的日志工具不挂载。云学习 Agent 仍只保留 A2A 客户端，尚未注册聊天工具。
-3. `DiagnosisAgent` 使用安全的产品级文本历史；旧框架内部消息不会直接交给 Mastra。未完成的 assistant 消息和不完整工具对不重放。
+2. Web、IM 和评测统一使用 `createRoundCapabilitySession`。Runtime 以不可变的 conversation/message/run ID、工作区和取消信号创建本地知识、仓库与可选 LogCenter 能力；知识不可用时降级，已绑定仓库初始化失败时中止取证并清理已创建的 client。Git 会话使用 immutable detached snapshot，本地目录读取允许根目录内的实时文件。配置缺失的日志工具不挂载。统一 `ClientDiagnosisAgent` 覆盖 HarmonyOS、iOS、Android；Agent Slot Registry 与 Compass A2A 仍只保留适配器，尚未注册聊天工具。
+3. `ClientDiagnosisAgent` 使用安全的产品级文本历史（当前 TypeScript 实现类名为 `DiagnosisAgent`）；旧框架内部消息不会直接交给 Mastra。未完成的 assistant 消息和不完整工具对不重放。
 4. Mastra stream chunk 在 `diagnosis/agent.ts` 统一转换为文本、工具开始/结束、完成或失败事件。只有已注册的源码读取/搜索和可溯源 hilog 解析产生 EvidenceLedger 观测；本地知识和当前 SLS 查询结果都只是线索。A2A 返回的独立外部结论字段仍属待实现设计。
 5. 每个工具开始/结束状态和工具完成时的证据快照先写入产品数据库，再发送对应 SSE 事件。进程重启会保留已完成工具观察，并将正在运行的步骤修复为失败。
 6. Hono 将内部事件转换成前端已有的 `RUN_STARTED`、`TEXT_MESSAGE_*`、`TOOL_CALL_*`、`STATE_SNAPSHOT`、`RUN_FINISHED` 和 `RUN_ERROR` SSE 事件。

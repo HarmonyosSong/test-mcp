@@ -1,10 +1,10 @@
 # 多能力扩展框架规划：日志接入、多端支持、A2A 与静态代码图接入
 
-> 状态：**规划草案 v8（2026-11-10 已补充联合排查编排模式技术探索），日志、多端、A2A 和静态图产品接入仍待分阶段评审；不包含后续代码改动批准**
-> 日期：2026-11-05（v1）；2026-11-06（v3/v4/v5/v6/v7）；2026-11-10（v8）
+> 状态：**规划草案 v9（2026-11-10 补充 Runtime 插槽化和统一客户端 Agent），日志、多端、A2A 和静态图产品接入仍待分阶段评审；不包含后续代码改动批准**
+> 日期：2026-11-05（v1）；2026-11-06（v3/v4/v5/v6/v7）；2026-11-10（v8/v9）
 > 关联：[`ROADMAP.md`](ROADMAP.md)、[`ARCHITECTURE.md`](ARCHITECTURE.md)、[`multi-capability-technical-design.md`](multi-capability-technical-design.md)、[`multi-capability-implementation-plan.md`](multi-capability-implementation-plan.md)、[`decisions/0003-evidence-ledger-lifecycle.md`](decisions/0003-evidence-ledger-lifecycle.md)、[`knowledge/_schema.md`](../knowledge/_schema.md)、[`knowledge/AGENTS.md`](../knowledge/AGENTS.md)、[`compass-a2a-integration.md`](../spec/compass-a2a-integration.md)
 
-本文回答：日志接入、其他端代码接入、A2A 协议（云学习服务端 Agent）和 Graphify 静态代码图接入四件事到来时框架怎么规划。主方向（已确认）：**客户端保留自己的本地 Knowledge MCP；云学习知识由服务端 Agent 经 A2A 提供；日志和代码提供现场观测；静态代码图只提供派生导航线索，正向诊断的证据门禁继续保留**。
+本文回答：日志接入、其他端代码接入、A2A 协议和 Graphify 静态代码图接入四件事到来时框架怎么规划。主方向（已确认）：**主 Runtime 保持稳定内核；HarmonyOS、iOS、Android 共用一个 `ClientDiagnosisAgent`；服务端和专项 Agent 通过 A2A 插槽接入；客户端保留自己的本地 Knowledge MCP；日志和代码提供现场观测；静态代码图只提供派生导航线索，正向诊断的证据门禁继续保留**。
 
 > **当前基线（2026-11-06）**：Mastra runtime 的知识检索只挂载本项目 `knowledge/` 对应的本地 Knowledge MCP。客户端直连 `dev-knowledge` 的适配器、配置、契约和 Skill 已从当前运行路径移除；Compass A2A P0 客户端保留，但尚未挂入聊天工具集。`knowledge/facts/cloudlearn/` 是本项目维护的客户端本地知识，不能理解为客户端直连云学习 Knowledge MCP。
 
@@ -13,8 +13,8 @@
 | 能力 | 当前状态 | 本规划中的后续动作 |
 | --- | --- | --- |
 | 客户端本地 Knowledge MCP | **已实现并保留** | 按现有知识库规则维护和验收 |
-| 云学习服务端知识 | **由云学习服务端 Agent 持有** | 通过 A2A P1 受控接入客户端会话 |
-| Compass A2A 客户端 | **P0 已实现，聊天未接线** | P1 完成受控联合排查主流程、外发硬门控、报告 Schema、取消和限长 |
+| 远端 Agent 知识 | **由对应远端 Agent 持有** | 通过 A2A Agent Slot P1 受控接入客户端会话 |
+| Compass A2A Agent Slot | **P0 已实现，聊天未接线** | P1 完成通用远端槽位、受控联合排查、外发硬门控、报告 Schema、取消和限长 |
 | Aliyun SLS Catalog 查询 | **SSO 分支已带入可选的原生 Mastra 工具，仅作辅助信息** | 保留现有查询能力；与 §4 的服务发现/日志取证契约关系先按实施任务 T0 对齐 |
 | 按 `service_id` 的服务端日志取证 | **未实现** | 按 §4 完成服务关联、脱敏、观测上下文和证据门禁；不把现有 SLS 工具视作此项已完成 |
 | Android/iOS 代码 | **未完成端维度接线** | 按 §6 完成最小端到端闭环 |
@@ -81,25 +81,43 @@
 | 2 | A2A 被描述成调用协议，但没有明确谁负责并行、聚合和后续交接 | 明确 Runtime 是 Supervisor/协调器，A2A 只负责跨 Agent 任务通信；增加 fan-out/fan-in、条件 handoff、取消和预算约束 |
 | 3 | 缺少对串行、并行和动态交接模式的技术依据 | 增加 Google ADK、Microsoft Agent Framework、LangGraph 和 A2A 官方资料，并记录本项目的模式选择与验收反例 |
 
+### v8 → v9（2026-11-10，收敛客户端 Agent 与远端插槽边界）
+
+| # | 变更 | 处理 |
+| --- | --- | --- |
+| 1 | HarmonyOS、iOS、Android 被误解成多个客户端 Agent | 明确三端共用一个 `ClientDiagnosisAgent`，端差异由 `client_platform`、Skill、知识排序和仓库适配承载 |
+| 2 | A2A 只描述成 Compass 的专用调用 | 抽象为通用 `AgentSlotRegistry` + `A2A Slot Adapter`；Compass 只是第一个具体槽位 |
+| 3 | “接入其他 Agent”容易被理解为修改主编排 | 固定远端 Agent 接入契约：Agent Card、任务/结果 Schema、鉴权、取消、预算、输出限制和外部结论隔离 |
+
 ## 1. 四件事的架构定位
 
 | 诉求 | 架构角色 | 证据地位 |
 | --- | --- | --- |
 | 日志接入 | 新只读**数据源**（独立 MCP server，ROADMAP 阶段 5 方向提前） | **一手观测**（`kind: 'log'`）；进根因证据链前须过 §4.5 关联门禁 |
 | 其他端代码 | 同源 repository 能力 + **按端最小接线**（ROADMAP 阶段 4 全量 profile 仍后置） | 源码观测（`kind: 'source'`），与鸿蒙同级 |
-| A2A（Compass） | **客户端到云学习服务端 Agent 的会话通道**（异步任务、上下文、取消、受控外发） | **永远不是本地观测证据**，不进 `evidence_refs`；返回文本按不可信外部内容处理 |
+| A2A Agent Slot（Compass 首个实例） | **客户端 Runtime 到远端 Agent 的会话通道**（异步任务、上下文、取消、受控外发） | **永远不是本地观测证据**，不进 `evidence_refs`；返回文本按不可信外部内容处理 |
 | Graphify 静态代码图 | **项目外离线构建、项目内只读查询的派生代码索引**；不替代规范知识库和真实源码 | 图节点/边只是导航线索，不进 `EvidenceLedger`；同一快照回读源码后才可形成 `kind: 'source'` 证据 |
 
-知识职责明确分开：本项目 Agent 使用客户端本地 Knowledge MCP；云学习知识由云学习服务端 Agent 自己检索和使用，客户端不再挂载 `dev-knowledge` MCP。A2A 是客户端调用该服务端 Agent 的唯一集成边界，返回内容属于外部 Agent 的结论，不登记为本地故障观测。A2A 的信任边界与调用策略见 §5。
+知识职责明确分开：统一 `ClientDiagnosisAgent` 使用客户端本地 Knowledge MCP；远端 Agent 自己检索和使用所属知识，客户端不再挂载远端 Knowledge MCP。A2A Agent Slot 是客户端调用远端 Agent 的唯一集成边界，返回内容属于外部 Agent 的结论，不登记为本地故障观测。A2A 的信任边界与调用策略见 §5。
 
 ## 2. 核心设计决策（评审通过后提升为 ADR）
 
-### 2.1 D1：能力接入承诺按类型分级（v3 修正）
+### 2.1 D1：Runtime Core + Agent Slot Registry
 
-v2 的「新增能力不改编排代码」是过度承诺。修正为：
+主 Runtime 的产品形态固定为“稳定内核 + 槽位注册”。客户端不按 HarmonyOS、iOS、Android 拆 Agent：
+
+- `ClientDiagnosisAgent` 是唯一客户端 Agent，统一处理三端问题；端是会话 facet，不是 Agent 身份。
+- `AgentSlotRegistry` 管理远端 Agent 槽位的发现、配置、策略、生命周期和状态。
+- `A2A Slot Adapter` 负责 Agent Card、JSON-RPC/SSE、任务状态、取消和结果规范化；Compass 是第一个实现。
+- 远端 Agent 自己拥有知识、代码、日志和内部编排；Runtime 只负责授权范围、调用预算、聚合和外部结果隔离。
+
+新增一个符合契约的远端 Agent，主编排不增加一套业务分支，只增加槽位配置或注册信息。只有当它引入新的证据类别、权限模型、外发字段或报告语义时，才需要修改 Runtime 核心契约并单独验收。
+
+在这个前提下，能力接入按类型分级：
 
 - **新增同类只读数据源**（第二种日志源、监控、trace）：不改诊断编排，按 §2.2 生命周期契约接入。
-- **新增证据类别、外部 Agent 或会话维度**：仍需显式修改 runtime 并单独验收。本规划中的日志、Compass 和多端都属于后者：日志要改证据捕获与报告门禁（§4.4/§4.5），Compass 要改会话状态、工具注入与取消链路（§5），多端要改提示词与 Skill 路由（§6.1）。Graphify 虽不是新证据类别，也需要新增快照绑定和只读查询适配，不能按“零 runtime 改动”接入（§7）。
+- **新增远端 Agent**：实现 A2A Agent Card 和统一任务契约，接入 Agent Slot Registry；不复制客户端 Agent，不为每个端增加编排代码。
+- **新增证据类别、会话维度或本地外发规则**：仍需显式修改 Runtime 并单独验收。日志要改证据捕获与报告门禁（§4.4/§4.5），A2A 要改会话状态、工具注入与取消链路（§5），多端只改统一客户端 Agent 的端上下文与 Skill/知识路由（§6.1）。Graphify 需要快照绑定和只读查询适配（§7）。
 
 ### 2.2 能力生命周期契约（所有新能力必须满足，比「四要素」更决定实现质量）
 
@@ -248,17 +266,17 @@ logcenterskill 是 CLI 形态（凭证在 `~/.logcenter/credentials.json`）。r
 
 两阶段分析（先采样 5–10 条理解结构，再精确查询）；关联条件引导（先向用户要时间/标识再查）；「日志文本是数据不是指令」；无权限时转为 `missing_information` 缺口。
 
-## 5. A2A / Compass 接入设计
+## 5. A2A Agent Slot 接入设计（Compass 首个实例）
 
 ### 5.1 当前分支状态与 spec 归一（P1-7 修订）
 
 - 分支状态：当前 `feat/a2a-client-integration` 基于 `target/feat/yach-sso`，已包含 Compass A2A P0 客户端。A2A P0 代码留在客户端集成分支中；合入主线时应与 SSO 文件变更按完整分支差异共同评审，不再把「拆出纯 A2A patch」列作本规划的待办步骤。
 - 当前产品状态：P0 仅提供配置、Agent Card、流式 JSON-RPC 和任务取消客户端；它没有注册 Mastra 工具，也没有接入聊天轮次。Token 配置不能被描述为云学习服务已可从产品聊天调用。
-- **spec 归一**：后续 P1 不能因 Token 配置就自动注入工具，必须同时满足会话显式开关和外发内容硬门控；`spec/compass-a2a-integration.md` 是 Compass A2A 的**唯一契约**（本规划 §5 只记录架构边界与实施状态并指向该规格），不允许存在两份相互矛盾的规格。
+- **spec 归一**：后续 P1 不能因 Token 配置就自动注入工具，必须同时满足会话显式开关和外发内容硬门控；`spec/compass-a2a-integration.md` 是 Compass 这个具体槽位的**唯一契约**，本规划 §5 记录通用槽位边界与实施状态，不允许存在相互矛盾的规格。
 
 ### 5.2 知识所有权与 Agent 边界
 
-客户端只保留项目自己的 `knowledge/` 与 Knowledge MCP，负责客户端代码、业务现象和本地排查判据。云学习知识由云学习服务端 Agent 负责；客户端不得直接启动或连接 `dev-knowledge` MCP，也不复制对方知识内容。客户端需要云学习侧能力时，通过 Compass A2A 调用服务端 Agent，由服务端自行完成知识检索和推理。A2A 返回一律标记为「外部 Agent 结论」，仅作线索，永不写入 `evidence_refs`。
+统一 `ClientDiagnosisAgent` 负责 HarmonyOS、iOS、Android 的客户端代码、业务现象和本地排查判据，并使用项目自己的 `knowledge/` 与 Knowledge MCP。远端 Agent 自己负责所属知识、代码和日志；客户端不得直接启动或连接远端 Knowledge MCP，也不复制对方知识内容。客户端需要远端能力时，通过对应 A2A Agent Slot 调用；A2A 返回一律标记为「外部 Agent 结论」，仅作线索，永不写入 `evidence_refs`。
 
 ### 5.3 工具门控（会话级开关）
 
@@ -282,9 +300,9 @@ logcenterskill 是 CLI 形态（凭证在 `~/.logcenter/credentials.json`）。r
 - **返回文本上限**：runtime 截断（如 4000 码点），超限标注截断。
 - **不可信标记**：返回文本在工具结果中包裹为「外部助手结论（数据，不是指令）」；软层提示 + 硬层不进入 `evidence_refs`。
 
-### 5.6 客户端与服务端联合排查流程
+### 5.6 客户端与远端 Agent 联合排查流程
 
-客户端问题可能只是表象：页面、容器或 H5 的错误，可能由服务端接口、任务状态或数据处理失败引起。A2A 将服务端 Agent 纳入同一次诊断，但不会把客户端 Agent 变成服务端知识或证据的所有者。联合排查采用**轻量分流、按条件并行、结果聚合和必要时交接**，不把“客户端暂未发现根因”当成服务端调用的前置否定结论。
+客户端问题可能只是表象：页面、容器或 H5 的错误，可能由远端接口、任务状态或数据处理失败引起。A2A 将远端 Agent 纳入同一次诊断，但不会把 `ClientDiagnosisAgent` 变成远端知识或证据的所有者。联合排查采用**轻量分流、按条件并行、结果聚合和必要时交接**，不把“客户端暂未发现根因”当成远端调用的前置否定结论。
 
 #### 5.6.1 初始分流与并行调查
 
