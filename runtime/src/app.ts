@@ -8,6 +8,7 @@ import type { RuntimeConfig } from './config.js';
 import { createMastra } from './mastra.js';
 import { createRuntimeDatabase } from './migration/legacy.js';
 import { createConversationRoutes } from './http/conversations.js';
+import { createAuthRoutes } from './http/auth.js';
 import { ProductStore } from './product/store.js';
 import { ModelConfiguration } from './model/configuration.js';
 import { createModelRoutes } from './http/models.js';
@@ -18,9 +19,17 @@ import { SkillRegistry } from './diagnosis/skills.js';
 import { DiagnosisAgent } from './diagnosis/agent.js';
 import { MODEL_CONTEXT_WINDOWS, MODEL_PRICES, REPOSITORY_MCP_TOOL_NAMES } from './model/metadata.js';
 import { redactSensitiveText } from './security/redaction.js';
+import {
+  LocalIdentityProvider,
+  SSOIdentityProvider,
+  requireIdentity,
+  type AuthVariables,
+  type IdentityProvider,
+} from './auth/index.js';
+import { isYachImConfigured, YachChannel } from './channels/yach/index.js';
 
 export interface RuntimeApp {
-  app: Hono;
+  app: Hono<{ Variables: AuthVariables }>;
   mastra: ReturnType<typeof createMastra>;
   store: ProductStore;
   modelConfiguration: ModelConfiguration;
@@ -28,6 +37,8 @@ export interface RuntimeApp {
   capabilities: CapabilityMcp;
   skills: SkillRegistry;
   diagnosisAgent: DiagnosisAgent;
+  identityProvider: IdentityProvider;
+  yachChannel: YachChannel | null;
 }
 
 export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeApp> {
@@ -54,23 +65,41 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
     const skills = new SkillRegistry(config.skillsDir);
     await skills.load();
     const diagnosisAgent = new DiagnosisAgent(modelConfiguration, skills, mastra);
-    const app = new Hono();
-    app.onError((error, context) => {
+    const identityProvider: IdentityProvider =
+      config.authMode === 'local'
+        ? new LocalIdentityProvider({ publicBaseUrl: config.publicBaseUrl })
+        : new SSOIdentityProvider({
+            publicBaseUrl: config.publicBaseUrl,
+            appPrefix: config.appPrefix,
+            ssoBaseUrl: config.ssoBaseUrl,
+            ssoAppId: config.ssoAppId,
+            ssoAppKey: config.ssoAppKey,
+          });
+
+    const root = new Hono<{ Variables: AuthVariables }>();
+    root.onError((error, context) => {
       console.error(modelConfiguration.redact(redactSensitiveText(error.message)));
       return context.json({ detail: 'Internal Server Error' }, 500);
     });
-    app.notFound((context) => context.json({ detail: 'Not Found' }, 404));
-    app.use('*', cors({
+    root.notFound((context) => context.json({ detail: 'Not Found' }, 404));
+    root.use('*', cors({
       origin: config.corsOrigins,
       allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['*'],
+      allowHeaders: ['*', 'X-CSRF-Token', 'Content-Type', 'Accept'],
       credentials: true,
     }));
 
+    const app = new Hono<{ Variables: AuthVariables }>().basePath(config.appPrefix);
+    app.route('/', createAuthRoutes(identityProvider, config.authMode));
     app.get('/api/health', (context) =>
-      context.json({ status: 'ok', mode: modelConfiguration.enabled ? 'model' : 'demo', model: modelConfiguration.status().model_name, provider: modelConfiguration.status().provider_name }),
+      context.json({
+        status: 'ok',
+        mode: modelConfiguration.enabled ? 'model' : 'demo',
+        model: modelConfiguration.status().model_name,
+        provider: modelConfiguration.status().provider_name,
+      }),
     );
-
+    app.use('/api/*', requireIdentity(identityProvider));
     app.get('/api/meta', async (context) => context.json({
       mode: modelConfiguration.enabled ? 'model' : 'demo',
       model: modelConfiguration.status().model_name,
@@ -80,7 +109,6 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       context_windows: MODEL_CONTEXT_WINDOWS,
       model_prices: MODEL_PRICES,
     }));
-
     app.route('/api', createConversationRoutes(store, diagnosisAgent, capabilities, modelConfiguration, {
       knowledgeQueryLog: config.knowledgeQueryLog,
       caseArchiveDir: config.caseArchiveDir,
@@ -99,18 +127,52 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
 
     if (config.serveWeb) {
       const webRoot = resolve(config.projectRoot, config.webDist);
-      app.use('/assets/*', serveStatic({ root: webRoot }));
+      const appPrefix = config.appPrefix;
+      // Vite emits absolute URLs like /xesapp-agent/assets/*.js. serveStatic joins
+      // root + req.path, so strip the app prefix or it looks under web/dist/xesapp-agent/.
+      app.use(
+        '/assets/*',
+        serveStatic({
+          root: webRoot,
+          rewriteRequestPath: (path) =>
+            path.startsWith(appPrefix) ? path.slice(appPrefix.length) || '/' : path,
+        }),
+      );
       app.get('*', async (context) => {
-        if (context.req.path.startsWith('/api/')) return context.notFound();
+        const path = context.req.path;
+        if (path.includes('/api/') || path.includes('/auth/')) return context.notFound();
         try {
-          return new Response(await readFile(resolve(webRoot, 'index.html')), { headers: { 'content-type': 'text/html; charset=utf-8' } });
+          return new Response(await readFile(resolve(webRoot, 'index.html')), {
+            headers: { 'content-type': 'text/html; charset=utf-8' },
+          });
         } catch {
           return context.text('Web build not found. Run npm --prefix web run build.', 503);
         }
       });
     }
 
-    return { app, mastra, store, modelConfiguration, repositories, capabilities, skills, diagnosisAgent };
+    root.route('/', app);
+    const yachChannel = isYachImConfigured(config)
+      ? new YachChannel({
+        config,
+        store,
+        diagnosisAgent,
+        capabilities,
+        modelConfiguration,
+      })
+      : null;
+    return {
+      app: root,
+      mastra,
+      store,
+      modelConfiguration,
+      repositories,
+      capabilities,
+      skills,
+      diagnosisAgent,
+      identityProvider,
+      yachChannel,
+    };
   } catch (error) {
     await Promise.allSettled([
       ...(storeForCleanup ? [Promise.resolve().then(() => storeForCleanup!.close())] : []),

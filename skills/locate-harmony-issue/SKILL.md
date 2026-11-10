@@ -43,11 +43,6 @@ resolve it, and inspect current source only when an authorized workspace is avai
 check only after the corresponding source/search tool completed; a knowledge locator or source
 catalog is not a code observation.
 
-When `resolve_external_knowledge` and `read_external_knowledge` are available, load
-`use-dev-knowledge-mcp` before using them. Follow that Skill for product routing, resolution states,
-recommended-section reads, truncation handling, and the boundary between static knowledge and
-current incident evidence. External calls share the same per-turn budget.
-
 Two situations change this default path:
 
 - **A concrete technical anchor is already present.** A full stack trace, file path, symbol, or a

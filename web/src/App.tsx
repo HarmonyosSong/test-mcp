@@ -1,6 +1,7 @@
 import { Activity, AlertTriangle, MessageSquare, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
+import { logout, useServerSession } from './auth';
 import { ChatPanel } from './components/chat/ChatPanel';
 import { NewConversationDialog } from './components/chat/NewConversationDialog';
 import { ChatThread } from './components/chat/ChatThread';
@@ -40,6 +41,7 @@ interface Notice {
 }
 
 function App() {
+  const session = useServerSession();
   const [connection, setConnection] = useState<ConnectionState>('checking');
   const [meta, setMeta] = useState<MetaResponse>(EMPTY_META);
   const [showModelSettings, setShowModelSettings] = useState(false);
@@ -148,15 +150,27 @@ function App() {
     [loadWorkspace],
   );
 
+  const handleLogout = useCallback(() => {
+    void logout()
+      .then((logoutUrl) => {
+        window.location.assign(logoutUrl);
+      })
+      .catch(() => {
+        setNotice({ kind: 'error', message: '退出登录失败，请稍后重试。' });
+      });
+  }, []);
+
   return (
     <div className="app-shell">
       <div className="body-row">
         <Sidebar
           connection={connection}
           refreshing={refreshing}
+          identityLabel={session?.identity.displayName || session?.identity.subject}
           onRefresh={() => void refreshWorkspace()}
           onModelSettings={openModelSettings}
           onRepositorySettings={openRepositorySettings}
+          onLogout={session?.authMode === 'sso' ? handleLogout : undefined}
         >
           <ChatPanel
             summaries={chat.summaries}

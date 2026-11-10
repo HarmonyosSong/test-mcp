@@ -1,8 +1,8 @@
+import { apiPath } from '../auth/paths';
+import { authenticatedFetch } from '../auth/session-fetch';
 import type { ChatConversation } from '../types';
 import { reduceChatEvent } from './chatReducer';
 import { isAguiEvent, type AguiEvent, type AguiEventType } from './events';
-
-const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 
 export class AguiUnavailableError extends Error {
   constructor(message: string) {
@@ -58,7 +58,7 @@ async function readEventStream<TState>(
 ): Promise<TState> {
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await authenticatedFetch(url, {
       method: 'POST',
       headers: {
         Accept: 'text/event-stream',
@@ -139,7 +139,7 @@ export async function streamChatMessage(
   } = {},
 ): Promise<ChatConversation> {
   return readEventStream<ChatConversation>(
-    `${API_BASE}/api/conversations/${conversationId}/messages`,
+    apiPath(`/conversations/${conversationId}/messages`),
     { content },
     {
       signal: options.signal,

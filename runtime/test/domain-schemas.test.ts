@@ -122,7 +122,7 @@ test('request schemas normalize text and expose Python None defaults as null', a
     title: null, workspace_path: null, repository_id: null, branch: null,
   });
   assert.deepEqual(SendMessageRequestSchema.parse({ content: '  hello  ' }), { content: 'hello' });
-  assert.deepEqual(UpdateConversationRequestSchema.parse({}), { title: null });
+  assert.deepEqual(UpdateConversationRequestSchema.parse({}), {});
 });
 
 test('model config validates credential-free HTTP URLs and key mode', () => {

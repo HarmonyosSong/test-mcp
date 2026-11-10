@@ -124,6 +124,7 @@ test("product store owns conversation CRUD and repairs stale streaming messages"
   assert.deepEqual((await restarted.listConversations())[0], {
     id: "conv-store",
     title: "store test",
+    channel: "web",
     repository_name: null,
     message_count: followed.messages.length,
     updated_at: followed.updated_at,

@@ -144,6 +144,8 @@ const JsonObjectSchema = z.record(z.string(), z.unknown());
 export const ConversationRecordSchema = z.object({
   id: z.string().default(defaultConversationId),
   title: z.string().default('新会话'),
+  channel: z.enum(['web', 'yach_im']).optional().default('web'),
+  owner_subject: nullableText.optional().default(null),
   workspace_path: nullableText.optional().default(null),
   repository_id: nullableText.optional().default(null),
   repository_name: nullableText.optional().default(null),
@@ -160,6 +162,7 @@ export const ConversationRecordSchema = z.object({
 export const ConversationSummarySchema = z.object({
   id: z.string(),
   title: z.string(),
+  channel: z.enum(['web', 'yach_im']).optional().default('web'),
   repository_name: nullableText.default(null),
   message_count: z.number().int(),
   updated_at: isoDateTime,
@@ -183,7 +186,7 @@ export const SendMessageRequestSchema = z.object({
   content: z.string().trim().min(1).max(20_000),
 });
 export const UpdateConversationRequestSchema = z.object({
-  title: z.string().trim().min(1).max(120).nullable().default(null),
+  title: z.string().trim().min(1).max(120).nullable().optional(),
   model_override: z.string().trim().max(250).nullable().optional(),
 });
 

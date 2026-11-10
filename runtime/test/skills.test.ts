@@ -26,22 +26,6 @@ Use the source instructions.
   assert.deepEqual(skill.requiredTools, ['lookup_issue']);
 });
 
-test('dev knowledge Skill is available only when both external tools are mounted', async () => {
-  const registry = new SkillRegistry(resolve(process.cwd(), '../skills'));
-  await registry.load();
-
-  assert.equal(
-    registry.available('chat', new Set(['resolve_external_knowledge', 'load_skill']))
-      .some((skill) => skill.name === 'use-dev-knowledge-mcp'),
-    false,
-  );
-  assert.equal(
-    registry.available('chat', new Set(['resolve_external_knowledge', 'read_external_knowledge', 'load_skill']))
-      .some((skill) => skill.name === 'use-dev-knowledge-mcp'),
-    true,
-  );
-});
-
 test('diagnosis report Skill keeps knowledge leads out of unsupported root-cause candidates', async () => {
   const registry = new SkillRegistry(resolve(process.cwd(), '../skills'));
   await registry.load();
@@ -57,15 +41,11 @@ test('diagnosis report Skill keeps knowledge leads out of unsupported root-cause
   assert.match(skill.instructions, /the verdict may be at most `probable`/);
 });
 
-test('location and external knowledge Skills preserve conflicting static rules as unresolved', async () => {
+test('location Skill preserves conflicting static rules as unresolved', async () => {
   const registry = new SkillRegistry(resolve(process.cwd(), '../skills'));
   await registry.load();
   const locate = registry.get('locate-harmony-issue');
-  const externalKnowledge = registry.get('use-dev-knowledge-mcp');
-
   assert.ok(locate);
-  assert.ok(externalKnowledge);
   assert.match(locate.instructions, /If relevant entries conflict, do not choose one as the current rule/);
   assert.match(locate.instructions, /Do not fill a location with a list of plausible components/);
-  assert.match(externalKnowledge.instructions, /When local entries disagree about a rule, preserve the disagreement/);
 });

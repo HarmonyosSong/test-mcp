@@ -689,63 +689,6 @@ test('failed diagnosis preserves partial assistant text without accepting a repo
   }
 });
 
-test('external knowledge setup failure closes earlier MCP sessions and releases the conversation turn', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'mastra-conversation-setup-failure-'));
-  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
-  const conversation = await store.createConversation();
-  let knowledgeDisconnects = 0;
-  let externalSetupAttempts = 0;
-  const app = createConversationRoutes(
-    store,
-    {
-      async *stream() {
-        yield {
-          type: 'completed', text: '已完成', report: null, evidence_state: {}, messages_state: [],
-          input_tokens: null, output_tokens: null, tool_usage: {},
-        };
-      },
-    } as unknown as DiagnosisAgent,
-    {
-      async createKnowledgeSession() {
-        return { client: { async disconnect() { knowledgeDisconnects += 1; } }, toolsets: {} };
-      },
-      async createExternalKnowledgeTools() {
-        externalSetupAttempts += 1;
-        if (externalSetupAttempts === 1) throw new Error('external MCP initialization failed');
-        return null;
-      },
-    } as unknown as CapabilityMcp,
-    { enabled: true, redact: (value: string) => value } as unknown as ModelConfiguration,
-    observabilityOptions(directory),
-  );
-  const request = () => app.request(`/conversations/${conversation.id}/messages`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ content: '检查问题' }),
-  });
-
-  try {
-    const failed = await request();
-    assert.equal(failed.status, 200);
-    const failedStream = await failed.text();
-    assert.match(failedStream, /event: RUN_ERROR/);
-    assert.match(failedStream, /external MCP initialization failed/);
-    assert.equal(knowledgeDisconnects, 1);
-    const savedAfterFailure = await store.getConversation(conversation.id);
-    assert.equal(savedAfterFailure.messages.at(-1)?.status, 'failed');
-    assert.equal(savedAfterFailure.messages.at(-1)?.report, null);
-
-    const recovered = await request();
-    assert.equal(recovered.status, 200);
-    assert.match(await recovered.text(), /event: RUN_FINISHED/);
-    assert.equal(knowledgeDisconnects, 2);
-    assert.equal((await store.getConversation(conversation.id)).messages.at(-1)?.status, 'completed');
-  } finally {
-    await store.close();
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
 test('first message titles longer than 30 characters end with an ellipsis', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'mastra-conversation-title-'));
   const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
