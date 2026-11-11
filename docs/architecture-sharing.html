@@ -163,11 +163,11 @@
         <div class="diagram-grid">
           <article class="diagram-card">
             <div class="diagram-card-header">
-              <h3>01 · Agent 调度与结果汇总</h3>
-              <p>Supervisor 选择调查范围，客户端和远端 Agent 分别返回结果</p>
+              <h3>01 · 当前诊断主流程</h3>
+              <p>先完成客户端观察与固定快照取证，再按条件审批并接续 Compass</p>
             </div>
             <div class="diagram-frame">
-              <img src="diagrams/01-system-architecture.svg" alt="Agent 调度流程图，展示 Runtime Supervisor 如何分派客户端和服务端任务，以及两侧结果如何返回并汇总。" />
+              <img src="diagrams/01-system-architecture.svg" alt="当前诊断主流程：请求准入后，客户端先观察日志并读取固定源码快照；需要服务端协查时先审批，再经 Compass 获取独立外部结论，最后保存本地或联合报告。" />
             </div>
           </article>
           <article class="diagram-card">
