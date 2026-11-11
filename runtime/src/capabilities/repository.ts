@@ -17,8 +17,11 @@ import { dirname, resolve } from 'node:path';
 import {
   RepositoryRecordSchema,
   RepositorySnapshotSchema,
+  RepositoryVersionMapSchema,
   type RepositoryRecord,
   type RepositorySnapshot,
+  type ClientPlatform,
+  type RepositoryVersionMapping,
 } from '../domain/schemas.js';
 
 const execFile = promisify(execFileCallback);
@@ -40,6 +43,8 @@ export interface RegisterRepositoryRequest {
   name: string;
   url: string;
   default_branch?: string | null;
+  platform?: ClientPlatform | null;
+  version_map?: Record<string, RepositoryVersionMapping>;
 }
 
 export interface RepositoryBranch {
@@ -167,6 +172,59 @@ export function validateRepositoryUrl(url: string): void {
   throw new RepositoryGitError('repository URL must use HTTP(S), SSH, or SCP syntax');
 }
 
+export class RepositoryBranchError extends RepositoryGitError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'RepositoryBranchError';
+  }
+}
+
+export class SnapshotNotReadyError extends RepositoryGitError {
+  readonly code = 'snapshot_not_ready';
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(`snapshot_not_ready: ${message}`, options);
+    this.name = 'SnapshotNotReadyError';
+  }
+}
+
+export class SourceSelectionError extends Error {
+  constructor(
+    readonly code: 'platform_unconfirmed' | 'version_required' | 'version_mapping_missing' | 'version_mapping_ambiguous',
+    message: string,
+  ) {
+    super(`${code}: ${message}`);
+    this.name = 'SourceSelectionError';
+  }
+}
+
+/** 只能使用现场已确认平台和精确版本；不允许回退默认分支、最新分支或跨平台仓库。 */
+export function selectRepositoryVersion(
+  records: readonly RepositoryRecord[],
+  observedPlatform: string | null | undefined,
+  observedVersion: string | null | undefined,
+): { repository: RepositoryRecord; mapping: RepositoryVersionMapping } {
+  if (!observedPlatform || !['harmony', 'android', 'ios'].includes(observedPlatform)) {
+    throw new SourceSelectionError('platform_unconfirmed', '实际平台尚未由关联日志确认');
+  }
+  const version = observedVersion?.trim();
+  if (!version) throw new SourceSelectionError('version_required', '关联日志没有提供精确客户端版本');
+  const matches = records.flatMap((repository) => {
+    if (repository.platform !== observedPlatform) return [];
+    const mapping = Object.hasOwn(repository.version_map, version)
+      ? repository.version_map[version]
+      : undefined;
+    return mapping ? [{ repository: cloneRecord(repository), mapping }] : [];
+  });
+  if (matches.length === 0) {
+    throw new SourceSelectionError('version_mapping_missing', `没有 ${observedPlatform} ${version} 的精确仓库映射`);
+  }
+  if (matches.length !== 1) {
+    throw new SourceSelectionError('version_mapping_ambiguous', `多个仓库同时声明 ${observedPlatform} ${version}，无法唯一选择`);
+  }
+  return matches[0]!;
+}
+
 export class RepositoryCapability {
   private readonly mirrorDir: string;
   private readonly snapshotDir: string;
@@ -230,6 +288,7 @@ export class RepositoryCapability {
     if (!branches.some((branch) => branch.name === defaultBranch)) {
       throw new RepositoryGitError(`remote branch not found: ${defaultBranch}`);
     }
+    await this.validateVersionMappings(parsed.url, request.version_map ?? {});
 
     for (const existing of this.records.values()) {
       if (existing.name.toLocaleLowerCase('en-US') === parsed.name.toLocaleLowerCase('en-US') || existing.url === parsed.url) {
@@ -240,9 +299,53 @@ export class RepositoryCapability {
       name: parsed.name,
       url: parsed.url,
       default_branch: defaultBranch,
+      platform: request.platform ?? null,
+      version_map: request.version_map ?? {},
     });
     this.records.set(record.id, record);
     return cloneRecord(record);
+  }
+
+  async updateDefaultBranch(
+    repositoryId: string,
+    branch: string,
+    persist?: (record: RepositoryRecord) => Promise<unknown>,
+  ): Promise<RepositoryRecord> {
+    return this.updateRepositoryConfiguration(repositoryId, { default_branch: branch }, persist);
+  }
+
+  async updateRepositoryConfiguration(
+    repositoryId: string,
+    input: {
+      default_branch?: string;
+      platform?: ClientPlatform | null;
+      version_map?: Record<string, RepositoryVersionMapping>;
+    },
+    persist?: (record: RepositoryRecord) => Promise<unknown>,
+  ): Promise<RepositoryRecord> {
+    const record = await this.get(repositoryId);
+    const normalizedBranch = input.default_branch?.trim();
+    if (normalizedBranch !== undefined) {
+      await this.validateBranch(normalizedBranch);
+      const branches = await this.remoteBranches(record.url, normalizedBranch);
+      if (!branches.some((item) => item.name === normalizedBranch)) {
+        throw new RepositoryBranchError(`remote branch not found: ${normalizedBranch}`);
+      }
+    }
+    if (input.version_map !== undefined) {
+      await this.validateVersionMappings(record.url, input.version_map);
+    }
+    const updated = RepositoryRecordSchema.parse({
+      ...record,
+      ...(normalizedBranch !== undefined ? { default_branch: normalizedBranch } : {}),
+      ...(input.platform !== undefined ? { platform: input.platform } : {}),
+      ...(input.version_map !== undefined ? { version_map: input.version_map } : {}),
+      updated_at: new Date().toISOString(),
+    });
+    // 所有分支先验证，再一次落库；失败时不替换内存记录，也不影响既有快照。
+    await persist?.(updated);
+    this.records.set(updated.id, updated);
+    return cloneRecord(updated);
   }
 
   async listBranches(
@@ -331,6 +434,48 @@ export class RepositoryCapability {
     });
   }
 
+  async selectPreparedSnapshot(
+    observedPlatform: string | null | undefined,
+    observedVersion: string | null | undefined,
+  ): Promise<{ repository: RepositoryRecord; snapshot: RepositorySnapshot }> {
+    const selected = selectRepositoryVersion(await this.list(), observedPlatform, observedVersion);
+    const snapshot = await this.getPreparedSnapshot(
+      selected.repository.id,
+      selected.mapping.branch,
+      selected.mapping.expected_commit,
+    );
+    return { repository: selected.repository, snapshot };
+  }
+
+  /** 只使用已准备的精确本地快照，不 fetch，也不把远端最新分支当成目标版本。 */
+  async getPreparedSnapshot(
+    repositoryId: string,
+    branch: string,
+    expectedCommit: string,
+  ): Promise<RepositorySnapshot> {
+    const record = await this.get(repositoryId);
+    await this.validateBranch(branch);
+    if (!COMMIT_PATTERN.test(expectedCommit)) {
+      throw new SnapshotNotReadyError('expected commit 格式无效');
+    }
+    const workspace = resolve(this.snapshotDir, record.id, expectedCommit);
+    this.assertWithin(this.snapshotDir, workspace, 'snapshot path');
+    const metadataPath = resolve(workspace, '.harmony-agent-snapshot.json');
+    if (!(await this.pathExists(workspace)) || !(await this.pathExists(metadataPath))) {
+      throw new SnapshotNotReadyError(`${record.id}@${expectedCommit} 尚未准备本地快照`);
+    }
+    try {
+      const stored = await this.readSnapshotMetadata(metadataPath);
+      if (stored.requested_ref !== branch || stored.resolved_commit !== expectedCommit) {
+        throw new SnapshotNotReadyError('本地快照的分支或 commit 与精确映射不一致');
+      }
+      return await this.validateSnapshot(stored);
+    } catch (error) {
+      if (error instanceof SnapshotNotReadyError) throw error;
+      throw new SnapshotNotReadyError(`${record.id}@${expectedCommit} 本地快照校验失败`, { cause: error });
+    }
+  }
+
   async validateSnapshot(snapshot: RepositorySnapshot): Promise<RepositorySnapshot> {
     const record = await this.get(snapshot.repository_id);
     const parsed = RepositorySnapshotSchema.parse(snapshot);
@@ -386,6 +531,20 @@ export class RepositoryCapability {
     }
   }
 
+  private async validateVersionMappings(
+    url: string,
+    mappings: Record<string, RepositoryVersionMapping>,
+  ): Promise<void> {
+    const parsed = RepositoryVersionMapSchema.parse(mappings);
+    for (const [version, mapping] of Object.entries(parsed)) {
+      await this.validateBranch(mapping.branch);
+      const branches = await this.remoteBranches(url, mapping.branch);
+      if (!branches.some((branch) => branch.name === mapping.branch)) {
+        throw new RepositoryBranchError(`remote branch not found for version ${version}: ${mapping.branch}`);
+      }
+    }
+  }
+
   private async remoteDefaultBranch(url: string): Promise<string> {
     const output = await this.git('ls-remote', '--symref', url, 'HEAD');
     for (const line of output.stdout.split(/\r?\n/)) {
@@ -411,12 +570,12 @@ export class RepositoryCapability {
 
   private async validateBranch(branch: string): Promise<void> {
     if (!branch || branch.startsWith('-') || [...branch].some((character) => character.charCodeAt(0) < 32)) {
-      throw new RepositoryGitError('invalid branch name');
+      throw new RepositoryBranchError('invalid branch name');
     }
     try {
       await this.git('check-ref-format', `refs/heads/${branch}`);
     } catch (error) {
-      throw new RepositoryGitError('invalid branch name', { cause: error });
+      throw new RepositoryBranchError('invalid branch name', { cause: error });
     }
   }
 

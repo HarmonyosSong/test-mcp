@@ -10,6 +10,9 @@ import {
   RepositoryAlreadyExistsError,
   RepositoryCapability,
   RepositoryGitError,
+  SnapshotNotReadyError,
+  SourceSelectionError,
+  selectRepositoryVersion,
 } from '../src/capabilities/repository.js';
 
 const execFile = promisify(execFileCallback);
@@ -76,6 +79,40 @@ test('registers a local remote, discovers branches, and prepares a reusable deta
     const reused = await state.repositories.prepareSnapshot(record.id, 'main');
     assert.equal(reused.workspace_path, snapshot.workspace_path);
     assert.equal(reused.resolved_commit, snapshot.resolved_commit);
+  } finally {
+    await rm(state.root, { recursive: true, force: true });
+  }
+});
+
+test('更新默认分支前验证远端，持久化失败或分支不存在时保留原记录和旧快照', async () => {
+  const state = await fixture();
+  try {
+    const record = await state.repositories.register({ name: 'xesapp', url: `file://${state.remote}` });
+    const snapshot = await state.repositories.prepareSnapshot(record.id, 'main');
+    let persisted = '';
+    const updated = await state.repositories.updateDefaultBranch(
+      record.id,
+      ' feature/student-order ',
+      async (value) => { persisted = value.default_branch; },
+    );
+    assert.equal(updated.default_branch, 'feature/student-order');
+    assert.equal(persisted, 'feature/student-order');
+    assert.equal((await state.repositories.get(record.id)).default_branch, 'feature/student-order');
+    assert.equal(snapshot.requested_ref, 'main');
+    assert.equal(snapshot.resolved_commit, state.commit);
+
+    await assert.rejects(
+      () => state.repositories.updateDefaultBranch(record.id, 'missing'),
+      /remote branch not found/,
+    );
+    assert.equal((await state.repositories.get(record.id)).default_branch, 'feature/student-order');
+    await assert.rejects(
+      () => state.repositories.updateDefaultBranch(record.id, 'main', async () => {
+        throw new Error('database unavailable');
+      }),
+      /database unavailable/,
+    );
+    assert.equal((await state.repositories.get(record.id)).default_branch, 'feature/student-order');
   } finally {
     await rm(state.root, { recursive: true, force: true });
   }
@@ -199,6 +236,99 @@ test('rejects snapshot metadata paths that point outside the expected snapshot d
     const metadata = JSON.parse(await readFile(metadataPath, 'utf8')) as Record<string, unknown>;
     await writeFile(metadataPath, JSON.stringify({ ...metadata, workspace_path: state.root }));
     await assert.rejects(() => state.repositories.validateSnapshot(snapshot), /metadata.*identity/);
+  } finally {
+    await rm(state.root, { recursive: true, force: true });
+  }
+});
+
+test('平台与精确版本映射只选择唯一记录，不回退默认分支或未知平台', async () => {
+  const state = await fixture();
+  try {
+    const record = await state.repositories.register({
+      name: 'xesapp',
+      url: `file://${state.remote}`,
+      platform: 'harmony',
+      version_map: {
+        'fixture-1.0': { branch: 'main', expected_commit: state.commit },
+      },
+    });
+    assert.equal(record.platform, 'harmony');
+    assert.equal(record.version_map['fixture-1.0']?.expected_commit, state.commit);
+    assert.equal(selectRepositoryVersion([record], 'harmony', 'fixture-1.0').repository.id, record.id);
+    for (const [platform, version, code] of [
+      [null, 'fixture-1.0', 'platform_unconfirmed'],
+      ['unknown', 'fixture-1.0', 'platform_unconfirmed'],
+      ['harmony', null, 'version_required'],
+      ['harmony', '9.9.9', 'version_mapping_missing'],
+      ['android', 'fixture-1.0', 'version_mapping_missing'],
+    ] as const) {
+      assert.throws(
+        () => selectRepositoryVersion([record], platform, version),
+        (error: unknown) => error instanceof SourceSelectionError && error.code === code,
+      );
+    }
+    const duplicate = { ...record, id: 'repo-duplicate', name: 'duplicate' };
+    assert.throws(
+      () => selectRepositoryVersion([record, duplicate], 'harmony', 'fixture-1.0'),
+      (error: unknown) => error instanceof SourceSelectionError && error.code === 'version_mapping_ambiguous',
+    );
+  } finally {
+    await rm(state.root, { recursive: true, force: true });
+  }
+});
+
+test('精确快照复用已准备的固定 commit，远端不可用时不 fetch 也不回退', async () => {
+  const state = await fixture();
+  try {
+    const record = await state.repositories.register({
+      name: 'xesapp',
+      url: `file://${state.remote}`,
+      platform: 'harmony',
+      version_map: {
+        'fixture-1.0': { branch: 'main', expected_commit: state.commit },
+        'fixture-2.0': { branch: 'feature/student-order', expected_commit: state.featureCommit },
+      },
+    });
+    const prepared = await state.repositories.prepareSnapshot(record.id, 'main');
+    await rm(state.remote, { recursive: true, force: true });
+
+    const selected = await state.repositories.selectPreparedSnapshot('harmony', 'fixture-1.0');
+    assert.deepEqual(selected.snapshot, prepared);
+    assert.equal(selected.snapshot.resolved_commit, state.commit);
+    await assert.rejects(
+      () => state.repositories.selectPreparedSnapshot('harmony', 'fixture-2.0'),
+      (error: unknown) => error instanceof SnapshotNotReadyError && error.code === 'snapshot_not_ready',
+    );
+  } finally {
+    await rm(state.root, { recursive: true, force: true });
+  }
+});
+
+test('版本映射更新原子持久化，非法分支不改记录，旧会话快照保持不变', async () => {
+  const state = await fixture();
+  try {
+    const record = await state.repositories.register({ name: 'xesapp', url: `file://${state.remote}` });
+    const snapshot = await state.repositories.prepareSnapshot(record.id, 'main');
+    let persisted = false;
+    const updated = await state.repositories.updateRepositoryConfiguration(record.id, {
+      platform: 'android',
+      version_map: {
+        'fixture-2.0': { branch: 'feature/student-order', expected_commit: state.featureCommit },
+      },
+    }, async () => { persisted = true; });
+    assert.equal(persisted, true);
+    assert.equal(updated.platform, 'android');
+    assert.equal(updated.default_branch, 'main');
+    assert.equal(snapshot.resolved_commit, state.commit);
+
+    await assert.rejects(() => state.repositories.updateRepositoryConfiguration(record.id, {
+      version_map: { broken: { branch: 'missing', expected_commit: state.commit } },
+    }), /remote branch not found/);
+    assert.deepEqual((await state.repositories.get(record.id)).version_map, updated.version_map);
+    await assert.rejects(() => state.repositories.updateRepositoryConfiguration(record.id, {
+      platform: 'ios',
+    }, async () => { throw new Error('database unavailable'); }), /database unavailable/);
+    assert.equal((await state.repositories.get(record.id)).platform, 'android');
   } finally {
     await rm(state.root, { recursive: true, force: true });
   }

@@ -4,6 +4,7 @@ import test from 'node:test';
 import { createRepositoryRoutes } from '../src/http/repositories.js';
 import {
   RepositoryAlreadyExistsError,
+  RepositoryBranchError,
   RepositoryGitError,
   RepositoryNotFoundError,
   type RepositoryCapability,
@@ -63,6 +64,95 @@ test('repository route preserves branch query bounds and snapshot status contrac
     body: '{',
   });
   assert.equal(invalidBody.status, 422);
+});
+
+test('默认分支更新先校验并持久化，保留请求和错误状态边界', async () => {
+  const record = {
+    id: 'repo-1', name: 'project', url: 'https://example.com/project.git',
+    default_branch: 'releaseV/20261103', created_at: '2026-11-04T12:00:00.000Z',
+    updated_at: '2026-11-11T12:00:00.000Z',
+  };
+  let persisted = 0;
+  let requestedBranch = '';
+  const app = createRepositoryRoutes({
+    async updateDefaultBranch(id: string, branch: string, persist: (value: typeof record) => Promise<void>) {
+      assert.equal(id, 'repo-1');
+      requestedBranch = branch;
+      await persist(record);
+      return record;
+    },
+  } as unknown as RepositoryCapability, {
+    async saveRepository() { persisted += 1; },
+  } as unknown as ProductStore);
+  const updated = await app.request('/repositories/repo-1', {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ default_branch: 'releaseV/20261103' }),
+  });
+  assert.equal(updated.status, 200);
+  assert.deepEqual(await updated.json(), record);
+  assert.equal(requestedBranch, 'releaseV/20261103');
+  assert.equal(persisted, 1);
+
+  const invalid = await app.request('/repositories/repo-1', {
+    method: 'PATCH', body: JSON.stringify({ default_branch: '' }),
+  });
+  assert.equal(invalid.status, 422);
+  const extra = await app.request('/repositories/repo-1', {
+    method: 'PATCH', body: JSON.stringify({ default_branch: 'main', url: 'https://attacker.invalid/repo.git' }),
+  });
+  assert.equal(extra.status, 422);
+  assert.equal(persisted, 1);
+
+  const missingBranchRoutes = createRepositoryRoutes({
+    async updateDefaultBranch() { throw new RepositoryBranchError('remote branch not found: missing'); },
+  } as unknown as RepositoryCapability, {} as ProductStore);
+  const missing = await missingBranchRoutes.request('/repositories/repo-1', {
+    method: 'PATCH', body: JSON.stringify({ default_branch: 'missing' }),
+  });
+  assert.equal(missing.status, 422);
+  assert.match((await missing.json() as { detail: string }).detail, /remote branch not found/);
+
+  const unavailableRoutes = createRepositoryRoutes({
+    async updateDefaultBranch() { throw new RepositoryGitError('remote unavailable'); },
+  } as unknown as RepositoryCapability, {} as ProductStore);
+  const unavailable = await unavailableRoutes.request('/repositories/repo-1', {
+    method: 'PATCH', body: JSON.stringify({ default_branch: 'main' }),
+  });
+  assert.equal(unavailable.status, 502);
+});
+
+test('仓库平台与版本映射通过同一受保护配置接口原子保存', async () => {
+  const record = {
+    id: 'repo-1', name: 'project', url: 'https://example.com/project.git',
+    default_branch: 'main', platform: 'android',
+    version_map: { 'fixture-1.0': { branch: 'main', expected_commit: 'a'.repeat(40) } },
+    created_at: '2026-11-04T12:00:00.000Z', updated_at: '2026-11-11T12:00:00.000Z',
+  };
+  let persisted = 0;
+  const app = createRepositoryRoutes({
+    async updateRepositoryConfiguration(id: string, input: unknown, persist: (value: typeof record) => Promise<void>) {
+      assert.equal(id, 'repo-1');
+      assert.deepEqual(input, { platform: 'android', version_map: record.version_map });
+      await persist(record);
+      return record;
+    },
+  } as unknown as RepositoryCapability, {
+    async saveRepository() { persisted += 1; },
+  } as unknown as ProductStore);
+  const response = await app.request('/repositories/repo-1', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ platform: 'android', version_map: record.version_map }),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), record);
+  assert.equal(persisted, 1);
+
+  const empty = await app.request('/repositories/repo-1', {
+    method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(empty.status, 422);
+  assert.equal(persisted, 1);
 });
 
 test('repository list returns the full registered repository records', async () => {

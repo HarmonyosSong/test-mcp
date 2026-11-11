@@ -3,11 +3,12 @@ import { ZodError } from 'zod';
 
 import {
   RepositoryAlreadyExistsError,
+  RepositoryBranchError,
   RepositoryCapability,
   RepositoryGitError,
   RepositoryNotFoundError,
 } from '../capabilities/repository.js';
-import { CreateSnapshotRequestSchema, RegisterRepositoryRequestSchema } from '../domain/schemas.js';
+import { CreateSnapshotRequestSchema, RegisterRepositoryRequestSchema, UpdateRepositoryRequestSchema } from '../domain/schemas.js';
 import { ProductNotFoundError, ProductStore } from '../product/store.js';
 import { invalidJsonError, queryValidationError, requestValidationError } from './errors.js';
 import { redactSensitiveText } from '../security/redaction.js';
@@ -39,6 +40,34 @@ export function createRepositoryRoutes(
     } catch (error) {
       if (error instanceof RepositoryAlreadyExistsError) return errorResponse(error.message, 409);
       if (error instanceof RepositoryGitError) return errorResponse(`仓库连接失败：${error.message}`, 502);
+      throw error;
+    }
+  });
+
+  routes.patch('/repositories/:id', async (context) => {
+    try {
+      let body: unknown;
+      try { body = await context.req.json(); } catch { return invalidJsonError(); }
+      const parsed = UpdateRepositoryRequestSchema.safeParse(body);
+      if (!parsed.success) return requestValidationError(parsed.error.issues);
+      const record = parsed.data.platform === undefined && parsed.data.version_map === undefined
+        ? await capability.updateDefaultBranch(
+          context.req.param('id'),
+          parsed.data.default_branch!,
+          (updated) => store.saveRepository(updated),
+        )
+        : await capability.updateRepositoryConfiguration(
+          context.req.param('id'),
+          parsed.data,
+          (updated) => store.saveRepository(updated),
+        );
+      return context.json(record);
+    } catch (error) {
+      if (error instanceof RepositoryNotFoundError || error instanceof ProductNotFoundError) {
+        return errorResponse('repository not found', 404);
+      }
+      if (error instanceof RepositoryBranchError) return errorResponse(`默认分支无效：${error.message}`, 422);
+      if (error instanceof RepositoryGitError) return errorResponse(`分支校验失败：${error.message}`, 502);
       throw error;
     }
   });
