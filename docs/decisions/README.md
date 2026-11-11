@@ -1,6 +1,6 @@
 # 技术决策记录
 
-当前受支持的产品 Agent 与 HTTP 请求路径已切换到 Mastra；旧 Python Agent/FastAPI 的项目清单和锁文件已移除，其源码仅保留为历史参考。Mastra 全量迁移的整体验收仍未完成。下列 ADR 仍定义证据、知识和成本策略，但其中引用的 Python `agent/`/`server/` 路径是决策形成时的实现上下文；当前实现映射和剩余验收以 [`../mastra-runtime-migration-spec.md`](../mastra-runtime-migration-spec.md) 为准。
+当前产品 Agent 与 HTTP 请求路径由 Mastra TypeScript Runtime 承载，旧 Python Agent/FastAPI 源码仅是历史参考。下列 ADR 仍定义证据、知识和成本策略，其中旧路径和旧测试数字属于决策形成时的上下文；当前实现见 [`../ARCHITECTURE.md`](../ARCHITECTURE.md)，当前编排见 [`../orchestration-layer-design.md`](../orchestration-layer-design.md)。
 
 一个决策一篇，ADR 轻量格式：背景 → 考察过的选项 → 决策 → 触发条件 → 验收。
 决策一旦记录不删改；被推翻时新写一篇并在旧篇标注 superseded。

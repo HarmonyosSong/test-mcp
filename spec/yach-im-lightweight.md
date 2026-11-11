@@ -28,7 +28,7 @@ Odyssey 已具备网页 SSO 与 `DiagnosisAgent` 诊断能力，但知音楼数�
 |---|---|---|
 | 网页 SSO | `HARMONY_AGENT_SSO_*` | 独立；IM **不**走 Cookie/CSRF |
 | 数字伙伴 IM | `HARMONY_AGENT_YACH_*` | **本文** |
-| Compass A2A | `HARMONY_AGENT_A2A_*` | Odyssey **出站**调 Compass；不是 IM 入站，第一期不接线 |
+| Compass A2A | `HARMONY_AGENT_A2A_*` | Odyssey **出站**调 Compass；不是 IM 入站通道，审批与外发仍由 Supervisor 独立控制 |
 
 ### 1.4 为何必须用知音楼 SDK 收信
 

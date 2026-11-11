@@ -1,6 +1,6 @@
-# 知音楼 SSO 登录接入设计方案（Mastra runtime 迁移版）
+# 知音楼 SSO 登录与本地免登设计
 
-> 状态：已按方案落地编码（以实现与测试为准；本文件保留设计说明）  
+> 状态：已实现；本文保留当前认证契约和安全边界
 > 日期：2026-11-05  
 > 目标：未登录禁止使用诊断工作台；登录后每次业务请求持续鉴权  
 > 范围：仅网页 SSO 认证，不含数字伙伴 IM、不含会话按人工号隔离  
@@ -12,16 +12,14 @@
 
 ## 1. 背景与目标
 
-产品 Agent 与 HTTP 已迁到 [`runtime/`](../runtime/)（Mastra + Hono）。当前 `web` + `runtime` **没有任何登录**：打开页面即可调用 `/api/*`（含聊天 SSE、模型配置等）。
+产品 Agent 与 HTTP 由 [`runtime/`](../runtime/)（Mastra + Hono）承载。`server` 模式下，未登录不能调用业务 API；Cookie 会话、CSRF、前端 `SessionGate` 和每次请求鉴权已经落地。`local` 模式用于 loopback 本机开发，不要求企业登录。
 
-`feat/yach_sso` 曾在旧 Python `server/` 完整落地知音楼网页 SSO。本轮要把**同等契约**迁到 Node runtime，前端尽量整包复用旧 `web/src/auth/`。
+本规格固定以下边界：
 
-本轮要做的事：
-
-1. 在 `runtime/` 用 Node/Hono 实现知音楼网页 SSO（Cookie 会话 + CSRF）。
-2. 登录门禁 + 后续请求持续鉴权；前端 `SessionGate` 未登录不渲染业务 UI。
-3. auth 做成独立模块（`runtime/src/auth` + `web/src/auth`），业务只依赖身份协议。
-4. 体量尽量小：只完成认证，不做多租户数据隔离。
+1. 网页 SSO 使用 Cookie 会话 + CSRF，前端未登录不渲染业务 UI。
+2. auth 独立在 `runtime/src/auth` + `web/src/auth`，业务只依赖身份协议。
+3. 本规格负责认证，不代表 conversation / 模型配置已经完成完整多租户数据隔离。
+4. Compass 外发审批另有 owner 校验，不能据此推断所有普通 CRUD 都已按工号隔离。
 
 成功标准见文末「验收清单」。
 
@@ -31,7 +29,7 @@
 
 | 项 | 决定 |
 |---|---|
-| 本地免登 | 由 `HARMONY_AGENT_RUN_MODE` 控制：`local` 免登，`server`（默认）走 SSO；详见 [`docs/superpowers/specs/2026-11-06-local-auth-bypass-design.md`](../docs/superpowers/specs/2026-11-06-local-auth-bypass-design.md) |
+| 本地免登 | 由 `HARMONY_AGENT_RUN_MODE` 控制：`local` 免登且强制 loopback，`server`（默认）走 SSO；启动配置见根目录 [`README.md`](../README.md) |
 | 应用 path 前缀 | 固定 `/xesapp-agent` |
 | `PUBLIC_BASE_URL` | 只写 origin（协议+主机+端口），**不含** path |
 | 数据隔离 | 本轮**只做门禁**；conversation / 模型配置仍共用，不按 `workcode` 过滤 |

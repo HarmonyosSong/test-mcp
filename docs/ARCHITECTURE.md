@@ -1,66 +1,102 @@
-# 架构图
+# 当前系统架构
 
-## 运行时边界
+> 本文描述当前 TypeScript Runtime 的实现。后续能力只看 [multi-capability-expansion-plan.md](multi-capability-expansion-plan.md)，不再用旧 Python 迁移文档推断现状。
+
+## 1. 运行时边界
 
 ```text
-浏览器
-  | REST + AG-UI 兼容 SSE
-  v
-runtime/src/server.ts
-  |
-runtime/src/app.ts                  Hono 产品 API 路由
-  |-- ProductStore                  LibSQL 产品数据
-  |-- ModelConfiguration             provider/model/API Key 解析
-  |-- ClientDiagnosisAgent          统一多端 Mastra Agent + 流事件适配
-  |     |-- EvidenceLedger           证据 ID、逐字引用、报告门禁
-  |     |-- SkillRegistry             Markdown SKILL.md
-  |     `-- toolsets                  本地知识、仓库和可选日志查询
-  |-- RepositoryCapability            Git mirror + detached snapshot
-  |-- migration/legacy.ts             JSON -> LibSQL 幂等迁移
-  |-- capabilities/session.ts        按轮注册、上下文、取消、冲突检查和清理
-  |     |-- capabilities/mcp.ts       Python FastMCP：本地知识与仓库读取
-  |     `-- log-center.ts             原生 Mastra Catalog/SLS 工具（待真实联调）
-  |-- AgentSlotRegistry              远端 Agent 槽位发现、策略和生命周期（规划）
-  `-- compass-a2a                     Compass 首个 A2A Slot 适配器（聊天未接线）
+Web / 知音楼 IM / 评测
+        |
+        v
+Hono 产品 API + SSO/local 身份 + AG-UI 兼容 SSE
+        |
+        v
+RunAdmission + Runtime Supervisor
+        |
+        +-- ClientBranch: DiagnosisAgent（统一客户端 Agent）
+        |     +-- CapabilitySession
+        |     |     +-- 本地 Knowledge MCP
+        |     |     +-- Repository MCP（固定快照或授权工作区）
+        |     |     `-- 可选 LogCenter Catalog/SLS 工具
+        |     +-- SkillRegistry / 工具预算 / observe → source 门禁
+        |     `-- EvidenceLedger + submit_diagnosis_report
+        |
+        `-- ServerBranch: AgentSlotRegistry
+              `-- Compass Slot → A2A JSON-RPC/SSE → 云学习服务端 Agent
+
+Supervisor → 本地证据 + external_findings → 联合报告
+ProductStore → LibSQL（会话、仓库、快照、调查状态和证据）
 ```
 
-`migration/legacy.ts` 与 MCP 服务彼此独立：前者导入旧产品数据，后者按诊断请求提供只读能力。
+Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 路由。Python 进程只提供 Knowledge/Repository MCP，不再拥有产品 Agent 或 HTTP 服务。Runtime 不提供 Shell、业务仓库写入、构建或设备操作。
 
-Mastra 负责 Agent 编排、模型调用和 runtime storage 生命周期；Hono 只挂载产品定义的 REST/SSE 路由，不暴露 Mastra 通用管理 API。产品数据由 `ProductStore` 写入 LibSQL，Mastra storage 使用同一 runtime 数据库，但不取代产品表的事实来源。Python 进程只承担 MCP 能力，不拥有产品 HTTP 服务或诊断 Agent。
+## 2. 一轮调查
 
-## 一轮诊断
+1. `POST /api/conversations/:id/messages` 先经过全局并发闸门和会话互斥，再持久化用户消息与 streaming 占位。初始写入失败不会留下幽灵任务；同会话并发返回 409，全局容量不足返回 429。
+2. `createInvestigationPlan()` 以确定性规则生成 `local`、`server` 或 `parallel` 计划。`clientSteps` 明确客户端是否执行 `observe`、`source`；计划、理由、预算和分支状态随会话保存。
+3. `createRoundCapabilitySession()` 按轮创建知识、仓库和可选日志工具，统一传播 AbortSignal，检查工具冲突，并在结束时取消和逆序清理。学员身份通过 Runtime 私有内存上下文传给日志工具，不进入模型 schema。
+4. 客户端分支复用 `DiagnosisAgent`。绑定源码时执行 `observe → source`：过早源码调用会被 Runtime 拒绝；目录不覆盖、空结果、身份未匹配或查询失败会降级，但不得把降级写成平台确认。
+5. 本地报告通过 `submit_diagnosis_report` 和 EvidenceLedger 校验。源码读取/搜索、可追溯到用户输入的 hilog，以及目标已绑定且匹配当前学员身份的脱敏远程日志可产生观测；知识和 Catalog 永远只是线索。
+6. 本地结构化结果显示明确跨侧路由且预算允许时，Supervisor 可自动创建服务端调查，不要求 IT 老师理解或选择技术路由。
+7. 服务端外发先创建 `ExternalConsultation`，展示固定脱敏摘要并等待批准。未批准、拒绝或过期时不调用远端；恢复轮次重新走准入，不重复已完成的客户端调查。
+8. Compass 经 Agent Slot 调用，支持 Agent Card、JSON-RPC SSE、超时、取消和输出限长。远端结论写入 `external_findings`，不能进入本地 `evidence_refs`。
+9. 联合阶段由客户端 Agent 根据本地报告与结构化远端结论生成 `joint_assessment`。`verified_claims` 只能引用本地账本证据，外部 task/consultation ID 不能冒充观测。
+10. 工具终态和证据快照先持久化再发送 SSE；最终 completed/failed/cancelled 状态在流结束前保存。启动恢复会修复遗留 streaming，并保留可恢复的 pending 审批。
 
-1. `POST /api/conversations/{id}/messages` 在单进程内按 conversation ID 串行准入，由 `prepareDiagnosisRound` 先持久化用户消息和 streaming 占位，再返回 HTTP 200 / SSE 并启动模型工作。初始写入失败返回服务端错误且释放准入。多进程部署前必须改用数据库 lease/CAS。
-2. Web、IM 和评测统一使用 `createRoundCapabilitySession`。Runtime 以不可变的 conversation/message/run ID、工作区和取消信号创建本地知识、仓库与可选 LogCenter 能力；知识不可用时降级，已绑定仓库初始化失败时中止取证并清理已创建的 client。Git 会话使用 immutable detached snapshot，本地目录读取允许根目录内的实时文件。配置缺失的日志工具不挂载。统一 `ClientDiagnosisAgent` 覆盖 HarmonyOS、iOS、Android；Agent Slot Registry 与 Compass A2A 仍只保留适配器，尚未注册聊天工具。
-3. `ClientDiagnosisAgent` 使用安全的产品级文本历史（当前 TypeScript 实现类名为 `DiagnosisAgent`）；旧框架内部消息不会直接交给 Mastra。未完成的 assistant 消息和不完整工具对不重放。
-4. Mastra stream chunk 在 `diagnosis/agent.ts` 统一转换为文本、工具开始/结束、完成或失败事件。只有已注册的源码读取/搜索和可溯源 hilog 解析产生 EvidenceLedger 观测；本地知识和当前 SLS 查询结果都只是线索。A2A 返回的独立外部结论字段仍属待实现设计。
-5. 每个工具开始/结束状态和工具完成时的证据快照先写入产品数据库，再发送对应 SSE 事件。进程重启会保留已完成工具观察，并将正在运行的步骤修复为失败。
-6. Hono 将内部事件转换成前端已有的 `RUN_STARTED`、`TEXT_MESSAGE_*`、`TOOL_CALL_*`、`STATE_SNAPSHOT`、`RUN_FINISHED` 和 `RUN_ERROR` SSE 事件。
-7. 成功、模型错误、工具错误和取消路径会把 assistant 更新为终态。失败和取消时，已流出的文本保留在 `failed` 展示消息中，结构化报告清空；failed/streaming assistant 消息不作为后续模型历史重放，未完成工具步骤标记为失败。启动时将遗留的 streaming 消息修复为中断状态。存储重开、恢复已完成工具观察和 mock 后续轮已有自动化覆盖；另有一次 production-mode 重启后的真实 provider 浏览器续聊通过。验收范围限于单进程；多进程并发准入、强制断电和文件系统损坏恢复尚未验证。
-8. 终态消息会 best-effort 写入诊断案例归档，并独立追加 outcome 到知识查询 JSONL；任一观测写入失败都不改变对话终态。
-9. 能力会话关闭时先发出取消，再逆序尝试释放全部 client；部分初始化失败同样清理已取得的资源。LogCenter HTTP 请求继承轮次取消，默认 15 秒超时。工具命名空间或名称冲突会拒绝整个挂载，不覆盖已有工具。
+## 3. 调查计划规则
 
-## 持久化
+按顺序命中：
 
-- `product_conversations`：会话、展示消息、证据快照和安全历史。
-- 工具开始/结束和证据快照随每个工具事件写回 `product_conversations`；失败消息可保留已展示的部分文本供用户恢复查看，但没有报告，且不进入后续模型历史。
-- `product_repositories`：仓库登记信息。
-- `product_snapshots`：仓库 Commit 与 detached 工作区元数据。
-- `runtime_migrations`、`runtime_migration_items`、`runtime_schema`：迁移幂等、回滚和 schema 版本。
-- `.data/knowledge-queries.jsonl`：知识 MCP 查询和终态诊断 outcome；`.data/knowledge-cases/`：终态案例归档。两者是可重建的观测产物，不是对话事实来源。
+1. 用户明确限定只查客户端或只查服务端时遵守范围；只查服务端仍须外发审批。
+2. 未绑定仓库且没有本地证据时走 `local + ['observe']`，可进行知识问答或澄清。
+3. 绑定源码的客户端计划为 `['observe','source']`。
+4. 新工单即使命中服务端特征并带 traceId/requestId，只要账本没有 `kind=log` 观测，仍先 `local`。
+5. 已有本地日志观测，同时满足服务端信号、请求关联标识、Compass 开关和远端预算时才可直接 `parallel`。
+6. 学员编号或联系电话不是 Compass 的请求关联标识；`correlationReady` 仍只由 traceId/requestId 等请求级信息满足。
+7. `reported_platform` 只作线索。目录命中、store 名称、普通业务日志、空结果和查询失败都不能生成 `observed_platform`；只有身份匹配且平台字段唯一的实际条目可以确认。
 
-模型配置仍保存在 `.data/model-config.json`，由 runtime 以 `0600` 权限写入。应用管理的会话、工具摘要、证据状态、报告、SSE 和评测产物会对已配置凭据脱敏；Mastra 内部 logger 已关闭，应用异常及 CLI 错误经过脱敏。隔离 production smoke 曾以 request-scoped sentinel 触发模型连接失败，确认 502 响应与本地进程 stdout 均不回显该值；第三方 provider 库和远端部署日志仍需目标环境验证。
+空 `search_cloud_logs` 和身份未匹配查询会进入“已尝试但未观察”的降级状态，不能据此确认平台或伪装成成功观测。
 
-## 能力与安全
+## 4. 证据与数据边界
 
-- RepositoryCapability 校验 URL、分支、允许根目录、真实路径和 snapshot identity；Git 不操作用户工作树。
-- MCP 仓库 client 按会话创建并绑定所选工作区；Git 仓库使用 immutable snapshot，避免远端分支变化改写会话证据。本地目录读取实时文件，不提供快照隔离。
-- EvidenceLedger 区分用户描述、知识线索、工具观测和过期证据；每个根因候选都必须链接至少一条源码或日志观测，知识线索与用户描述不能单独作为候选证据。
-- Skill 正文从 `skills/` 动态读取，Markdown 是唯一权威来源。
-- runtime 不提供 shell、写文件、构建或设备工具。
+| 内容 | 当前归属 | 能否支撑正向根因 |
+| --- | --- | --- |
+| 同一快照的源码读取/搜索 | `EvidenceLedger`，`kind=source` | 可以，但仍需模型说明因果 |
+| 可追溯到用户输入的 hilog 解析 | `EvidenceLedger`，`kind=log` | 可以 |
+| 用户消息 | `ev-user-*` 用户引用 | 只能证明报告现象，不能单独证明技术根因 |
+| Knowledge MCP / Skill / Catalog | 导航与判据线索 | 不可以 |
+| 关联 `search_cloud_logs` / `discover_client_sessions` 条目 | 脱敏后逐条进入 `EvidenceLedger`，携带 Runtime `observation_context` | 目标绑定且身份匹配时可以；未关联条目直接拒绝 |
+| Compass / 其他远端 Agent | `external_findings` | 不能作为本地已验证观测 |
+| Graphify 图节点/边 | Runtime 未接入；目标也仅是派生导航 | 不可以，必须回读同一快照源码 |
 
-## 部署形态
+账本支持跨轮恢复、当前轮保护、历史容量淘汰、淘汰墓碑和相同内容重读恢复。报告引用必须逐字匹配观测；未知、过期或伪造 ID 会被拒绝，非法报告不会静默改成其他 verdict。
 
-开发时 Vite 在 `5174` 提供网页，代理 API 到 runtime `8000`；`RUN_MODE=local` 使用本机身份并强制 loopback，默认 `server` 模式走 SSO。Runtime 按需通过 `uv` 启动 Python MCP，LogCenter 使用原生 TypeScript HTTP 适配器。生产时先构建 `web/dist`，再设置 `HARMONY_MASTRA_SERVE_WEB=true`，runtime 进程由 Hono 提供产品 API 和静态网页，Mastra 负责 Agent 编排及 storage 集成。具体命令以根目录 README 和 `Makefile` 为准。
+## 5. 仓库、版本与并发
 
-迁移规格、阶段状态和验收证据见 [`mastra-runtime-migration-spec.md`](mastra-runtime-migration-spec.md)。日志、Graphify 和 A2A 联合排查的目标实现契约见 [`multi-capability-technical-design.md`](multi-capability-technical-design.md)。
+- Git 会话绑定 detached commit 快照；本地目录会话读取允许根目录内的实时工作区。
+- 仓库默认分支可编辑，保存前验证远端分支存在。已有会话和已创建快照不随默认分支变化。
+- 仓库记录支持 `platform` 和 `version_map: version → {branch, expected_commit}`，保存时验证映射分支存在。Runtime 可按已确认平台和精确版本唯一选择映射，并只复用 commit 一致的本地有效快照；缺映射、多个命中或快照未准备均失败关闭。
+- 当前会话仍是单仓库、单分支、固定 commit。精确快照选择器已经实现，但观察后的轮内自动换绑尚未接入；不得回退默认分支或最新分支冒充精确版本，也不能把旧证据 retroactively 改标到新 commit。
+- 单进程内不同会话可并行，各自拥有独立 run、能力会话、预算、账本和远端任务。`waiting_confirmation` 释放全局运行槽位，恢复时重新准入。
+- 多进程 lease/CAS 尚未实现，当前部署仍只支持一个 Runtime 进程。
+
+## 6. 持久化与安全
+
+`product_conversations` 保存消息、证据、调查计划、分支状态、审批、外部结论和 Slot 审计；`product_repositories` 与 `product_snapshots` 保存仓库和固定快照。`.data/knowledge-queries.jsonl` 与 `.data/knowledge-cases/` 是可重建的观测产物，不是对话事实源。
+
+模型配置保存在 owner-only `.data/model-config.json`，不进入产品数据库。通用凭证脱敏之外，Runtime 每轮从用户明确标签构造学员隐私上下文：原始学员编号/电话只在内存中用于授权日志匹配，工具结果、事件、证据、案例归档和默认 Compass 外发只保留脱敏文本或本轮伪名。traceId/requestId 保留为审批后的请求关联信息，学员标识不参与 Compass `correlationReady`。
+
+## 7. 当前能力状态
+
+| 能力 | 当前状态 |
+| --- | --- |
+| Mastra + Hono + LibSQL 主链路 | 已实现，旧 Python Agent/FastAPI 不再是运行入口 |
+| Supervisor、自动跨侧、预算和取消 | 已实现并有离线/恢复测试 |
+| Compass Agent Slot、审批和联合报告 | 已接入；真实云学习 A2A 已做过受控联调 |
+| 多用户会话隔离与全局并发闸门 | 单进程已实现 |
+| LogCenter Catalog/SLS 四工具 | 目标绑定、身份发现、脱敏和关联入账框架已实现；真实生产字段覆盖仍待验收 |
+| 学员日志 → 平台确认 → 日志证据 | 合成 mock 链路已实现；真实学员与 HarmonyOS/具体业务字段尚未联调 |
+| Android/iOS/HarmonyOS 精确版本快照选择 | 映射和固定快照选择器已实现；观察后的自动换绑尚未接入 |
+| Graphify Runtime 查询 | 未接入 |
+
+启动、配置和验证命令以根目录 [README.md](../README.md) 为准。

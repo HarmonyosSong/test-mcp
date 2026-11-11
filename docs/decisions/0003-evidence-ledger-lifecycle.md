@@ -2,8 +2,7 @@
 
 > 本 ADR 的证据生命周期和缓存原则仍生效；文中 `agent/tests` 与 Python 类名是历史验收上下文。当前 TypeScript 实现位于 `runtime/src/diagnosis/evidence.ts` 和 `runtime/src/diagnosis/agent.ts`，当前测试位于 `runtime/test/`。
 
-2026-09-29。依据 [运行时工具效率实施方案](../runtime-tool-efficiency-implementation-plan.md)
-阶段 A,替代 [0002](0002-runtime-knowledge-budget.md) 中「上限 120 条 FIFO 淘汰」的
+2026-09-29。本决策替代 [0002](0002-runtime-knowledge-budget.md) 中「上限 120 条 FIFO 淘汰」的
 单一约定(0002 第 32-33 行);0002 其余约束仍然有效。触发事件:53 步会话中早期证据被
 FIFO 挤掉、复用响应不含证据 ID、模型编 ID 提交报告三连失败
 (审计:experiments/runtime_audit/REPORT-2026-09-28-conv-1d1e339323.md)。
@@ -38,9 +37,11 @@ FIFO 挤掉、复用响应不含证据 ID、模型编 ID 提交报告三连失�
 - 复用前核对缓存的证据引用仍在账本;已被淘汰则缓存失效,允许一次真实重读,
   恢复成功计 `evidence_restored` 且不计入无进展——不能既阻止重读又要求引用失效 ID。
 
+当前 Runtime 的远程日志适配器会为合格条目附加可选 `observation_context`。该上下文由 Runtime 生成，模型报告草稿只能提交证据 ID、逐字摘录和 supports；恢复引用时透传上下文。这是 v2 账本主生命周期之外的 additive 元数据，不改变淘汰、墓碑、容量或重读规则。只有目标绑定且身份匹配的脱敏日志可入账，未关联日志不能支持正向根因。
+
 ## 验收
 
-以下是 **2026-09 旧 Python runtime 的历史测试覆盖**，不代表当前 Mastra 测试覆盖；当前实现和测试映射见本 ADR 顶部及迁移规格。旧测试 `agent/tests/test_runtime_efficiency.py` 与 `test_tool_failure_budget.py` 覆盖:
+以下是 **2026-09 旧 Python runtime 的历史测试覆盖**，不代表当前 Mastra 测试覆盖；当前实现和测试映射见本 ADR 顶部及 [`../ARCHITECTURE.md`](../ARCHITECTURE.md)。旧测试 `agent/tests/test_runtime_efficiency.py` 与 `test_tool_failure_budget.py` 覆盖:
 本轮观测超历史容量仍可引用;硬上限拒绝接纳不产出 ID;过期/伪造 ID 错误细分;
 淘汰后重读恢复同 ID;缓存证据失效回退真实重读;默认参数归一;同 commit 幂等绑定。
 Mastra 当前回归测试还验证跨轮重读会恢复稳定 ID、重新获得本轮保护，并计入本轮硬容量。

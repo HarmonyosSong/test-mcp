@@ -2,7 +2,7 @@
 
 > 面向 HarmonyOS 及多端问题的证据驱动诊断工作台
 >
-> 文档版本：2026-11-10
+> 文档版本：2026-11-11
 >
 > 配套架构图：
 >
@@ -57,10 +57,10 @@ Web / IM 入口
 
 图中使用三种边界表达状态：
 
-- 实线组件表示当前已经存在或已经接入的基础能力。
-- 虚线组件表示下一阶段规划能力，例如 Runtime Supervisor 的并行调查编排、A2A 聊天接线和真实 LogCenter 联调。
+- 实线组件表示当前已经存在或已经接入的基础能力，包括 Runtime Supervisor、Compass Slot、外发审批和联合报告。
+- 虚线组件表示后续规划能力，例如 Graphify Runtime 查询和观察后的自动源码换绑；精确版本快照选择器本身已经实现。
 - 绿色外部链路表示跨 Agent 协作；A2A 是通信通道，不是客户端知识库，也不替代本地证据账本。
-- 知识检索和代码图谱单独看，避免把业务知识关系、代码调用关系和 Agent 协作关系画成一张无法阅读的图。
+- LogCenter 的私有身份发现、目标绑定、脱敏和关联日志入账框架已实现；真实生产字段覆盖、真实学员联调和自动换绑仍待完成。
 
 ## 4. 技术栈
 
@@ -101,8 +101,7 @@ Runtime 与 Python MCP 服务分层：Runtime 提供产品 HTTP 服务和 Agent�
 - 理解用户现象和业务术语。
 - 使用知识库查找候选原因和追问判据。
 - 读取绑定快照中的真实源码。
-- 解析用户提供的 hilog 或其他本地观测。
-- 将实际观测写入 `EvidenceLedger`。
+- 使用私有身份上下文查询远程日志，解析可追溯的 hilog，并让符合条件的观测进入 `EvidenceLedger`。
 
 知识命中和 Graphify 导航结果都只是线索。只有真实读取的源码、可追溯的日志或其他被 Runtime 登记的观测，才可以支撑正向根因候选。
 
@@ -207,7 +206,7 @@ Runtime 同时控制工具预算、重复调用、结果截断和历史上下文
 | Knowledge MCP | 术语、候选、判据和代码锚点 | 证明当前故障成立 |
 | Skill | 指导 Agent 何时检索、追问、读源码和提交报告 | 代替 Runtime 安全校验 |
 | Repository MCP | 提供当前快照中的源码观测 | 修改代码或执行构建 |
-| LogCenter | 提供服务端日志辅助信息，后续再接证据门禁 | 当前阶段直接证明根因 |
+| LogCenter | 提供目标绑定、身份匹配、脱敏后的远程日志观测 | 用目录命中、空结果或未关联日志证明根因 |
 | EvidenceLedger | 登记真实观测、引用和证据生命周期 | 接受知识或 A2A 文本作为证据 |
 
 ## 7. 并行 Agent 方案
@@ -239,9 +238,10 @@ Runtime 先生成轻量的 `InvestigationPlan`，它只决定调查路径，不�
 
 ```ts
 type InvestigationPlan = {
-  mode: 'local' | 'server' | 'parallel' | 'unknown';
+  mode: 'local' | 'server' | 'parallel';
   branches: Array<'client' | 'server'>;
   remoteSlots: string[];
+  clientSteps: Array<'observe' | 'source'>;
   reason: string;
   correlationReady: boolean;
   maxHandoffRounds: number;
@@ -251,6 +251,8 @@ type InvestigationPlan = {
   };
 };
 ```
+
+新工单即使出现服务端关键词和 traceId，只要 EvidenceLedger 中还没有 `kind=log` 观测，也先走 `local`。绑定源码时客户端先执行 `observe`，再进入 `source`；已有本地日志、服务端信号、请求关联标识、Compass 开关和预算同时满足时才直接 `parallel`。本地调查发现明确跨侧路由后，Supervisor 可以自动接续服务端调查，老师不需要选择“客户端还是服务端”。
 
 典型路径如下：
 
@@ -297,8 +299,9 @@ type InvestigationPlan = {
 - `resolve_log_target`
 - `count_cloud_logs`
 - `search_cloud_logs`
+- `discover_client_sessions`
 
-现阶段完成的是工具挂载、超时、轮次取消、Catalog 路由和 Mock 验证。真实平台联调、`service_id` 服务发现、PII 脱敏、`observation_context` 和日志证据关联门禁仍是后续工作。
+现阶段已完成四工具挂载、超时、轮次取消、用户原文目标绑定、私有身份注入、设备/会话发现、脱敏和关联入账，并有合成 Mock 验证。只有目标绑定且匹配当前学员身份的实际日志才能进入账本并确认 `observed_platform`；空结果、目录命中和未关联日志不能证明根因。测试网关只完成过基本 count/search 连通性，真实 Catalog 字段、appid 索引兼容性和真实学员链路仍待验收。
 
 ### Graphify 代码图
 
@@ -312,31 +315,27 @@ Graphify 是绑定代码快照的派生导航索引，不属于本地 Knowledge 
 
 | 能力 | 当前状态 | 下一步 |
 | --- | --- | --- |
-| Mastra Runtime | 已承载产品 Agent、Hono API、LibSQL 和能力生命周期 | 持续完善并行编排和报告聚合 |
+| Mastra Runtime | 已承载产品 Agent、Hono API、LibSQL 和能力生命周期 | 持续完善诊断质量与运维验证 |
+| Supervisor / A2A Agent Slot | 调查计划、Compass Slot、审批、自动跨侧、并行调查和联合报告已接入 | 保持新能力都经过同一编排与证据边界 |
 | 本地知识库 | 已接入本地 Knowledge MCP | 完善真实案例回流和召回评估 |
 | SSO / Web / IM | SSO、本地免登、Web 和 Yach IM 基础能力已具备 | 按环境完成发布验证 |
-| A2A Agent Slot | Compass P0 客户端已实现，聊天工具尚未开放 | 实现 P1 通用槽位、Supervisor、授权、并行调查和联合报告 |
-| LogCenter | 框架已接入，真实联调待完成 | 固定平台契约后再接日志证据门禁 |
+| LogCenter | 四工具、私有身份发现、目标绑定、脱敏和关联入账框架已实现 | 验收真实 Catalog 字段、索引、权限和授权 fixture |
+| 平台与版本源码 | 当前会话为单仓库固定 commit；精确版本选择器已实现 | 设计并实现观察后的自动换绑，保持旧证据隔离 |
 | Graphify | 已有离线 PoC，Runtime 尚未接入 | 做快照绑定和只读查询 |
 | 统一客户端 Agent | Android/iOS 端维度接线尚未完成 | 完成端绑定、Skill/知识路由和端到端验收 |
 
-建议实施顺序：
+后续主线是把客户端排查框架接到真实生产字段，并完成观察后的源码换绑。当前合成链路为：
 
 ```text
-公共能力框架
-    -> A2A P1：Runtime Supervisor + 并行调查 + 条件 handoff
-    -> 联合报告与前端展示
-    -> LogCenter 真实联调与日志证据门禁
-    -> Graphify / 多端接入 / 固定问题集评估
+学员标识解析
+    -> 设备 / 会话日志发现
+    -> observed_platform 与精确版本
+    -> 脱敏且关联通过的日志进入 EvidenceLedger
+    -> 固定 commit 源码分析
+    -> 需要时经 Supervisor / Compass 联合排查
 ```
 
-## 10. 分享时可以强调的三句话
-
-1. **Mastra 负责把排查流程编排起来，MCP 负责提供本地只读能力，A2A 负责连接另一个 Agent。**
-2. **知识库帮助我们缩小候选范围，真正的根因结论必须回到当前代码和日志等可验证证据。**
-3. **客户端和服务端可以并行探索，但 Runtime 统一控制权限、数据外发、任务生命周期和最终报告。**
-
-## 11. 本地启动
+## 10. 本地启动
 
 ```bash
 make setup
@@ -351,12 +350,12 @@ make dev-web
 
 本地开发建议设置 `HARMONY_AGENT_RUN_MODE=local`，网页访问 `https://127.0.0.1:5174/xesapp-agent/`。完整环境变量、HTTPS 证书和生产启动方式见根目录 [README.md](../README.md)。
 
-## 12. 相关文档
+## 11. 相关文档
 
+- [文档导航](README.md)
 - [当前架构](ARCHITECTURE.md)
-- [多能力扩展规划](multi-capability-expansion-plan.md)
-- [多能力扩展技术设计](multi-capability-technical-design.md)
-- [实施任务拆分](multi-capability-implementation-plan.md)
+- [编排层设计与实现](orchestration-layer-design.md)
+- [后续能力规划](multi-capability-expansion-plan.md)
 - [Compass A2A 接入规格](../spec/compass-a2a-integration.md)
 - [日志目录与查询能力规格](../spec/log-catalog-query-capability.md)
 - [Runtime 知识预算与证据约束](decisions/0002-runtime-knowledge-budget.md)

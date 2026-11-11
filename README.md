@@ -16,12 +16,12 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 - 证据账本：正向根因只能引用本轮或历史工具实际观测到的源码/日志证据。
 - 本地 Markdown 知识库和声明式 `skills/*/SKILL.md`。
 - 客户端本地 Markdown 知识库通过 Knowledge MCP 提供检索；云学习知识能力由后续 A2A 对端 Agent 提供，不在客户端直连第二套知识 MCP。
-- 可选 LogCenter / Aliyun SLS 日志目录与查询框架：已接入共享能力会话，支持超时和取消；真实平台联调待完成，返回日志当前仅作辅助信息，不进入证据账本。
+- 可选 LogCenter / Aliyun SLS 四工具：私有身份发现、用户原文目标绑定、超时取消和脱敏观察已接入共享能力会话；目标绑定且身份匹配的远程日志可携带 Runtime 观察上下文进入证据账本。上述链路已有合成 mock 测试，真实生产字段覆盖和真实学员联调尚未验收，Catalog 的 appid 查询兼容性仍需修正。
 - 本地工作区只读检查，以及 Git 分支查询和 detached Commit 快照；本地目录绑定读取实时工作区，Git 会话读取固定 Commit 快照。
-- 正式支持 DeepSeek `deepseek-flash`；同时保留 OpenAI、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 配置入口作为实验/未验收选项。可配置不等于正式支持，当前 provider 范围和证据见迁移规格。
+- 正式支持 DeepSeek `deepseek-flash`；同时保留 OpenAI、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 配置入口作为实验/未验收选项。可配置不等于正式支持；评估入口和口径见 [`docs/triage-feedback-and-evaluation.md`](docs/triage-feedback-and-evaluation.md)。
 - 会话、仓库、快照和证据状态保存在 runtime 的 LibSQL；模型配置仍保存在 owner-only 的 `.data/model-config.json`，旧 `.data` JSON 可通过迁移命令导入。
 - 知音楼网页 SSO：未登录不可用业务 API；应用挂在 `/xesapp-agent` 前缀下。设计见 [`spec/sso-login-design.md`](spec/sso-login-design.md)。
-- 云学习服务端 Agent 通过 Compass A2A 对接；当前仓库已实现 P0 客户端和配置，聊天调用尚未接入。目标流程由 Runtime 轻量分流，在上下文和授权满足时让客户端与服务端并行调查，再聚合两侧事实；服务端结论与本地证据分开保存。首次批准的服务端调查范围内允许对端 Agent 自主探索，新增客户端材料或扩大范围时再次确认。客户端保留自己的本地知识库，不直连云学习 Knowledge MCP。规划见 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)，接入契约见 [`spec/compass-a2a-integration.md`](spec/compass-a2a-integration.md)。
+- 云学习服务端 Agent 通过 Compass A2A Agent Slot 接入；Supervisor 已支持确定性调查计划、客户端 `observe → source` 门禁、服务端外发审批、自动跨侧、并行调查、取消和联合报告。新工单没有本地 `kind=log` 观测时，即使带服务端关键词和 traceId 也先进行客户端观察。远端结论独立保存为 `external_findings`，不进入本地证据。接入契约见 [`spec/compass-a2a-integration.md`](spec/compass-a2a-integration.md)，编排细则见 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)。
 - 客户端只有一个统一的 `ClientDiagnosisAgent`，HarmonyOS、iOS 和 Android 通过会话端上下文、Skill、知识排序和仓库适配处理差异；服务端或专项 Agent 通过 A2A Agent Slot 接入，Compass 是首个具体实例。
 - 技术分享版见 [`docs/architecture-sharing.html`](docs/architecture-sharing.html)，配套 Markdown 和分模块 SVG 位于 `docs/` 与 `docs/diagrams/`。
 
@@ -35,7 +35,7 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 | 能力协议 | MCP、`@mastra/mcp`、Python FastMCP 服务 |
 | 网页 | React 19、TypeScript、Vite |
 
-`agent/` 和 `server/` 只保留旧 Python Agent/FastAPI 源码与测试作为迁移参考，不再提供可安装项目或受支持运行入口；产品 Agent 与 HTTP runtime 由 `runtime/` 承载。Mastra 全量迁移验收状态见 [`docs/mastra-runtime-migration-spec.md`](docs/mastra-runtime-migration-spec.md)。
+`agent/` 和 `server/` 只保留旧 Python Agent/FastAPI 源码与测试作为迁移参考，不再提供可安装项目或受支持运行入口；产品 Agent 与 HTTP runtime 由 `runtime/` 承载。当前架构见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，全部有效文档的入口见 [`docs/README.md`](docs/README.md)。
 
 ## 环境要求
 
@@ -167,7 +167,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续。仓库 MCP 按会话工作区启动：Git 仓库会绑定 detached Commit 快照，本地目录则读取授权根目录中的实时文件，诊断过程中工作区变化可能影响后续读取。知识检索和仓库代码检查需要 Python/uv 已安装，并已通过 `make setup` 安装 `mcp_server/` 依赖。
 
-LogCenter 当前处于框架完成、待真实联调阶段。AppID / AppSecret 留空即可使用其余功能；框架验收使用本机模拟 HTTP，不依赖日志平台权限。后续联调时在本地 `.env` 配置上表变量，并核对 Catalog 的业务坐标、查询条件、响应格式和权限。现有三个工具是 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`，不等于规划中的 `service_id` 服务发现或日志证据门禁，契约见 [`日志目录与查询规格`](spec/log-catalog-query-capability.md)。
+LogCenter 的 AppID / AppSecret 留空即可使用其余功能。当前四个工具是 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`discover_client_sessions`。Runtime 私有注入当前用户明确提供的学员标识，目标必须由用户原文选择；目标绑定且身份匹配的日志脱敏后可进入 EvidenceLedger，空结果和未关联日志不能确认平台或支持正向根因。合成 mock 已覆盖关联、脱敏、发现和入账；测试网关只完成基本 count/search 连通性，生产 Catalog 字段、appid 索引兼容性和真实学员链路仍未验收。契约见 [`日志目录与查询规格`](spec/log-catalog-query-capability.md)，后续边界见 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)。
 
 ## 仓库与快照
 
@@ -178,6 +178,8 @@ Git 仓库流程是：
 ```
 
 会话创建请求携带 `repository_id` 和 `branch` 时，runtime 会自动保存快照的仓库、分支、Commit 和工作区路径。后续远端分支变化不会改变已经绑定的会话。直接绑定本地目录不创建快照，读取的是当前工作区内容。
+
+仓库记录还支持 `platform` 和 `version_map: version → {branch, expected_commit}`；保存映射前验证分支存在。Runtime 可按已确认平台和精确版本唯一选择本地已准备的固定快照，缺映射、多映射、commit 不符或快照未准备均失败关闭，不回退默认分支。观察后的轮内自动换绑尚未接入，已有会话和旧证据仍保持原 commit。
 
 ## 数据迁移
 
@@ -199,7 +201,7 @@ make lint
 make build
 ```
 
-默认离线测试不会访问模型供应商。`make live-eval` 使用 Mastra runtime 与当前配置的真实模型运行固定诊断数据集，结果逐轮写入 `.data/evals/latest.json`；需要有效模型凭据，调用可能产生费用。provider 明确报告额度耗尽时，评测会停止后续请求，并在产物中记录 `complete: false` 和停止原因。评测指标口径和未完成的发布门槛见 [`docs/mastra-runtime-migration-spec.md`](docs/mastra-runtime-migration-spec.md)。
+默认离线测试不会访问模型供应商。`make live-eval` 使用 Mastra runtime 与当前配置的真实模型运行固定诊断数据集，结果逐轮写入 `.data/evals/latest.json`；需要有效模型凭据，调用可能产生费用。provider 明确报告额度耗尽时，评测会停止后续请求，并在产物中记录 `complete: false` 和停止原因。评测指标口径见 [`docs/triage-feedback-and-evaluation.md`](docs/triage-feedback-and-evaluation.md)。
 
 人工复核诊断案例和提炼知识可运行 `npm --prefix runtime run cases -- --help` 查看命令；案例默认保存在 `.data/knowledge-cases/`。确认根因必须关联报告里实际观察到的源码或日志证据，知识提案只有通过整库校验后才会写入 `knowledge/`。流程说明见 [`docs/triage-feedback-and-evaluation.md`](docs/triage-feedback-and-evaluation.md)。
 
@@ -221,4 +223,4 @@ skills/       声明式诊断 Skill
 docs/         当前架构、迁移规格、运维文档和历史设计记录
 ```
 
-设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)、[`docs/mastra-runtime-migration-spec.md`](docs/mastra-runtime-migration-spec.md) 和 [`docs/multi-capability-technical-design.md`](docs/multi-capability-technical-design.md)。多能力扩展的产品规划见 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)。
+设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 和 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)。真实学员日志链验收、观察后的自动源码换绑、多端产品化和 Graphify 接入只看 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)；完整文档入口见 [`docs/README.md`](docs/README.md)。

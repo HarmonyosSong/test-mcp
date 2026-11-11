@@ -4,11 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f4f7f8" />
-    <meta
-      name="description"
-      content="Troubleshoot Odyssey 技术架构、知识库设计与并行 Agent 方案分享稿。"
-    />
-    <title>Troubleshoot Odyssey | 技术架构分享</title>
+    <meta name="description" content="Troubleshoot Odyssey 项目分享：Runtime 设计、工具编排、知识与代码协同、证据管理和扩展能力。" />
+    <title>Troubleshoot Odyssey | 项目架构分享</title>
     <style>
       :root {
         color-scheme: light;
@@ -19,10 +16,9 @@
         --canvas: #f4f7f8;
         --teal: #147b70;
         --teal-soft: #e6f3f0;
+        --blue: #456a96;
         --orange: #b86e17;
         --orange-soft: #fbf0df;
-        --blue: #456a96;
-        --blue-soft: #edf3f9;
         --green: #3e7655;
         --green-soft: #edf5ef;
         --content: 1160px;
@@ -40,80 +36,30 @@
       }
       a { color: var(--teal); text-decoration-thickness: 1px; text-underline-offset: 3px; }
       a:hover { color: #0c5d55; }
-      .topbar {
-        position: sticky;
-        z-index: 5;
-        top: 0;
-        background: rgba(255, 255, 255, .96);
-        border-bottom: 1px solid var(--line);
-        backdrop-filter: blur(12px);
-      }
-      .topbar-inner {
-        width: min(var(--content), calc(100% - 48px));
-        min-height: 58px;
-        margin: 0 auto;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 24px;
-      }
+      .topbar { position: sticky; z-index: 5; top: 0; background: rgba(255, 255, 255, .96); border-bottom: 1px solid var(--line); backdrop-filter: blur(12px); }
+      .topbar-inner { width: min(var(--content), calc(100% - 48px)); min-height: 58px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
       .brand { color: var(--ink); font-size: 14px; font-weight: 750; text-decoration: none; white-space: nowrap; }
       .top-actions { display: flex; align-items: center; gap: 16px; }
       .top-actions a, .print-button { color: var(--muted); font-size: 13px; text-decoration: none; }
-      .print-button {
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        background: var(--paper);
-        padding: 6px 11px;
-        cursor: pointer;
-      }
+      .print-button { border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 6px 11px; cursor: pointer; }
       .page { width: min(var(--content), calc(100% - 48px)); margin: 0 auto; }
       .intro { padding: 48px 0 30px; }
-      .eyebrow {
-        margin: 0 0 8px;
-        color: var(--teal);
-        font-size: 12px;
-        font-weight: 750;
-        text-transform: uppercase;
-      }
+      .eyebrow { margin: 0 0 8px; color: var(--teal); font-size: 12px; font-weight: 750; }
       h1 { margin: 0; font-size: 38px; line-height: 1.22; font-weight: 760; }
-      .intro-copy { max-width: 820px; margin: 14px 0 0; color: var(--muted); font-size: 18px; }
-      .principles { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
-      .principle {
-        border: 1px solid #c9ddd8;
-        border-radius: 6px;
-        background: var(--teal-soft);
-        color: #245d55;
-        padding: 4px 10px;
-        font-size: 13px;
-        font-weight: 650;
-      }
+      .intro-copy { max-width: 880px; margin: 14px 0 0; color: var(--muted); font-size: 17px; }
       .diagram-section { margin: 0 0 28px; }
       .diagram-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
       .diagram-heading h2 { margin: 0; font-size: 17px; }
       .diagram-heading span { color: var(--muted); font-size: 12px; }
       .diagram-grid { display: grid; gap: 14px; }
-      .diagram-card {
-        overflow: hidden;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--paper);
-      }
+      .diagram-card { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
       .diagram-card-header { padding: 13px 16px 8px; }
       .diagram-card-header h3 { margin: 0; font-size: 16px; }
       .diagram-card-header p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
-      .diagram-frame {
-        overflow-x: auto;
-        background: var(--paper);
-      }
+      .diagram-frame { overflow-x: auto; background: var(--paper); }
       .diagram-frame img { display: block; width: 100%; min-width: 900px; height: auto; }
       .layout { display: grid; grid-template-columns: 218px minmax(0, 1fr); gap: 38px; align-items: start; padding-bottom: 72px; }
-      .toc {
-        position: sticky;
-        top: 78px;
-        padding: 14px 0;
-        border-right: 1px solid var(--line);
-      }
+      .toc { position: sticky; top: 78px; padding: 14px 0; border-right: 1px solid var(--line); }
       .toc-title { margin: 0 0 8px; color: var(--muted); font-size: 11px; font-weight: 750; }
       .toc a { display: block; padding: 5px 12px 5px 0; color: var(--muted); font-size: 13px; text-decoration: none; }
       .toc a:hover { color: var(--teal); }
@@ -125,29 +71,15 @@
       p { margin: 10px 0; }
       .lead { color: #34485b; font-size: 18px; }
       .muted { color: var(--muted); }
-      .callout {
-        margin: 18px 0;
-        border-left: 4px solid var(--teal);
-        background: var(--teal-soft);
-        padding: 14px 18px;
-      }
+      .callout { margin: 18px 0; border-left: 4px solid var(--teal); background: var(--teal-soft); padding: 14px 18px; }
       .callout p { margin: 0; }
       .callout strong { color: #205e55; }
-      .grid-3, .grid-2 { display: grid; gap: 12px; margin: 18px 0; }
-      .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .info {
-        min-height: 124px;
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        background: var(--paper);
-        padding: 16px;
-      }
+      .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+      .info { border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 16px; }
       .info h3 { margin: 0 0 6px; font-size: 16px; }
       .info p { margin: 0; color: var(--muted); font-size: 14px; }
       .tone-teal { border-top: 3px solid var(--teal); }
       .tone-blue { border-top: 3px solid var(--blue); }
-      .tone-orange { border-top: 3px solid var(--orange); }
       .tone-green { border-top: 3px solid var(--green); }
       table { width: 100%; margin: 16px 0 22px; border-collapse: collapse; background: var(--paper); font-size: 14px; }
       th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
@@ -155,60 +87,13 @@
       td { color: #415366; }
       code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
       code { border-radius: 3px; background: #edf2f4; padding: 1px 4px; font-size: .88em; }
-      pre {
-        overflow-x: auto;
-        margin: 14px 0;
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        background: #f8fafb;
-        padding: 16px;
-        color: #34485b;
-        font-size: 13px;
-        line-height: 1.6;
-      }
+      pre { overflow-x: auto; margin: 14px 0; border: 1px solid var(--line); border-radius: 7px; background: #f8fafb; padding: 16px; color: #34485b; font-size: 13px; line-height: 1.6; }
       ul, ol { padding-left: 23px; }
       li { margin: 5px 0; }
-      .flow {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 22px;
-        margin: 18px 0;
-      }
-      .flow-step {
-        position: relative;
-        min-height: 94px;
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        background: var(--paper);
-        padding: 13px;
-      }
-      .flow-step:not(:last-child)::after {
-        position: absolute;
-        top: 30px;
-        right: -19px;
-        color: #8798a9;
-        content: "→";
-        font-size: 18px;
-      }
-      .flow-step b { display: block; margin-bottom: 4px; font-size: 14px; }
-      .flow-step span { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; }
-      .status {
-        display: inline-block;
-        border-radius: 4px;
-        padding: 2px 7px;
-        font-size: 11px;
-        font-weight: 700;
-        white-space: nowrap;
-      }
+      .status { display: inline-block; border-radius: 4px; padding: 2px 7px; font-size: 11px; font-weight: 700; white-space: nowrap; }
       .status-live { background: var(--green-soft); color: var(--green); }
       .status-framework { background: var(--orange-soft); color: #91560e; }
       .status-plan { background: #fff5e5; color: #9a6215; }
-      .two-lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
-      .lane { border: 1px solid var(--line); border-radius: 7px; background: var(--paper); padding: 17px; }
-      .lane.client { border-top: 3px solid var(--blue); }
-      .lane.server { border-top: 3px solid var(--teal); }
-      .lane h3 { margin: 0 0 7px; }
-      .lane p { margin: 0; color: var(--muted); font-size: 14px; }
       .foot { border-top: 1px solid var(--line); padding: 24px 0 42px; color: var(--muted); font-size: 13px; }
       .foot-links { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 8px; }
 
@@ -228,9 +113,7 @@
         body { font-size: 15px; }
         h1 { font-size: 28px; }
         h2 { font-size: 22px; }
-        .grid-3, .grid-2, .two-lanes { grid-template-columns: 1fr; }
-        .flow { grid-template-columns: 1fr 1fr; gap: 10px; }
-        .flow-step:not(:last-child)::after { display: none; }
+        .grid-3 { grid-template-columns: 1fr; }
         table { display: block; overflow-x: auto; white-space: nowrap; }
         .diagram-heading { display: block; }
         .diagram-heading span { display: block; }
@@ -247,7 +130,7 @@
         .diagram-frame { overflow: visible; }
         .diagram-frame img { min-width: 0; }
         a { color: inherit; }
-        .info, .lane, table, pre { break-inside: avoid; }
+        .info, table, pre { break-inside: avoid; }
       }
     </style>
   </head>
@@ -256,9 +139,10 @@
       <div class="topbar-inner">
         <a class="brand" href="#top">Troubleshoot Odyssey</a>
         <div class="top-actions">
-          <a href="#architecture">架构</a>
-          <a href="#knowledge">知识库</a>
-          <a href="#agents">并行 Agent</a>
+          <a href="#architecture">架构图</a>
+          <a href="#runtime">Runtime</a>
+          <a href="#orchestration">工具编排</a>
+          <a href="#knowledge">知识协同</a>
           <button class="print-button" type="button" onclick="window.print()">打印 / 导出 PDF</button>
         </div>
       </div>
@@ -266,48 +150,33 @@
 
     <div class="page" id="top">
       <header class="intro">
-        <p class="eyebrow">技术架构分享 · 2026-11-10</p>
+        <p class="eyebrow">项目架构分享 · 2026-11-10</p>
         <h1>Troubleshoot Odyssey</h1>
-        <p class="intro-copy">面向 HarmonyOS 及多端问题的证据驱动诊断工作台。把模糊现象转成可追问、可取证、可复核、可沉淀的排查过程。</p>
-        <div class="principles">
-          <span class="principle">知识缩小候选</span>
-          <span class="principle">Agent 编排调查</span>
-          <span class="principle">观测支撑结论</span>
-          <span class="principle">证据不足明确说明</span>
-        </div>
+        <p class="intro-copy">面向 HarmonyOS 客户端问题排查的 Agent 工作台。本文介绍项目的整体设计，以及 Runtime、工具编排、知识协同和证据管理上的主要特点。</p>
       </header>
 
       <section class="diagram-section" id="architecture" aria-labelledby="diagram-title">
         <div class="diagram-heading">
-          <h2 id="diagram-title">分模块架构图</h2>
-          <span>三张图分别说明系统总览、知识关系和并行 Agent；避免跨模块连线重叠</span>
+          <h2 id="diagram-title">整体流程</h2>
+          <span>第一张看任务分派与结果汇总，第二张看本地知识和 Graphify 如何配合</span>
         </div>
         <div class="diagram-grid">
           <article class="diagram-card">
             <div class="diagram-card-header">
-              <h3>01 · 系统总架构</h3>
-              <p>产品入口、Mastra Runtime、本地能力、外部系统和持久化</p>
+              <h3>01 · Agent 调度与结果汇总</h3>
+              <p>Supervisor 选择调查范围，客户端和远端 Agent 分别返回结果</p>
             </div>
             <div class="diagram-frame">
-              <img src="diagrams/01-system-architecture.svg" alt="Troubleshoot Odyssey 系统总架构图，展示产品入口、Mastra Runtime、本地能力、外部系统和持久化。" />
+              <img src="diagrams/01-system-architecture.svg" alt="Agent 调度流程图，展示 Runtime Supervisor 如何分派客户端和服务端任务，以及两侧结果如何返回并汇总。" />
             </div>
           </article>
           <article class="diagram-card">
             <div class="diagram-card-header">
-              <h3>02 · 知识与代码图谱</h3>
-              <p>规范知识关系、Graphify 代码图和源码证据的边界</p>
+              <h3>02 · 本地知识与 Graphify 的使用流程</h3>
+              <p>本地知识提供业务链路和代码入口，Graphify 提供代码关系，最后回读源码</p>
             </div>
             <div class="diagram-frame">
-              <img src="diagrams/02-knowledge-architecture.svg" alt="知识与代码图谱架构图，展示 Knowledge MCP 的引用和概念关系、Graphify 代码图查询、源码回读以及云学习服务端知识边界。" />
-            </div>
-          </article>
-          <article class="diagram-card">
-            <div class="diagram-card-header">
-              <h3>03 · 并行 Agent 架构</h3>
-              <p>Runtime Supervisor、客户端与服务端分支、聚合和有界交接</p>
-            </div>
-            <div class="diagram-frame">
-              <img src="diagrams/03-parallel-agent-architecture.svg" alt="并行 Agent 架构图，展示 Runtime Supervisor 并行启动客户端和服务端调查，并把本地证据与外部结论分开聚合。" />
+              <img src="diagrams/02-knowledge-architecture.svg" alt="鸿蒙 Agent 使用本地知识和 Graphify 的流程图，展示两个工具的选择条件，以及最后回读源码并登记证据。" />
             </div>
           </article>
         </div>
@@ -316,219 +185,188 @@
       <div class="layout">
         <nav class="toc" aria-label="文档目录">
           <p class="toc-title">内容导航</p>
-          <a href="#position">项目定位</a>
-          <a href="#stack">技术栈</a>
-          <a href="#knowledge">知识库设计</a>
-          <a href="#investigation">诊断流程</a>
-          <a href="#agents">并行 Agent</a>
-          <a href="#capabilities">能力边界</a>
-          <a href="#roadmap">当前状态</a>
+          <a href="#overview">项目价值</a>
+          <a href="#runtime">Runtime 框架设计</a>
+          <a href="#orchestration">工具编排</a>
+          <a href="#knowledge">知识与代码协同</a>
+          <a href="#evidence">证据与安全</a>
+          <a href="#extension">协作扩展与当前状态</a>
         </nav>
 
         <main>
-          <section class="section" id="position">
-            <h2>1. 项目定位</h2>
-            <p class="lead">这不是一个只回答“可能是什么原因”的问答机器人，而是一套证据驱动的问题排查工作台。</p>
-            <p>用户可以输入自然语言问题、hilog、代码片段，也可以绑定本地工作区或 Git 仓库。系统通过本地知识、只读代码能力、日志能力和 Agent 协作，逐步收窄可能原因并生成带证据边界的诊断报告。</p>
-            <div class="callout"><p><strong>核心原则：</strong>知识提供候选和判据，Agent 组织调查，源码和日志等实际观测支撑结论。服务端 Agent 的返回保留外部来源，不能伪装成本地证据。</p></div>
-            <h3>主 Runtime 与 Agent 插槽</h3>
-            <p>客户端只有一个统一的 <code>ClientDiagnosisAgent</code>，同时处理 HarmonyOS、iOS 和 Android；端差异由会话端上下文、Skill、知识排序和仓库能力适配处理。服务端或专项领域 Agent 通过 A2A 插槽接入，Compass 是第一个具体实例。</p>
-            <table>
-              <thead><tr><th>组件</th><th>职责</th><th>扩展方式</th></tr></thead>
-              <tbody>
-                <tr><td>Runtime Core</td><td>会话、权限、预算、并行、聚合、证据和报告</td><td>保持稳定内核</td></tr>
-                <tr><td>ClientDiagnosisAgent</td><td>统一处理 HarmonyOS / iOS / Android 客户端问题</td><td>按端绑定上下文，不复制 Agent</td></tr>
-                <tr><td>A2A Agent Slot</td><td>连接服务端或专项远端 Agent</td><td>Agent Card + A2A 任务契约</td></tr>
-              </tbody>
-            </table>
+          <section class="section" id="overview">
+            <h2>1. 项目价值</h2>
+            <p class="lead">把问题描述、业务知识、代码和日志放到同一个排查流程中，让 Agent 不只给出猜测，还能展示它检查过什么、依据是什么。</p>
+            <p>客户端问题排查通常需要先在业务现象和代码模块之间建立对应关系，再查源码、日志和版本差异。这个过程分散在文档、仓库和不同平台中，排查结果也比较依赖个人经验。Troubleshoot Odyssey 将这些步骤组织成一轮可观察、可恢复的诊断过程。</p>
             <div class="grid-3">
-              <article class="info tone-blue"><h3>可追问</h3><p>缺少入口、版本、时间或请求标识时，先识别信息缺口。</p></article>
-              <article class="info tone-teal"><h3>可取证</h3><p>通过只读工具读取绑定仓库和可追溯观测。</p></article>
-              <article class="info tone-green"><h3>可复核</h3><p>报告保留证据原文、来源、限制和未解决问题。</p></article>
+              <article class="info tone-blue"><h3>统一排查入口</h3><p>支持自然语言现象、hilog、代码片段和仓库上下文，减少在多个系统之间来回查找。</p></article>
+              <article class="info tone-teal"><h3>调查过程可见</h3><p>展示工具开始、结束、耗时和结果摘要，用户能看到 Agent 当前在查什么。</p></article>
+              <article class="info tone-green"><h3>结论可以复核</h3><p>报告关联实际读取的源码或日志，同时保留未确认判断和信息缺口。</p></article>
             </div>
+            <p>当前主要服务 HarmonyOS 客户端。后续多端接入沿用同一个 <code>ClientDiagnosisAgent</code>，通过端上下文、Skill、知识排序和仓库配置处理差异，避免每个端重复建设一套诊断系统。</p>
           </section>
 
-          <section class="section" id="stack">
-            <h2>2. 技术栈</h2>
+          <section class="section" id="runtime">
+            <h2>2. Runtime 框架设计</h2>
+            <p>Runtime 采用 Mastra 负责 Agent 和模型运行，Hono 负责产品接口，Python FastMCP 提供本地工具。三部分各自承担明确职责，既能复用框架能力，也能保留产品自身的状态管理和安全控制。</p>
+
+            <h3>2.1 框架分工</h3>
             <table>
-              <thead><tr><th>层次</th><th>技术</th><th>作用</th></tr></thead>
+              <thead><tr><th>组成</th><th>承担的工作</th><th>这样设计的好处</th></tr></thead>
               <tbody>
-                <tr><td>Web 工作台</td><td>React 19、TypeScript、Vite 6、Arco Design</td><td>会话、模型设置、工具过程和诊断报告展示</td></tr>
-                <tr><td>产品 API</td><td>Hono、@hono/node-server</td><td>REST、身份认证、CSRF、会话接口和 SSE 输出</td></tr>
-                <tr><td>Agent Runtime</td><td>Node.js 22、TypeScript、Mastra 1.81</td><td>模型调用、Agent 编排、工具调用和流事件处理</td></tr>
-                <tr><td>数据校验</td><td>Zod、AJV</td><td>请求、配置、工具结果和报告 Schema 校验</td></tr>
-                <tr><td>产品存储</td><td>LibSQL、@mastra/libsql</td><td>会话、消息、仓库、快照和证据状态</td></tr>
-                <tr><td>本地能力</td><td>MCP、@mastra/mcp、Python FastMCP</td><td>知识检索和仓库只读能力</td></tr>
-                <tr><td>跨 Agent 协作</td><td>A2A 插槽、JSON-RPC、SSE</td><td>客户端 Runtime 与远端 Agent 通信；Compass 是首个实例</td></tr>
-                <tr><td>渠道与身份</td><td>知音楼 SSO、Yach IM</td><td>企业身份、Web 登录和数字人 / IM 入口</td></tr>
+                <tr><td>Mastra</td><td>Agent 抽象、模型调用、工具执行、流式事件和 runtime storage 集成。</td><td>复用成熟的 Agent 运行能力，减少自行维护模型协议和工具调用循环。</td></tr>
+                <tr><td>Hono 产品 API</td><td>REST、认证、CSRF、会话接口和 AG-UI 兼容 SSE。</td><td>只暴露产品定义的接口，不直接开放 Mastra 通用管理 API。</td></tr>
+                <tr><td>ProductStore + LibSQL</td><td>保存会话、消息、工具状态、证据和报告。</td><td>产品数据有明确的事实来源，前端展示和恢复不依赖模型内部消息。</td></tr>
+                <tr><td>Python FastMCP</td><td>知识检索、源码搜索、文件读取和 hilog 解析。</td><td>工具可以独立开发和测试，Runtime 通过 MCP 按需使用。</td></tr>
               </tbody>
             </table>
-            <p class="muted">DeepSeek 是当前正式支持的模型服务。Kimi 和其他 provider 可配置但仍属实验或未验收。Python MCP 进程提供能力，不拥有产品会话和诊断编排。</p>
+            <p>Web、IM 和评测共用同一套诊断轮次与能力会话，不为不同入口复制工具编排逻辑。模型配置与诊断流程分离，当前正式支持 DeepSeek，其他模型服务可以在完成验收后接入。</p>
+
+            <h3>2.2 Runtime 自己保留的关键控制</h3>
+            <p>Mastra 提供运行框架，但诊断产品的质量要求由 Runtime 自己落实：</p>
+            <ul>
+              <li><strong>先保存，再执行：</strong>收到消息后先持久化用户消息和 streaming 占位，再启动模型与工具。</li>
+              <li><strong>工具状态持续落库：</strong>工具开始、结束和证据快照先写入数据库，再发送对应 SSE 事件。</li>
+              <li><strong>异常状态可恢复：</strong>进程重启后保留已完成的工具观察，把仍在运行的步骤修复为失败，避免永久停留在“执行中”。</li>
+              <li><strong>历史消息经过筛选：</strong>未完成的回复和不完整工具对不进入下一轮模型上下文，减少错误状态继续影响后续诊断。</li>
+              <li><strong>统一终态处理：</strong>成功、模型错误、工具错误和用户取消都有明确的消息状态；失败时保留已展示文本，但不保留误导性的结构化报告。</li>
+            </ul>
+            <p>这些处理让诊断过程不仅能在页面上实时展示，也能在失败或重启后恢复到一致状态。</p>
+
+            <h3>2.3 多用户并发与会话隔离</h3>
+            <p>Runtime 不为所有用户设置一个全局诊断队列。不同用户使用不同会话提问时，可以在同一个进程内并行执行，各自拥有独立的运行 ID、能力会话、工具预算、证据账本和 MCP client。一个用户的长时间排查不会阻塞其他用户。</p>
+            <table>
+              <thead><tr><th>使用场景</th><th>当前处理方式</th><th>设计目的</th></tr></thead>
+              <tbody>
+                <tr><td>不同用户、不同会话</td><td>并行执行模型调用和工具调查。</td><td>提高多人使用时的处理效率，同时隔离各自的仓库、工具状态和证据。</td></tr>
+                <tr><td>同一个 Web 会话同时发送消息</td><td>第一条继续执行，后续请求返回 409，提示上一条回复尚未完成。</td><td>防止同一会话的消息顺序、工具步骤和证据状态互相覆盖。</td></tr>
+                <tr><td>同一个知音楼用户连续提问</td><td>当前诊断继续执行，允许一条消息排队；队列已有消息时拒绝后续请求。</td><td>保证同一用户的上下文按顺序处理，避免消息无限堆积。</td></tr>
+                <tr><td>不同知音楼用户同时提问</td><td>按 <code>workCode</code> 建立独立会话，两个任务并行执行。</td><td>排队只影响同一用户，不影响其他用户。</td></tr>
+              </tbody>
+            </table>
+            <p class="muted">当前会话防重入状态保存在单个 Runtime 进程内，多进程部署还需要数据库 lease 或 CAS 协调。当前也没有全局诊断并发上限，多人同时使用时仍会共同占用模型服务和运行资源。</p>
+          </section>
+
+          <section class="section" id="orchestration">
+            <h2>3. 工具编排</h2>
+            <p>工具编排是本轮 Runtime 设计的重点。模型负责决定下一步调查动作，Runtime 决定本轮有哪些工具可用、工具如何执行，以及什么时候应该停止重复调查。</p>
+
+            <h3>3.1 按诊断轮次挂载能力</h3>
+            <p>每轮诊断都会创建独立的 <code>CapabilitySession</code>，携带固定的会话 ID、消息 ID、运行 ID、工作区和取消信号。Runtime 根据当前会话配置创建工具，而不是把全部工具永久挂到 Agent 上。</p>
+            <table>
+              <thead><tr><th>编排规则</th><th>实际作用</th></tr></thead>
+              <tbody>
+                <tr><td>按工作区挂载 Repository</td><td>没有绑定代码目录时，不向模型提供源码工具；绑定后，工具只能访问当前工作区。</td></tr>
+                <tr><td>可选能力允许降级</td><td>知识或可选日志能力不可用时记录缺失；必需的仓库初始化失败则停止本轮取证。</td></tr>
+                <tr><td>工具注册由 Runtime 管理</td><td>模型和 HTTP 请求不能自行指定工具工厂或扩大可用能力。</td></tr>
+                <tr><td>命名冲突直接拒绝</td><td>工具命名空间或名称重复时拒绝整个挂载，避免后注册工具覆盖已有工具。</td></tr>
+                <tr><td>统一取消与资源清理</td><td>轮次结束时先取消请求，再按相反顺序释放 MCP client；部分初始化失败也会清理已创建资源。</td></tr>
+              </tbody>
+            </table>
+            <p>这种方式让工具范围与当前会话保持一致，也减少了无关工具对模型选择的干扰。</p>
+
+            <h3>3.2 Skill 与工具联动</h3>
+            <p>排查方法写在独立的 Markdown <code>SKILL.md</code> 中，由 <code>SkillRegistry</code> 动态加载。Skill 声明适用阶段、运行模式和所需工具，Runtime 只把当前工具条件满足的 Skill 暴露给 Agent。</p>
+            <ul>
+              <li>没有日志工具时，日志 Skill 不会进入可用目录。</li>
+              <li>Agent 先看到 Skill 摘要，需要时使用 <code>load_skill</code> 加载正文，避免把所有操作手册一次性放进提示词。</li>
+              <li>排查方法可以随知识库和工具能力独立维护，不需要修改 Agent 类。</li>
+            </ul>
+
+            <h3>3.3 控制重复调用和调查成本</h3>
+            <p>所有诊断工具经过统一的执行包装层。该层不仅转发调用，还负责预算、缓存、进展判断和证据采集。</p>
+            <table>
+              <thead><tr><th>控制点</th><th>处理方式</th><th>带来的效果</th></tr></thead>
+              <tbody>
+                <tr><td>调用预算</td><td>限制单轮工具调用、失败和报告提交次数。</td><td>避免模型持续试探，控制耗时和调用成本。</td></tr>
+                <tr><td>相同调用缓存</td><td>根据工具名和规范化参数识别可复用结果。</td><td>减少重复检索和重复文件读取。</td></tr>
+                <tr><td>失败调用限制</td><td>同一非瞬时失败不能原样反复重试。</td><td>促使 Agent 调整参数或报告信息缺口。</td></tr>
+                <tr><td>无进展检测</td><td>识别空结果、重复结果和没有新增命中的搜索。</td><td>连续没有新发现时要求收尾，减少原地循环。</td></tr>
+                <tr><td>收尾阶段</td><td>接近预算上限后停止普通调查工具，只允许根据已有证据形成报告。</td><td>保证诊断能够结束，并保留当前结论边界。</td></tr>
+              </tbody>
+            </table>
+
+            <h3>3.4 工具结果直接进入诊断状态</h3>
+            <p>工具返回后，Runtime 会同步完成代码位置登记、证据捕获和调用统计。知识查询提供的代码入口可以指导后续搜索；实际读取的文件范围会被记录，避免 Agent 把没有读过的文件说成已经核对。</p>
+            <p>最终报告通过 <code>submit_diagnosis_report</code> 提交，由 EvidenceLedger 校验证据 ID 和逐字摘录。工具编排和结论校验因此形成一条完整链路，而不是模型在最后自由生成一份无法核对的报告。</p>
           </section>
 
           <section class="section" id="knowledge">
-            <h2>3. 知识库设计</h2>
-            <h3>3.1 知识所有权</h3>
+            <h2>4. 知识与代码协同</h2>
+            <p>项目将业务知识和代码结构查询分开处理。本地知识帮助 Agent 理解用户说法，Graphify 帮助 Agent 查看组件与函数关系，Repository MCP 提供最终需要核对的源码。</p>
             <table>
-              <thead><tr><th>知识类型</th><th>所属方</th><th>接入方式</th><th>结果性质</th></tr></thead>
+              <thead><tr><th>能力</th><th>适合处理的问题</th><th>在诊断中的作用</th></tr></thead>
               <tbody>
-                <tr><td>客户端知识</td><td>本项目</td><td>本地 <code>knowledge/</code> + Knowledge MCP</td><td>客户端排查线索</td></tr>
-                <tr><td>远端 Agent 知识</td><td>对应远端 Agent</td><td>A2A Agent Slot</td><td>外部 Agent 结论</td></tr>
+                <tr><td>本地 Knowledge MCP</td><td>“付款没有让签合同”可能对应哪条业务链路？</td><td>返回候选原因、区分判据和代码入口。</td></tr>
+                <tr><td>Graphify 代码图</td><td>这个组件在哪里定义，和哪些函数有关？</td><td>提供定义位置、文件和相邻代码关系。</td></tr>
+                <tr><td>Repository MCP</td><td>当前版本的实际实现是什么？</td><td>读取绑定快照中的源码，形成可引用观测。</td></tr>
               </tbody>
             </table>
-            <p>客户端不直连远端 Knowledge MCP，也不复制远端知识。远端 Agent 自己决定如何检索和使用它负责的知识。</p>
+            <p>两条入口可以衔接：业务现象先查本地知识，再沿代码入口查图或读源码；已经有明确组件或函数时可以直接查图。位置足够明确时也可以直接读源码，不要求每次诊断都经过全部工具。</p>
 
-            <h3>3.2 本地条目模型</h3>
-            <pre><code>knowledge/
-├── symptoms/                 # 用户描述的现象和别名
-├── facts/
-│   ├── speaking/             # 业务事实、映射和排查经验
-│   ├── contract/
-│   └── shared/
-├── README.md
-├── AGENTS.md
-└── _schema.md</code></pre>
-            <p>Markdown 条目使用稳定且全库唯一的 <code>name</code>。字段包括用户别名 <code>aliases</code>、业务域 <code>domains</code>、适用端 <code>applies_to</code>、来源权威 <code>authority</code>、维护与人工验证日期、适用版本。</p>
-            <p>一条事实只保留一份；跨域关联使用稳定引用，如 <code>[[speaking-vad-min-speech]]</code>。业务域和适用端影响排序，不作硬过滤或证据权威。</p>
+            <h3>4.1 本地知识的积累方式</h3>
+            <p>知识条目记录用户别名、业务域、适用端、来源和人工验证日期。每条事实只有一个规范入口，跨域关联使用稳定 ID。业务域和适用端用于排序，不作硬过滤，保留跨域召回和全局回退。</p>
+            <p>终态诊断会归档为案例，并记录知识查询 outcome，便于后续分析哪些知识真正帮助了排查。案例经人工确认后再提炼为知识提案，避免模型输出未经审核直接写回知识库。</p>
 
-            <h3>3.3 检索与治理</h3>
-            <div class="flow">
-              <div class="flow-step"><b>匹配现象</b><span>默认以用户原话调用 lookup_issue。</span></div>
-              <div class="flow-step"><b>展开事实</b><span>根据候选判据分页读取知识正文。</span></div>
-              <div class="flow-step"><b>现场核验</b><span>回到当前源码、hilog 或其他观测。</span></div>
-              <div class="flow-step"><b>案例回流</b><span>人工确认后提炼并校验知识提案。</span></div>
-            </div>
-            <p>知识负责缩小候选范围，不单独证明当前故障成立。`official` 或 `code` 表示来源类型可靠，仍不能替代本次实际观测。</p>
-            <table>
-              <thead><tr><th>组件</th><th>职责</th><th>边界</th></tr></thead>
-              <tbody>
-                <tr><td>Knowledge MCP</td><td>术语、候选、判据和代码锚点</td><td>不证明故障成立</td></tr>
-                <tr><td>Skill</td><td>指导 Agent 何时检索、追问或取证</td><td>不代替 Runtime 安全校验</td></tr>
-                <tr><td>Repository MCP</td><td>读取绑定快照中的真实源码</td><td>不修改仓库或执行构建</td></tr>
-                <tr><td>EvidenceLedger</td><td>登记真实观测并校验报告引用</td><td>不接受知识或 A2A 文本作为证据</td></tr>
-              </tbody>
-            </table>
-
-            <h3>3.4 关系查询与知识图谱</h3>
-            <p>当前知识库的“图谱”能力是受控关系展开：现象条目通过 <code>references</code> 指向事实，V2 检索通过受审核概念词表和 <code>related_to</code> 保留相关但不同的业务对象。它用于解释召回路径和扩大有限候选范围，不是任意深度的图数据库查询。</p>
-            <table>
-              <thead><tr><th>关系层</th><th>查询方式</th><th>返回内容</th><th>使用边界</th></tr></thead>
-              <tbody>
-                <tr><td>现象 → 事实</td><td><code>lookup_issue</code> 的引用展开</td><td>候选、引用、预览、遗漏引用和快照信息</td><td>候选线索，不是根因证据</td></tr>
-                <tr><td>用户词 → 概念</td><td>受控概念词表；V2 返回命中理由</td><td>对象、动作、状态和限定条件</td><td>不是通用向量语义</td></tr>
-                <tr><td>概念 → 相关概念</td><td>V2 概念注册表的 <code>related_to</code> 元数据</td><td>保留相关但不同对象的关系</td><td>当前不独立召回，也不提供任意遍历</td></tr>
-                <tr><td>代码节点 → 代码关系</td><td>规划中的 Graphify <code>code_graph.search/expand</code></td><td>组件、方法、文件和调用导航</td><td>回读源码后才可形成 <code>source</code> 证据</td></tr>
-              </tbody>
-            </table>
-            <div class="callout"><p><strong>边界：</strong>当前 MCP 没有开放任意 <code>graph_query</code> 或无限深度遍历。Knowledge MCP 的业务关系图和 Graphify 的代码图是两套不同索引，均不能直接替代当前案例的源码、日志等现场观测。</p></div>
+            <h3>4.2 Graphify 的补充价值</h3>
+            <p>本地知识擅长业务语义，但不适合维护全量代码关系。Graphify 在项目外离线建图，运行时只做有界的结构化查询，可以补充组件、函数和文件之间的导航信息，而不把建图成本带入诊断过程。</p>
+            <p>图产物必须绑定源码快照；图节点和图边只作为导航线索。动态调用、UI 状态关系和条件渲染仍需回读源码，图中没有连线也不能作为“不存在调用”的证明。Graphify 当前尚未接入 Runtime。</p>
           </section>
 
-          <section class="section" id="investigation">
-            <h2>4. 一次诊断的运行方式</h2>
-            <div class="flow">
-              <div class="flow-step"><b>建立会话</b><span>认证用户、绑定仓库与诊断上下文。</span></div>
-              <div class="flow-step"><b>挂载能力</b><span>按配置创建知识、代码和日志能力。</span></div>
-              <div class="flow-step"><b>调查与取证</b><span>Mastra Agent 调用 Skill 和只读 MCP 工具。</span></div>
-              <div class="flow-step"><b>保存并流式返回</b><span>先持久化工具状态和证据，再发 SSE。</span></div>
-            </div>
+          <section class="section" id="evidence">
+            <h2>5. 证据与安全设计</h2>
+            <h3>5.1 区分线索和证据</h3>
+            <p>EvidenceLedger 区分用户描述、知识线索和工具观测。根因候选必须关联实际读取的源码或日志；知识命中、用户猜测和工具失败都不能单独证明根因。证据不足时，报告保留待验证状态和缺失信息。</p>
+            <p>Git 会话使用固定 commit 的 detached snapshot，诊断过程中的源码和证据对应同一个版本。读取单个文件只能支持该文件和读取范围内的判断，不能据此声称已经排除整个仓库中的其他路径。</p>
+
+            <h3>5.2 只读工具边界</h3>
             <ul>
-              <li>Git 仓库会话读取固定 Commit 的 detached snapshot；本地目录读取授权根目录内的实时文件。</li>
-              <li>能力会话提供统一轮次上下文、AbortSignal、工具冲突检查和资源清理。</li>
-              <li>未配置的可选能力不挂载；知识服务不可用时可以降级，绑定仓库初始化失败则停止取证。</li>
-              <li>根因候选必须引用 EvidenceLedger 中实际观察到的源码或日志，不得只引用知识条目或用户猜测。</li>
+              <li>诊断 Agent 不提供 shell、写文件、构建、设备或 DevEco 操作。</li>
+              <li>RepositoryCapability 校验仓库 URL、分支、允许根目录、真实路径和快照身份，不修改用户工作树。</li>
+              <li>会话、工具摘要、报告、SSE 和评测产物会脱敏已配置凭据；模型配置以受限权限保存。</li>
+              <li>工具失败和取消会传递到当前轮次，日志 HTTP 请求也继承取消信号和超时控制。</li>
             </ul>
+
+            <h3>5.3 远端结论保持独立</h3>
+            <p>A2A 扩展沿用同样的边界：远端 Agent 使用自己的知识和工具，客户端接收任务状态、外部结论和限制。远端文本不能改变本地权限，也不能进入本地证据账本。联合报告需要分别展示客户端事实和远端结论。</p>
           </section>
 
-          <section class="section" id="agents">
-            <h2>5. 并行 Agent 方案</h2>
-            <p class="lead">采用 Runtime Supervisor + 并行调查 + 条件 Handoff。</p>
-            <h3>为什么不固定串行</h3>
-            <p>“客户端排除后才查服务端”会把等待时间叠加起来，而且客户端暂时没有找到根因不代表客户端已经被排除。跨端问题应先轻量分流，在上下文和授权满足时并行探索，再按发现补充调查。</p>
+          <section class="section" id="extension">
+            <h2>6. 协作扩展与当前状态</h2>
+            <p>现有 Runtime 已具备统一能力会话和工具注册入口，后续能力可以沿用相同的上下文、取消、预算和证据规则。扩展的重点是增加调查范围，而不是改变已经建立的诊断约束。</p>
 
-            <div class="two-lanes">
-              <article class="lane client"><h3>客户端 Agent</h3><p>使用本地 Knowledge MCP、绑定客户端仓库、hilog 和其他客户端观测。只拥有客户端侧工具和证据。</p></article>
-              <article class="lane server"><h3>远端 Agent Slot</h3><p>通过 A2A 连接服务端或专项 Agent，使用对端自己的知识、代码和日志。远端 Agent 不直接访问客户端工具。</p></article>
-            </div>
-
-            <h3>Runtime Supervisor 的职责</h3>
+            <h3>6.1 Agent Slot：远端能力按插槽接入</h3>
+            <p>远端协作方会持续增长（服务端诊断、专项领域 Agent 等）。如果每接入一个 Agent 就改一次主编排，Runtime 会不断膨胀，信任边界也会被反复打破。因此远端接入被抽象为<strong>插槽（Agent Slot）</strong>：Runtime 定义统一的接入契约，每个远端 Agent 以一个 Slot 适配器的形式插入，Compass 是第一个具体实例。</p>
             <ul>
-              <li>根据现象、服务、环境、时间和关联标识生成一次性调查计划，并选择远端 Agent Slot。</li>
-              <li>满足条件时启动客户端与远端分支；客户端分支不等待远端，远端分支不要求客户端先返回否定结论。</li>
-              <li>聚合两侧状态与结果；一侧失败不覆盖另一侧已完成的调查。</li>
-              <li>控制总耗时、远端调用数、最大交接次数和取消，避免无限 Agent 对话。</li>
+              <li><strong>固定契约：</strong>每个插槽实现同一套约定——Agent Card（能力自描述）、任务/结果 Schema、鉴权、取消、预算和输出限制。</li>
+              <li><strong>可插拔：</strong>新增远端 Agent = 新增一个适配器并注册到 Slot Registry，Runtime Core 和诊断主流程不变。</li>
+              <li><strong>知识与工具不越界：</strong>远端 Agent 使用自己的知识、代码和日志；客户端不复制远端知识，也不直连远端 Knowledge MCP。</li>
+              <li><strong>信任边界固定：</strong>每次调用前由用户批准本次调查范围，外发内容经硬门控；远端返回按不可信外部输入处理，结论单独保存，不进入本地证据账本。</li>
             </ul>
-            <pre><code>type InvestigationPlan = {
-  mode: 'local' | 'server' | 'parallel' | 'unknown';
-  branches: Array&lt;'client' | 'server'&gt;;
-  remoteSlots: string[];
-  reason: string;
-  correlationReady: boolean;
-  maxHandoffRounds: number;
-  budget: { maxSeconds: number; maxRemoteCalls: number };
-};</code></pre>
+            <p>这样 Runtime Core 保持稳定，远端能力以槽位形式扩展；证据规则和数据边界不随接入方增多而稀释。</p>
 
-            <h3>授权与自主探索边界</h3>
-            <ol>
-              <li>服务端调查首次启动前，Runtime 展示服务、环境、时间范围、关联标识和脱敏摘要，用户批准此次调查范围。</li>
-              <li>已批准范围内，远端 Agent 可以自主使用自己的知识、代码和日志，不需要每个内部步骤都弹窗确认。</li>
-              <li>新增客户端源码或日志、切换服务/环境或扩大范围时，Runtime 创建新的确认记录。</li>
-              <li>返回内容作为不可信外部数据处理；不能改变本地工具权限、会话端或证据门禁。</li>
-            </ol>
-
-            <h3>报告保留来源边界</h3>
+            <h3>6.2 当前状态</h3>
             <table>
-              <thead><tr><th>报告部分</th><th>来源</th><th>证据规则</th></tr></thead>
+              <thead><tr><th>能力</th><th>当前状态</th><th>说明</th></tr></thead>
               <tbody>
-                <tr><td>客户端事实</td><td>源码、hilog、本地观测</td><td>引用本地 <code>evidence_refs</code></td></tr>
-                <tr><td>远端 Agent 结论</td><td>A2A 任务返回</td><td>独立存为 <code>remote_conclusion</code>，不进本地账本</td></tr>
-                <tr><td>综合判断</td><td>两侧结果的关联和冲突</td><td>明确标记已验证与待验证主张</td></tr>
-                <tr><td>责任状态</td><td>综合判断</td><td><code>client</code> / <code>server</code> / <code>shared</code> / <code>unknown</code></td></tr>
+                <tr><td>Mastra Runtime、Hono API、Web 工作台</td><td><span class="status status-live">已实现</span></td><td>支持会话、流式诊断、工具状态展示和持久化恢复。</td></tr>
+                <tr><td>Knowledge MCP、Repository MCP</td><td><span class="status status-live">已实现</span></td><td>支持本地知识检索、绑定快照源码查询和证据登记。</td></tr>
+                <tr><td>Compass A2A Agent Slot</td><td><span class="status status-live">已接入聊天链路</span></td><td>已有 Agent Card、JSON-RPC SSE、审批恢复、CancelTask 和外部结论隔离。</td></tr>
+                <tr><td>LogCenter</td><td><span class="status status-framework">关联入账框架已实现</span></td><td>四工具支持私有身份发现、目标绑定、脱敏和关联日志入账；真实生产字段与学员联调待验收。</td></tr>
+                <tr><td>Graphify</td><td><span class="status status-plan">规划中</span></td><td>已完成外部建图验证，Runtime 只读查询和快照门禁尚未接入。</td></tr>
+                <tr><td>Supervisor 并行调度、联合报告</td><td><span class="status status-live">已实现</span></td><td>支持本地优先观察、条件并行、自动跨侧、预算取消和本地/外部结论联合报告。</td></tr>
+                <tr><td>iOS、Android 多端支持</td><td><span class="status status-plan">待接入</span></td><td>复用统一 Agent，补充端上下文、Skill 和知识配置。</td></tr>
               </tbody>
             </table>
-          </section>
-
-          <section class="section" id="capabilities">
-            <h2>6. 能力接入边界</h2>
-            <div class="grid-2">
-              <article class="info tone-orange"><h3>LogCenter <span class="status status-framework">框架已接入</span></h3><p>已有 SLS Catalog 查询工具、超时和轮次取消。真实平台联调、PII 脱敏、服务发现和日志证据门禁待完成；当前搜索结果只作辅助信息。</p></article>
-              <article class="info tone-blue"><h3>Graphify 代码图 <span class="status status-plan">规划中</span></h3><p>只作为绑定快照的代码导航索引。图节点和边不是证据；需要回读同一快照中的源码才能形成源码观测。</p></article>
-              <article class="info tone-teal"><h3>A2A Agent Slot <span class="status status-live">Compass P0 已实现</span></h3><p>Agent Card、JSON-RPC SSE 和 CancelTask 适配器可用。聊天工具接入、通用 Slot Registry、Supervisor 工作流和联合报告尚未开放。</p></article>
-              <article class="info tone-green"><h3>统一客户端 Agent <span class="status status-plan">多端待接线</span></h3><p>同一个 ClientDiagnosisAgent 覆盖 HarmonyOS、iOS 和 Android。正式开放其他端前仍需会话端绑定、知识上下文强制注入、Skill 过滤和端到端验收。</p></article>
-            </div>
-          </section>
-
-          <section class="section" id="roadmap">
-            <h2>7. 当前状态与后续路线</h2>
-            <table>
-              <thead><tr><th>能力</th><th>状态</th><th>下一步</th></tr></thead>
-              <tbody>
-                <tr><td>Mastra Runtime</td><td><span class="status status-live">已实现</span></td><td>完善 Supervisor、并行调查与结果聚合</td></tr>
-                <tr><td>本地 Knowledge MCP</td><td><span class="status status-live">已实现</span></td><td>真实案例回流、检索和成本评估</td></tr>
-                <tr><td>SSO / Web / IM</td><td><span class="status status-live">基础能力已具备</span></td><td>按发布环境完成验证</td></tr>
-                <tr><td>A2A Agent Slot</td><td><span class="status status-live">Compass P0</span></td><td>P1 通用槽位、授权、并行调查、取消和联合报告</td></tr>
-                <tr><td>LogCenter</td><td><span class="status status-framework">框架已接入</span></td><td>真实联调后再接证据门禁</td></tr>
-                <tr><td>统一客户端 Agent / Graphify / 多端</td><td><span class="status status-plan">部分已有、部分规划</span></td><td>补充端上下文、Graphify 快照门禁和端到端验证</td></tr>
-              </tbody>
-            </table>
-            <div class="callout"><p><strong>路线建议：</strong>公共能力框架 → A2A P1 并行调查与联合报告 → LogCenter 真实联调 → Graphify 和多端接入 → 固定问题集质量与成本评估。</p></div>
-          </section>
-
-          <section class="section" id="talking-points">
-            <h2>分享时可以强调的三句话</h2>
-            <ol>
-              <li>Mastra 编排诊断流程，MCP 提供本地只读能力，A2A 插槽连接远端 Agent。</li>
-              <li>知识库缩小候选空间，根因结论回到当前代码和日志等可验证观测。</li>
-              <li>客户端和服务端可以并行探索，Runtime 统一控制授权、数据外发、任务生命周期和报告。</li>
-            </ol>
           </section>
 
           <footer class="foot">
-            <div>配套可编辑稿：<a href="LEADERSHIP_SHARE.md">LEADERSHIP_SHARE.md</a></div>
+            <div>相关文档：</div>
             <div class="foot-links">
+              <a href="README.md">文档导航</a>
               <a href="ARCHITECTURE.md">当前架构</a>
-              <a href="multi-capability-expansion-plan.md">扩展规划</a>
-              <a href="multi-capability-technical-design.md">技术设计</a>
-              <a href="multi-capability-implementation-plan.md">实施任务</a>
+              <a href="orchestration-layer-design.md">编排层实现</a>
+              <a href="multi-capability-expansion-plan.md">后续规划</a>
               <a href="../spec/compass-a2a-integration.md">A2A 规格</a>
               <a href="decisions/0002-runtime-knowledge-budget.md">知识与证据 ADR</a>
             </div>
