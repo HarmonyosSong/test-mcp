@@ -1,14 +1,14 @@
 # 日志目录与查询能力规格
 
-> 状态：P0/P1 框架和离线验证已具备；真实 LogCenter 联调待完成。
-> 日期：2026-11-06  
+> 状态：双 source Catalog（阿里云 SLS 埋点 + 未来云 APM service_id）已落地；真实联调与证据门禁仍后置。
+> 日期：2026-11-11  
 > 范围：Mastra TypeScript runtime（`runtime/`）内的**可选日志查询能力** + **仓内日志分类目录（Catalog）**  
 > 关联：日志中心 / 云日志 skill（`logcenterskill`，协议与 API 参考）；能力框架见 [`ARCHITECTURE.md`](../docs/ARCHITECTURE.md)；Compass 分阶段能力见 [`compass-a2a-integration.md`](./compass-a2a-integration.md)
 > 硬约束：**仅提供能力**；不修改现有排查/取证链路；不与现有工具抢语义或改其行为；EvidenceLedger / 根因编排留给后续接入方
 
-本文是 Troubleshoot Odyssey 中「查日志」能力的发布契约：解决**用户不知道 account / project / logstore / appid** 时，如何靠内置分类快速定位并查询。交付物是可挂载的工具 + Skill + Catalog；**不改**现有分层取证、报告校验与证据账本主流程。
+本文是 Troubleshoot Odyssey 中「查日志」能力的发布契约：解决**用户不知道 account / project / logstore / appid / service_id** 时，如何靠内置分类快速定位并查询。交付物是可挂载的工具 + Skill + Catalog；**不改**现有分层取证、报告校验与证据账本主流程。
 
-当前默认采用已有原生 Mastra Catalog/SLS 工具，由 `capabilities/session.ts` 统一管理挂载和轮次取消。日志凭证为空不影响其余功能，默认单次 HTTP 超时 15 秒，可通过 `HARMONY_AGENT_LOGCENTER_TIMEOUT_MS` 配置。框架测试只访问 mock 或本机 HTTP；查询参数、真实响应结构、权限与业务坐标仍待平台联调。规划中的 `service_id` MCP、PII 脱敏闭环和日志证据门禁尚未实施，不因现有框架测试通过而自动启用。
+当前由 `capabilities/session.ts` 统一挂载五工具：`resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`count_logs`、`query_logs`。日志凭证为空不影响其余功能；默认单次 HTTP 超时 15 秒（`HARMONY_AGENT_LOGCENTER_TIMEOUT_MS`）。框架测试用 mock/本机 HTTP。PII 脱敏闭环与日志证据门禁尚未实施。
 
 ---
 
@@ -22,11 +22,11 @@
 
 ### 1.2 目标（本规格）
 
-1. 在工程内维护一份**可 Git 审阅的日志分类 Catalog**（store → appid → 业务别名与匹配提示）。  
-2. 在 Runtime 提供**可选**的薄查询工具（resolve + count + search），凭据来自环境变量；未配置则不挂载。  
-3. 用产品内 `skills/*/SKILL.md` 规定调用顺序（先 resolve 再查），通过现有 `load_skill` + `required_tools` 门禁暴露给 Agent。  
-4. MVP 覆盖已验证路径：阿里云 SLS、`pysy-front-log` 下 `prod-android` / `prod-cloudlearn` / `prod-ios` 及已梳理的 appid 分类。  
-5. **能力正交**：新增工具名与 Skill 名不覆盖现有能力；未配置时零行为变化；配置后也不改排查主链路的强制步骤。
+1. 维护可 Git 审阅 Catalog（v3）：`targets[]` 为 resolve 一等公民（SLS **appid** 或 APM `service_id`）；`stores[]` 仅物理坐标。  
+2. Runtime 薄查询工具（resolve + SLS count/search + logcenter count/query）；业务筛选项来自 Catalog，不硬编码。  
+3. Skill 规定：先 resolve，再按 `source` 分流；`load_skill` + `required_tools`。  
+4. 覆盖：SLS 埋点（含 prod-ios 上鸿蒙/iOS 分 appid）；未来云四端 APM。  
+5. **能力正交**：未配置时零行为变化。
 
 ### 1.3 非目标
 
@@ -37,7 +37,7 @@
 | 诊断编排接入 | 不规定「何时查日志 / 如何写根因」；不强制每轮挂日志工具进证据策略 |
 | EvidenceLedger | 本规格不要求把远程日志登记为 `kind: log`；后续接入方另开规格 |
 | 整包代理 logcenterskill CLI | 不向 Agent 暴露 accounts/collections/topics 全套级联工具面 |
-| 腾讯云 CLS / 日志中心 ES 全量 | MVP 只做阿里云 SLS；接口预留 vendor，后续加 Catalog 条目与客户端分支 |
+| 腾讯云 CLS / 动态服务发现全量 | 未来云仅 Catalog 白名单 `service_id`；不向 Agent 暴露 list/accounts 全量扫描；腾讯云 CLS 仍后置 |
 | Catalog 热更新 / 运营后台 | MVP 改 YAML + 发版/重启；不把 Catalog 写入 LibSQL 产品库 |
 | 把 Cursor skill 目录拷进 `skills/` 当可执行体 | 产品 Skill 只是说明书；真能力是 Runtime tools |
 
@@ -55,8 +55,9 @@
 | 密钥 | LogCenter `AppID` / `AppSecret` **仅**环境变量；Catalog **禁止**写密钥 |
 | 工具形态 | 原生 Mastra `createTool`（薄封装 HTTP/API）；不把 Python CLI 当 Agent 子进程主路径 |
 | Agent 行为入口 | `skills/use-log-catalog/SKILL.md` + `load_skill`；`required_tools` 门禁 |
-| 解析模型 | 会话关键字 / 别名 → `resolve_log_target` 查 Catalog；多候选则澄清，禁止瞎猜 account |
-| 默认云路径 | `vendor=aliyun`，已验证：`account=1743276692096170`，`collection=pysy-front-log`，`region=cn-beijing` |
+| 解析模型 | 别名 → `resolve_log_target`；候选带 `source`/`log_kind`；多候选（含埋点 vs APM）则澄清；禁止瞎猜 account/service_id |
+| 默认 SLS 路径 | `vendor=aliyun`，`account=1743276692096170`，`collection=pysy-front-log`，`region=cn-beijing` |
+| 默认 APM 路径 | Catalog 四端 `service_id`；查询 `skill/search/time` 与 `skill/search`（秒级时间，`from`=页码） |
 | LibSQL | **不**存 Catalog；产品库继续只存会话/仓库/快照等运行态 |
 
 ---
@@ -64,21 +65,25 @@
 ## 3. 概念模型
 
 ```text
-用户自然语言（口语岛 / uid / 最近1小时）
+用户自然语言（口语岛 / 安卓监控 / uid / 最近1小时）
         │
         ▼
 ┌───────────────────┐
-│ resolve_log_target │  ← 读 Catalog（别名、appid、业务 match 提示）
+│ resolve_log_target │  ← Catalog（别名 + source/log_kind）
 └─────────┬─────────┘
           │ 唯一命中 / 用户确认后的目标
+     ┌────┴────┐
+     ▼         ▼
+ source=     source=
+ aliyun_sls  logcenter
+     │         │
+     ▼         ▼
+ count_cloud_logs   count_logs
+ search_cloud_logs  query_logs
+     │         │
+     └────┬────┘
           ▼
-┌───────────────────┐
-│ count_cloud_logs  │  ← 可选，先看量
-│ search_cloud_logs │  ← 带 account/collection/topic/appid/query/time
-└───────────────────┘
-          │
-          ▼
-     结构化日志结果（截断、脱敏）返回给模型
+   结构化日志结果（截断）返回给模型
 ```
 
 三件套职责：
@@ -117,100 +122,79 @@ runtime/contracts/log-catalog/
 
 顶层：
 
-- `version`：整数，从 `1` 起  
-- `vendor`：MVP 固定语义 `aliyun`（条目也可覆盖）  
-- `defaults`：`region` / `account` / `collection` / `time`  
-- `stores[]`：Logstore 级条目  
+- `version`：整数（当前 `2`）  
+- `vendor`：SLS 默认 `aliyun`（条目可覆盖）  
+- `defaults`：`region` / `account` / `collection` / `time`（仅 SLS）  
+- `stores[]`：目录条目  
 
 每个 `stores[]`：
 
-- `id`：稳定 ID（建议与 topic 同名，如 `prod-cloudlearn`）  
-- `topic`：SLS Logstore 名  
+- `id`：稳定 ID  
+- `source`：`aliyun_sls` \| `logcenter`  
+- `log_kind`：`product_event` \| `client_apm`  
+- `client_form`：可选 `phone` \| `pad` \| `h5` \| `harmony`  
+- `topic`：SLS Logstore 名，或日志中心 topic（复核用）  
 - `env`：`prod` \| `test`  
-- `aliases[]`：中文/英文别名，供 resolve  
-- `description`：给人与模型看的说明  
-- `notes[]`：可选，如 `appid_not_sql_groupable`  
-- `appids[]`：该 store 下业务线  
+- `aliases[]` / `description` / `notes[]`  
+- SLS：`appids[]`（至少一条）；可选覆盖 `region`/`account`/`collection`/`vendor`  
+- LogCenter：必填 `service_id`；推荐 `app_clientid`、`key_fields`、`monitor_types`、`suggested_query`  
 
-每个 `appids[]`：
+每个 SLS `appids[]`：`id`、`aliases`、`key_fields`、`businesses[].match` 同前。
 
-- `id`：真实 `appid` 字符串  
-- `aliases[]` / `description`  
-- `key_fields[]`：拼查询时优先考虑的字段  
-- `businesses[]`：可选细化  
-  - `name`、`aliases[]`、`match`（如 `pageid` / `eventid` / `eventname` / `clickid`）
+Resolve 规则：
 
-Resolve 规则（实现必须遵守）：
+1. 匹配 store / appid / business / `app_clientid` / `service_id` 字符串别名。  
+2. 唯一命中 → 返回带 `source` 的完整坐标与 `suggested_query`。  
+3. 多命中（含跨 source）→ `ambiguous`，Skill 一次澄清（埋点 vs APM、Pad vs 手机等）。  
+4. 零命中 → `not_found`；禁止猜 account/topic/service_id。  
+5. 不向 Agent 暴露账号/服务全量列表；扩目录靠改 YAML。
 
-1. 用用户原文中的短连续片段或显式业务词匹配 `stores.aliases` / `appids.aliases` / `businesses.aliases`（大小写不敏感；中文精确或包含匹配策略在实现里固定并单测）。  
-2. **唯一**命中 → 返回完整查询坐标 + 建议的 `query` 片段（如 `appid: "…"` 与 match 字段）。  
-3. **多个**命中 → 返回候选列表，Skill 要求模型只问一个澄清问题。  
-4. **零**命中 → `not_found`；不得调用 search 猜 account/topic。  
-5. Catalog 未覆盖的账号级联探索：**不在 MVP 工具面**；需要扩 Catalog，而不是让 Agent 扫 57 个账号。
+### 4.3 内容范围
 
-### 4.3 MVP 内容范围
+**阿里云 SLS（product_event）**
 
-实现首版 Catalog 必须包含会话中已验证的分类（可随评审微调文案，坐标不得臆造）：
-
-| topic | 代表性 appid | 业务别名示例 |
+| topic | 代表性 appid | 别名示例 |
 | --- | --- | --- |
-| `prod-android` | `log-eagle-0005-prod`, `log-fe-native-android-001-prod` | 语音测评 SDK、Android WS |
-| `prod-cloudlearn` | `log-eagle-0008-prod`, `log-eagle-0009-prod`, `log-eagle-0016-prod` | 口语岛、英语绘本、磨耳朵 |
-| `prod-ios` | `log-fe-native-iOS-001-prod`, `log-har-001~004-prod`, `log-fe-virtually-mall-prod` | iOS 播放器、生命周期、装扮商城 |
+| `prod-android` | `log-eagle-0005-prod`, `log-fe-native-android-001-prod` | 语音测评、Android WS |
+| `prod-cloudlearn` | `log-eagle-0008-prod`… | 口语岛、绘本、磨耳朵 |
+| `prod-ios` | `log-fe-native-iOS-001-prod`… | 播放器、装扮商城 |
 
-`prod-cloudlearn` 须标注：`appid` 不宜做 SQL `group by`；筛选用检索条件 / `where` 精确匹配。
+**未来云 APM（client_apm）**
+
+| service_id | store id | app_clientid |
+| --- | --- | --- |
+| 1116 | apm-pad-android | XesPadPyAndroid |
+| 846 | apm-phone-android | XesPyAndroid |
+| 1028 | apm-ipad-ios | XesPyIOSHD |
+| 847 | apm-iphone-ios | XesPyIOS |
+
+`prod-cloudlearn` 须标注：`appid` 不宜 SQL `group by`。
 
 ---
 
 ## 5. 工具规格（Agent 面）
 
-仅暴露三个工具（名称实现时可微调，但语义固定）：
+五个工具：
 
 ### 5.1 `resolve_log_target`
 
-**输入：** `query`（短文本，优先用户原话子串）  
-**输出：**
+**输入：** `query`  
+**输出：** `status` + `candidates[]`，每项含 `source`、`log_kind`、`client_form`，以及 SLS 坐标或 `service_id`/`app_clientid`。只读，不算观测证据。
 
-```json
-{
-  "status": "resolved | ambiguous | not_found",
-  "candidates": [
-    {
-      "store_id": "prod-cloudlearn",
-      "vendor": "aliyun",
-      "region": "cn-beijing",
-      "account": "1743276692096170",
-      "collection": "pysy-front-log",
-      "topic": "prod-cloudlearn",
-      "appid": "log-eagle-0008-prod",
-      "business": "测评结果",
-      "suggested_query": "appid: \"log-eagle-0008-prod\" and pageid: \"新口语岛\"",
-      "key_fields": ["pageid", "eventid", "clickid", "uid", "customtraceid"]
-    }
-  ]
-}
-```
+### 5.2 `count_cloud_logs` / 5.3 `search_cloud_logs`
 
-只读；结果**不**算观测证据（与外部知识 resolve 同类：路由信息）。
+仅用于 `source=aliyun_sls`。`search` 的 `from` 为偏移量；`size` 默认 ≤ 50、硬上限 200。
 
-### 5.2 `count_cloud_logs`
+### 5.4 `count_logs` / 5.5 `query_logs`
 
-**输入：** resolve 得到的坐标字段 + `time` + 可选 `query`  
-**输出：** `{ total, elapsed_ms }`（或平台等价结构）  
-大结果前应先 count（Skill 规定）。
+仅用于 `source=logcenter`。入参 `service_id` + `time` + 可选 Lucene `query`。`query_logs.page` 从 **1** 起（页码）；`size` ≤ 40。上游：`skill/search/time`、`skill/search`。
 
-### 5.3 `search_cloud_logs`
+**禁止**暴露：`cloud-accounts` / `collections` / `topics`、DSL/script、未截断全量拉取、动态 `list` 扫全站服务。
 
-**输入：** 同上 + `size`（上限封顶，建议默认 ≤ 50，硬上限 ≤ 200）+ 可选 `from`  
-**输出：** 截断后的日志列表（字段白名单或按 `key_fields` 优先保留）；过长 `exception`/`desc` 截断；错误码可区分权限失败 / 参数失败 / 上游失败。
+### 5.6 客户端实现约束
 
-**禁止**向 Agent 暴露：`cloud-accounts`、`cloud-collections`、`cloud-topics`、任意 DSL/script、未截断的全量拉取。
-
-### 5.4 客户端实现约束
-
-- 签名与网关调用逻辑可参考 logcenterskill，但应落在 `runtime/src/capabilities/log-center.ts`（或同级模块）内的 TypeScript 客户端，便于测试与预算包装。  
-- 允许后续抽共享 Python 库，但 **Agent 默认路径不依赖** 调用本机 `~/.logcenter/credentials.json`。  
-- HTTP 请求使用轮次 AbortSignal 和可配置超时；不增加自动重试。日志正文的专用 PII 脱敏和证据接入按后续规格实施，当前截断不等于脱敏。
+- 实现位于 `runtime/src/capabilities/log-center.ts`；不依赖本机 `~/.logcenter/credentials.json`。  
+- 轮次 AbortSignal + 可配置超时；无自动重试。截断 ≠ 脱敏。
 
 ---
 
@@ -220,27 +204,22 @@ Resolve 规则（实现必须遵守）：
 
 `skills/use-log-catalog/SKILL.md`
 
-Frontmatter 要求：
-
 ```yaml
 name: use-log-catalog
-description: Resolve business log targets from the built-in catalog and query Aliyun SLS via bounded tools. Use when the user asks about remote product/app logs and log tools are available; not a substitute for pasted hilog or source evidence.
 metadata:
-  version: "0.1.0"
-  stage: investigate
-  modes: [chat]
-  required_tools: [resolve_log_target, count_cloud_logs, search_cloud_logs]
+  version: "0.2.0"
+  required_tools: [resolve_log_target, count_cloud_logs, search_cloud_logs, count_logs, query_logs]
 ```
 
-### 6.2 行为要点（写入 Skill 正文）
+### 6.2 行为要点
 
-1. 仅当上述三个工具可用时本 Skill 出现在可用列表。  
-2. **必须**先 `load_skill("use-log-catalog")`，再 `resolve_log_target`。  
-3. `ambiguous` → 一次澄清；`not_found` → 说明 Catalog 未覆盖，请用户给 store/appid 或请维护者补目录；**禁止**自行扫账号。  
-4. `resolved` 后：有量不确定时先 `count_cloud_logs`，再 `search_cloud_logs`。  
-5. 查询条件优先用 Catalog 的 `suggested_query` / `key_fields`；用户给了 `uid` / `customtraceid` 则并入 query。  
-6. 本能力返回内容在**本规格阶段**仅作排查辅助；是否写入诊断证据账本由后续规格定义。未写入账本前，不得把「查过日志」表述成已完成的根因证明（与外部知识边界同理）。  
-7. 与 `parse_hilog`：用户已粘贴 hilog 时优先本地解析；需要平台侧检索时再用本 Skill。
+1. 五工具齐备时本 Skill 可见。  
+2. 先 `load_skill`，再 `resolve_log_target`。  
+3. `ambiguous` → 一次澄清（埋点 vs APM 等）；`not_found` → 补目录，禁止扫账号。  
+4. `source=aliyun_sls` → count/search_cloud_logs；`source=logcenter` → count_logs/query_logs。  
+5. 优先 Catalog `suggested_query` / `key_fields`。  
+6. 本阶段结果仅排查辅助，不自动进证据账本。  
+7. 已粘贴 hilog 时优先 `parse_hilog`。
 
 ### 6.3 挂载方式（回答「Skill 如何提供给 Agent」）
 

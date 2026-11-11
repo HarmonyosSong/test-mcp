@@ -165,7 +165,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续。仓库 MCP 按会话工作区启动：Git 仓库会绑定 detached Commit 快照，本地目录则读取授权根目录中的实时文件，诊断过程中工作区变化可能影响后续读取。知识检索和仓库代码检查需要 Python/uv 已安装，并已通过 `make setup` 安装 `mcp_server/` 依赖。
 
-LogCenter 当前处于框架完成、待真实联调阶段。AppID / AppSecret 留空即可使用其余功能；框架验收使用本机模拟 HTTP，不依赖日志平台权限。后续联调时在本地 `.env` 配置上表变量，并核对 Catalog 的业务坐标、查询条件、响应格式和权限。现有三个工具是 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`，不等于规划中的 `service_id` 服务发现或日志证据门禁，契约见 [`日志目录与查询规格`](spec/log-catalog-query-capability.md)。
+LogCenter 能力：Catalog 双 source（阿里云 SLS 产品埋点 + 未来云 APM `service_id`）。AppID / AppSecret 留空即可使用其余功能；框架验收使用本机模拟 HTTP。工具为 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`count_logs`、`query_logs`。不等于动态服务发现或日志证据门禁，契约见 [`日志目录与查询规格`](spec/log-catalog-query-capability.md)。
 
 ## 仓库与快照
 

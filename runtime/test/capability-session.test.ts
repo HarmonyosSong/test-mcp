@@ -136,7 +136,13 @@ test('round factory keeps unconfigured logs absent and does not expose configure
     try {
       assert.deepEqual(Object.keys(session.toolsets), configured ? ['log_catalog'] : []);
       if (configured) {
-        assert.deepEqual(Object.keys(session.toolsets.log_catalog!), ['resolve_log_target', 'count_cloud_logs', 'search_cloud_logs']);
+        assert.deepEqual(Object.keys(session.toolsets.log_catalog!), [
+          'resolve_log_target',
+          'count_cloud_logs',
+          'search_cloud_logs',
+          'count_logs',
+          'query_logs',
+        ]);
       } else {
         assert.deepEqual(session.unavailable, ['knowledge', 'log_catalog']);
       }

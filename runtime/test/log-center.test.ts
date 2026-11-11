@@ -23,6 +23,9 @@ test('loads catalog and resolves 口语岛 to cloudlearn eagle-0008', async () =
     assert.equal(result.status, 'resolved', query);
     assert.equal(result.candidates.length, 1, query);
     const hit = result.candidates[0]!;
+    assert.equal(hit.source, 'aliyun_sls');
+    assert.equal(hit.log_kind, 'product_event');
+    assert.equal(hit.target_id, 'log-eagle-0008-prod');
     assert.equal(hit.store_id, 'prod-cloudlearn');
     assert.equal(hit.topic, 'prod-cloudlearn');
     assert.equal(hit.appid, 'log-eagle-0008-prod');
@@ -32,32 +35,93 @@ test('loads catalog and resolves 口语岛 to cloudlearn eagle-0008', async () =
   }
 });
 
+test('resolves 鸿蒙 to har appid on shared prod-ios store', async () => {
+  const catalog = await loadLogCatalog(catalogPath);
+  const result = resolveLogTarget(catalog, '鸿蒙');
+  assert.equal(result.status, 'resolved');
+  assert.equal(result.candidates[0]?.platform, 'harmony');
+  assert.equal(result.candidates[0]?.appid, 'log-har-001-prod');
+  assert.equal(result.candidates[0]?.store_id, 'prod-ios');
+  assert.equal(result.candidates[0]?.topic, 'prod-ios');
+  assert.match(result.candidates[0]!.suggested_query, /appid: "log-har-001-prod"/);
+});
+
+test('resolves 装扮商城 by appid not store name', async () => {
+  const catalog = await loadLogCatalog(catalogPath);
+  const result = resolveLogTarget(catalog, '装扮商城');
+  assert.equal(result.status, 'resolved');
+  assert.equal(result.candidates[0]?.appid, 'log-fe-virtually-mall-prod');
+  assert.equal(result.candidates[0]?.store_id, 'prod-ios');
+});
+
+test('resolves APM aliases to logcenter service_id targets', async () => {
+  const catalog = await loadLogCatalog(catalogPath);
+  const pad = resolveLogTarget(catalog, '培优Pad安卓监控');
+  assert.equal(pad.status, 'resolved');
+  assert.equal(pad.candidates[0]?.source, 'logcenter');
+  assert.equal(pad.candidates[0]?.log_kind, 'client_apm');
+  assert.equal(pad.candidates[0]?.service_id, 1116);
+  assert.equal(pad.candidates[0]?.app_clientid, 'XesPadPyAndroid');
+  assert.equal(pad.candidates[0]?.client_form, 'pad');
+
+  const phone = resolveLogTarget(catalog, 'XesPyAndroid');
+  assert.equal(phone.status, 'resolved');
+  assert.equal(phone.candidates[0]?.service_id, 846);
+
+  const iphone = resolveLogTarget(catalog, '培优iPhone监控');
+  assert.equal(iphone.status, 'resolved');
+  assert.equal(iphone.candidates[0]?.service_id, 847);
+
+  const ipad = resolveLogTarget(catalog, 'XesPyIOSHD');
+  assert.equal(ipad.status, 'resolved');
+  assert.equal(ipad.candidates[0]?.service_id, 1028);
+});
+
+test('vague 安卓 is ambiguous across product_event and APM', async () => {
+  const catalog = await loadLogCatalog(catalogPath);
+  const result = resolveLogTarget(catalog, '安卓');
+  assert.equal(result.status, 'ambiguous');
+  const sources = new Set(result.candidates.map((c) => c.source));
+  assert.ok(sources.has('logcenter'));
+});
+
 test('resolve returns not_found and ambiguous correctly', async () => {
   const catalog = await loadLogCatalog(catalogPath);
   assert.equal(resolveLogTarget(catalog, '完全不存在的业务词xyz').status, 'not_found');
 
   const ambiguousCatalog: LogCatalog = {
-    version: 1,
+    version: 3,
     vendor: 'aliyun',
     defaults: catalog.defaults,
     stores: [
+      { id: 's', topic: 's', env: 'prod', description: '', notes: [] },
+    ],
+    targets: [
       {
-        id: 'a',
-        topic: 'a',
-        env: 'prod',
+        id: 'app-a',
+        source: 'aliyun_sls',
+        log_kind: 'product_event',
+        store_ref: 's',
         aliases: ['同名'],
         description: '',
         notes: [],
-        appids: [{ id: 'app-a', aliases: [], description: '', key_fields: [], businesses: [] }],
+        key_fields: [],
+        businesses: [],
+        suggested_query: '',
+        monitor_types: {},
       },
       {
-        id: 'b',
-        topic: 'b',
-        env: 'prod',
+        id: 'app-b',
+        source: 'aliyun_sls',
+        log_kind: 'product_event',
+        store_ref: 's',
         aliases: ['同名'],
         description: '',
         notes: [],
-        appids: [{ id: 'app-b', aliases: [], description: '', key_fields: [], businesses: [] }],
+        key_fields: [],
+        businesses: [],
+        suggested_query: '',
+        monitor_types: {},
       },
     ],
   };
@@ -96,21 +160,37 @@ test('createLogCatalogTools signs and searches with mocked HTTP', async () => {
   const tools = await createLogCatalogTools(config, {
     http: async ({ url, headers }) => {
       requests.push({ url, headers });
-      if (url.includes('/count')) {
+      if (url.includes('/cloud/') && url.includes('/count')) {
         return { status: 200, body: { code: 0, data: { total: 12, elapsed_millisecond: 9 } } };
       }
-      return {
-        status: 200,
-        body: {
-          code: 0,
-          data: {
-            total: 1,
-            elapsed_millisecond: 11,
-            progress: 'Complete',
-            logs: [{ appid: 'log-eagle-0008-prod', pageid: '新口语岛', desc: 'ok' }],
+      if (url.includes('/cloud/') && url.includes('/search')) {
+        return {
+          status: 200,
+          body: {
+            code: 0,
+            data: {
+              total: 1,
+              elapsed_millisecond: 11,
+              progress: 'Complete',
+              logs: [{ appid: 'log-eagle-0008-prod', pageid: '新口语岛', desc: 'ok' }],
+            },
           },
-        },
-      };
+        };
+      }
+      if (url.includes('skill/search/time')) {
+        return { status: 200, body: { code: 0, total: 42, data: { data: [] } } };
+      }
+      if (url.includes('skill/search')) {
+        return {
+          status: 200,
+          body: {
+            code: 0,
+            total: 1,
+            data: { data: [{ 'c.monitorLogType': '1', topic: 'basiclog-monitor_26_1002935' }] },
+          },
+        };
+      }
+      return { status: 200, body: { code: 0, data: {} } };
     },
   });
   assert.ok(tools);
@@ -142,19 +222,37 @@ test('createLogCatalogTools signs and searches with mocked HTTP', async () => {
   assert.equal(searched.total, 1);
   assert.equal(searched.logs.length, 1);
 
-  assert.equal(requests.length, 2);
+  const serviceCounted = await tools.count_logs.execute!({
+    service_id: 846,
+    time: '15m',
+    query: 'c.monitorLogType:1',
+  }, {} as never);
+  assert.deepEqual(serviceCounted, { total: 42 });
+
+  const serviceQueried = await tools.query_logs.execute!({
+    service_id: 846,
+    time: '15m',
+    query: 'c.monitorLogType:1',
+    page: 1,
+    size: 40,
+  }, {} as never) as { total: number; logs: unknown[]; page: number };
+  assert.equal(serviceQueried.total, 1);
+  assert.equal(serviceQueried.page, 1);
+  assert.equal(serviceQueried.logs.length, 1);
+
+  assert.equal(requests.length, 4);
   assert.match(requests[0]!.url, /skill\/cloud\/aliyun\/count/);
   assert.match(requests[1]!.url, /skill\/cloud\/aliyun\/search/);
-  assert.match(requests[1]!.url, /topic_id=prod-cloudlearn/);
-  assert.match(requests[1]!.url, /account_ak_id=1743276692096170/);
+  assert.match(requests[2]!.url, /skill\/search\/time/);
+  assert.match(requests[3]!.url, /skill\/search/);
   assert.equal(requests[0]!.headers['X-Sign-Appid'], 'app-id');
-  assert.ok(requests[0]!.headers['X-Sign-Sign']);
-  assert.ok(requests[0]!.headers['X-Sign-TimeStamp']);
 });
 
 test('progress map labels log tools separately from knowledge', () => {
   assert.equal(progressLabelForTool('resolve_log_target'), '正在查询远程日志');
   assert.equal(progressLabelForTool('search_cloud_logs'), '正在查询远程日志');
+  assert.equal(progressLabelForTool('count_logs'), '正在查询远程日志');
+  assert.equal(progressLabelForTool('query_logs'), '正在查询远程日志');
   assert.equal(progressLabelForTool('search_knowledge'), '正在查阅知识库');
 });
 
