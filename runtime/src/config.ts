@@ -44,16 +44,17 @@ export const A2A_CONFIG_DEFAULTS = {
 export const runtimeConfigSchema = z.object({
   host: z.string().default('127.0.0.1'),
   port: z.coerce.number().int().min(1).max(65535).default(8000),
-  dataDir: z.string().default('.data/mastra'),
+  dataRoot: z.string().optional(),
+  dataDir: z.string().optional(),
   databaseUrl: z.string().default(''),
   webDist: z.string().default('web/dist'),
   serveWeb: booleanFromEnv,
-  legacyConversationsFile: z.string().default('.data/conversations.json'),
-  legacyRepositoriesFile: z.string().default('.data/repositories.json'),
-  legacySnapshotDir: z.string().default('.data/workspaces'),
-  modelConfigFile: z.string().default('.data/model-config.json'),
-  knowledgeQueryLog: z.string().default('.data/knowledge-queries.jsonl'),
-  caseArchiveDir: z.string().default('.data/knowledge-cases'),
+  legacyConversationsFile: z.string().optional(),
+  legacyRepositoriesFile: z.string().optional(),
+  legacySnapshotDir: z.string().optional(),
+  modelConfigFile: z.string().optional(),
+  knowledgeQueryLog: z.string().optional(),
+  caseArchiveDir: z.string().optional(),
   projectRoot: z.string().default(repositoryRoot),
   knowledgeRoot: z.string().default('knowledge'),
   knowledgeRetrievalMode: z.string().optional(),
@@ -69,8 +70,8 @@ export const runtimeConfigSchema = z.object({
   ]),
   mcpCommand: z.string().default('uv'),
   skillsDir: z.string().default(resolve(repositoryRoot, 'skills')),
-  gitMirrorDir: z.string().default('.data/git-mirrors'),
-  snapshotDir: z.string().default('.data/workspaces'),
+  gitMirrorDir: z.string().optional(),
+  snapshotDir: z.string().optional(),
   gitTimeoutMs: z.coerce.number().int().min(1_000).max(600_000).default(120_000),
   runMode: z.enum(['local', 'server']).default('server'),
   publicBaseUrl: z.string().default(''),
@@ -94,24 +95,51 @@ export const runtimeConfigSchema = z.object({
   logcenterTimeoutMs: z.coerce.number().int().min(100).max(120_000).default(15_000),
 });
 
-export type RuntimeConfig = z.infer<typeof runtimeConfigSchema> & {
+export type RuntimeConfig = Omit<
+  z.infer<typeof runtimeConfigSchema>,
+  | 'dataRoot'
+  | 'dataDir'
+  | 'legacyConversationsFile'
+  | 'legacyRepositoriesFile'
+  | 'legacySnapshotDir'
+  | 'modelConfigFile'
+  | 'knowledgeQueryLog'
+  | 'caseArchiveDir'
+  | 'gitMirrorDir'
+  | 'snapshotDir'
+> & {
   authMode: 'local' | 'sso';
+  dataDir: string;
+  legacyConversationsFile: string;
+  legacyRepositoriesFile: string;
+  legacySnapshotDir: string;
+  modelConfigFile: string;
+  knowledgeQueryLog: string;
+  caseArchiveDir: string;
+  gitMirrorDir: string;
+  snapshotDir: string;
 };
+
+function optionalEnvPath(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
 
 export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
   const config = runtimeConfigSchema.parse({
     host: env.HARMONY_MASTRA_HOST,
     port: env.HARMONY_MASTRA_PORT,
-    dataDir: env.HARMONY_MASTRA_DATA_DIR,
+    dataRoot: optionalEnvPath(env.HARMONY_AGENT_DATA_ROOT),
+    dataDir: optionalEnvPath(env.HARMONY_MASTRA_DATA_DIR),
     databaseUrl: env.HARMONY_MASTRA_DATABASE_URL,
     webDist: env.HARMONY_MASTRA_WEB_DIST,
     serveWeb: env.HARMONY_MASTRA_SERVE_WEB,
-    legacyConversationsFile: env.HARMONY_MASTRA_LEGACY_CONVERSATIONS_FILE,
-    legacyRepositoriesFile: env.HARMONY_MASTRA_LEGACY_REPOSITORIES_FILE,
-    legacySnapshotDir: env.HARMONY_MASTRA_LEGACY_SNAPSHOT_DIR,
-    modelConfigFile: env.HARMONY_AGENT_MODEL_CONFIG_FILE,
-    knowledgeQueryLog: env.HARMONY_AGENT_KNOWLEDGE_QUERY_LOG,
-    caseArchiveDir: env.HARMONY_AGENT_KNOWLEDGE_CASES_DIR,
+    legacyConversationsFile: optionalEnvPath(env.HARMONY_MASTRA_LEGACY_CONVERSATIONS_FILE),
+    legacyRepositoriesFile: optionalEnvPath(env.HARMONY_MASTRA_LEGACY_REPOSITORIES_FILE),
+    legacySnapshotDir: optionalEnvPath(env.HARMONY_MASTRA_LEGACY_SNAPSHOT_DIR),
+    modelConfigFile: optionalEnvPath(env.HARMONY_AGENT_MODEL_CONFIG_FILE),
+    knowledgeQueryLog: optionalEnvPath(env.HARMONY_AGENT_KNOWLEDGE_QUERY_LOG),
+    caseArchiveDir: optionalEnvPath(env.HARMONY_AGENT_KNOWLEDGE_CASES_DIR),
     projectRoot: env.HARMONY_MASTRA_PROJECT_ROOT,
     knowledgeRoot: env.HARMONY_AGENT_KNOWLEDGE_ROOT,
     knowledgeRetrievalMode: env.HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE,
@@ -120,8 +148,8 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     corsOrigins: env.HARMONY_AGENT_CORS_ORIGINS?.split(',').map((value) => value.trim()).filter(Boolean),
     mcpCommand: env.HARMONY_MASTRA_MCP_COMMAND,
     skillsDir: env.HARMONY_MASTRA_SKILLS_DIR,
-    gitMirrorDir: env.HARMONY_MASTRA_GIT_MIRROR_DIR,
-    snapshotDir: env.HARMONY_MASTRA_SNAPSHOT_DIR,
+    gitMirrorDir: optionalEnvPath(env.HARMONY_MASTRA_GIT_MIRROR_DIR),
+    snapshotDir: optionalEnvPath(env.HARMONY_MASTRA_SNAPSHOT_DIR),
     gitTimeoutMs: env.HARMONY_MASTRA_GIT_TIMEOUT_MS,
     runMode: env.HARMONY_AGENT_RUN_MODE || undefined,
     publicBaseUrl: env.HARMONY_AGENT_PUBLIC_BASE_URL,
@@ -146,7 +174,10 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   });
   const projectRoot = resolve(repositoryRoot, config.projectRoot);
   const fromRoot = (path: string) => resolve(projectRoot, path);
-  const dataDir = fromRoot(config.dataDir);
+  const dataRoot = fromRoot(config.dataRoot || '.data');
+  const underDataRoot = (override: string | undefined, segment: string) =>
+    override ? fromRoot(override) : resolve(dataRoot, segment);
+  const dataDir = underDataRoot(config.dataDir, 'mastra');
   const publicBaseUrl = config.publicBaseUrl.replace(/\/+$/, '');
   const ssoBaseUrl = config.ssoBaseUrl.replace(/\/+$/, '');
   let appPrefix = (config.appPrefix || '/xesapp-agent').trim() || '/xesapp-agent';
@@ -163,17 +194,17 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     projectRoot,
     dataDir,
     webDist: fromRoot(config.webDist),
-    legacyConversationsFile: fromRoot(config.legacyConversationsFile),
-    legacyRepositoriesFile: fromRoot(config.legacyRepositoriesFile),
-    legacySnapshotDir: fromRoot(config.legacySnapshotDir),
-    modelConfigFile: fromRoot(config.modelConfigFile),
-    knowledgeQueryLog: fromRoot(config.knowledgeQueryLog),
-    caseArchiveDir: fromRoot(config.caseArchiveDir),
+    legacyConversationsFile: underDataRoot(config.legacyConversationsFile, 'conversations.json'),
+    legacyRepositoriesFile: underDataRoot(config.legacyRepositoriesFile, 'repositories.json'),
+    legacySnapshotDir: underDataRoot(config.legacySnapshotDir, 'workspaces'),
+    modelConfigFile: underDataRoot(config.modelConfigFile, 'model-config.json'),
+    knowledgeQueryLog: underDataRoot(config.knowledgeQueryLog, 'knowledge-queries.jsonl'),
+    caseArchiveDir: underDataRoot(config.caseArchiveDir, 'knowledge-cases'),
     knowledgeRoot: fromRoot(config.knowledgeRoot),
     allowedRoots: config.allowedRoots.map(fromRoot),
     skillsDir: fromRoot(config.skillsDir),
-    gitMirrorDir: fromRoot(config.gitMirrorDir),
-    snapshotDir: fromRoot(config.snapshotDir),
+    gitMirrorDir: underDataRoot(config.gitMirrorDir, 'git-mirrors'),
+    snapshotDir: underDataRoot(config.snapshotDir, 'workspaces'),
     databaseUrl: config.databaseUrl || `file:${resolve(dataDir, 'runtime.db')}`,
     host: config.runMode === 'local' ? '127.0.0.1' : config.host,
     authMode,

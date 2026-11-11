@@ -58,9 +58,11 @@ const REUSABLE_TOOLS = new Set([
   "resolve_log_target",
   "count_cloud_logs",
   "search_cloud_logs",
+  "count_logs",
+  "query_logs",
 ]);
 
-const LOG_CATALOG_INSTRUCTIONS = `When remote log catalog tools are available, load the use-log-catalog Skill before calling them. Resolve business aliases via resolve_log_target first; never invent account/collection/topic. Prefer count_cloud_logs before search_cloud_logs. Remote log hits are optional helpers in this phase and are not diagnosis ledger evidence unless a later integration says otherwise. Do not replace pasted hilog parsing or source evidence with catalog routing alone.`;
+const LOG_CATALOG_INSTRUCTIONS = `When remote log catalog tools are available, load the use-log-catalog Skill before calling them. Resolve via resolve_log_target first; use candidate fields and suggested_query from catalog—never invent account/collection/topic/service_id/appid filters. source=aliyun_sls → count_cloud_logs/search_cloud_logs (filter by appid; note Harmony and iOS may share prod-ios store); source=logcenter → count_logs/query_logs. Prefer count before search/query. Vague 安卓/iOS/鸿蒙 may be ambiguous—clarify. Remote hits are optional helpers, not ledger evidence in this phase. Do not replace pasted hilog or source evidence with catalog routing alone.`;
 
 function stableValue(value: unknown): unknown {
   if (value === undefined) return ["undefined"];
@@ -477,6 +479,8 @@ function promptFor(
     availableTools.add("resolve_log_target");
     availableTools.add("count_cloud_logs");
     availableTools.add("search_cloud_logs");
+    availableTools.add("count_logs");
+    availableTools.add("query_logs");
   }
   const availableSkills = skills.available("chat", availableTools);
   const catalog = availableSkills.map((skill) => `- ${skill.name}: ${skill.description}`).join("\n") || "（当前没有可用技能）";

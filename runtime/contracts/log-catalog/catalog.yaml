@@ -1,4 +1,8 @@
-version: 1
+# version 3: targets (appid / APM) are first-class; stores only hold SLS physical coords.
+# descriptions 统一模板（2026-11-11 真实抽样核对）：
+#   SLS:  {产品/端}（platform/form，appid=…，store=…）。样本主事件：…。
+#   APM:  培优{形态}客户端 APM（service_id=…，app_clientid=…）。近1h 可见 monitorLogType …
+version: 3
 vendor: aliyun
 defaults:
   region: cn-beijing
@@ -6,130 +10,339 @@ defaults:
   collection: pysy-front-log
   time: 1h
 
+# Thin SLS coordinates only — no business aliases here.
 stores:
   - id: prod-android
     topic: prod-android
     env: prod
-    aliases: [安卓, android, Android原生, Android]
-    description: 培优 Android 端前端/Native 日志
-    appids:
-      - id: log-eagle-0005-prod
-        aliases: [语音测评, 口语测评SDK, TalVoiceEval, 测评SDK]
-        description: Android 语音测评 SDK
-        key_fields: [pageid, eventid, eventname, desc]
-        businesses:
-          - name: 云课堂测评初始化
-            aliases: [云课堂测评]
-            match: { pageid: 云课堂, eventname: TalVoiceEvalManager }
-          - name: 英语绘本测评
-            aliases: [英语绘本Android]
-            match: { pageid: 学而思HD, eventid: 英语绘本 }
-          - name: 背单词测评
-            aliases: [背单词Android]
-            match: { pageid: 学而思, eventid: 背单词 }
-      - id: log-fe-native-android-001-prod
-        aliases: [安卓AI, Android WS, 小思WS, Android WebSocket]
-        description: Android AI WebSocket 链路
-        key_fields: [pageid, eventid, eventname, desc]
-        businesses:
-          - name: AI WebSocket
-            aliases: [WS链路]
-            match: { eventname: WS }
-
+    description: 阿里云 SLS Logstore（Android 埋点物理库）
   - id: prod-cloudlearn
     topic: prod-cloudlearn
     env: prod
-    aliases: [云学习H5, cloudlearn, 云学习前端, 云学习]
-    description: 云学习 H5 埋点生产日志（appid 不宜 SQL group by，用检索条件精确筛）
-    notes: [appid_not_sql_groupable]
-    appids:
-      - id: log-eagle-0008-prod
-        aliases: [口语岛, 新口语岛]
-        description: 新口语岛 H5
-        key_fields: [pageid, eventid, eventname, desc, clickid, uid, customtraceid, status]
-        businesses:
-          - name: 渲染引擎上报
-            aliases: [口语岛渲染]
-            match:
-              pageid: 新口语岛
-              eventid: renderEngineModule
-              clickid: oralIsLandRenderEngineReport
-          - name: 测评结果
-            aliases: [口语岛测评]
-            match:
-              pageid: 新口语岛
-              eventid: evaluationModule
-              clickid: oralIsLandPractiseEvaluationResult
-      - id: log-eagle-0009-prod
-        aliases: [英语绘本, 绘本馆, 英语绘本馆]
-        description: 英语绘本馆 H5
-        key_fields: [pageid, eventid, eventname, desc, clickid, uid, status]
-        businesses:
-          - name: 语音测评结果
-            aliases: [绘本测评]
-            match:
-              pageid: 英语绘本馆
-              eventid: evaluationModule
-              clickid: evaluationResult
-          - name: 学员登录
-            aliases: [绘本登录]
-            match: { pageid: 英语绘本馆, eventid: studentLoginModule }
-      - id: log-eagle-0016-prod
-        aliases: [磨耳朵]
-        description: 磨耳朵 H5 播放
-        key_fields: [pageid, eventid, eventname, desc, clickid, uid, customtraceid]
-        businesses:
-          - name: 音频播放桥接
-            aliases: [磨耳朵播放]
-            match: { pageid: 磨耳朵, eventid: grindingearPlayAudioModule }
-
+    description: 阿里云 SLS Logstore（云学习 H5 埋点物理库）
+    notes: [appid_not_sql_groupable, use_fulltext_or_where]
   - id: prod-ios
     topic: prod-ios
     env: prod
-    aliases: [iOS, 苹果, ios原生, iPhone, iPad]
-    description: 培优 iOS 端日志
-    appids:
-      - id: log-fe-native-iOS-001-prod
-        aliases: [iOS播放器, xes_player, 语音JSBridge]
-        description: iOS Native 播放器与语音评测 JSBridge
-        key_fields: [pageid, eventid, eventname, desc]
-        businesses:
-          - name: 播放器缓冲
-            aliases: [播放器缓冲进度]
-            match: { eventid: xes_player_buffer, eventname: xes_player }
-          - name: 绘本馆录音
-            aliases: [EnglishLibrary录音]
-            match: { pageid: 语音评测JSBridge, eventname: EnglishLibrary }
-          - name: 口语岛录音
-            aliases: [EnglishSpeakIsland录音]
-            match: { pageid: 语音评测JSBridge, eventname: EnglishSpeakIsland }
-      - id: log-har-001-prod
-        aliases: [iOS生命周期主量, iOS lifecycle]
-        description: App 生命周期 / SLS 初始化（量大）
-        key_fields: [pageid, eventid, eventname, desc]
-      - id: log-har-002-prod
-        aliases: [iOS语音评测链, VOICE_EVAL]
-        description: 语音测评关键链 + WS + 生命周期
-        key_fields: [pageid, eventid, eventname, desc]
-      - id: log-fe-virtually-mall-prod
-        aliases: [装扮商城, 换装]
-        description: 装扮商城
-        key_fields: [pageid, eventid, eventname, desc]
-        businesses:
-          - name: 换装性能
-            aliases: [换装耗时]
-            match: { pageid: 装扮商城, eventid: CHANGE_SKIN }
-          - name: 场景初始化
-            aliases: [装扮场景初始化]
-            match: { pageid: 装扮商城, eventid: SCENE_INIT }
-          - name: 购买装扮
-            aliases: [买装扮]
-            match: { pageid: 装扮商城, eventid: BUY_PAINTING }
-      - id: log-har-003-prod
-        aliases: [iOS课中生命周期]
-        description: 课中/主观题等页生命周期
-        key_fields: [pageid, eventid, eventname, desc]
-      - id: log-har-004-prod
-        aliases: [iOS生命周期少量]
-        description: 生命周期（量少）
-        key_fields: [pageid, eventid, eventname, desc]
+    description: 阿里云 SLS Logstore（iOS / 鸿蒙 / 装扮商城等共用物理库，靠 appid 区分）
+
+# Resolve matches targets first; query coords come from store_ref or service_id.
+targets:
+  # --- Aliyun SLS product_event (Android store) ---
+  - id: log-eagle-0005-prod
+    source: aliyun_sls
+    log_kind: product_event
+    platform: android
+    client_form: phone
+    store_ref: prod-android
+    aliases: [语音测评, 口语测评SDK, TalVoiceEval, 测评SDK, 安卓语音测评, log-eagle-0005]
+    description: Android 语音测评 SDK 埋点（appid=log-eagle-0005-prod，store=prod-android）。样本主事件：eventname=TalVoiceEvalManager；pageid 常见彼芯托管/学而思HD/学而思/云课堂；eventid 常见初始化/英语绘本/新口语岛。
+    key_fields: [pageid, eventid, eventname, desc]
+    notes: [product_event_not_apm, verified_sample_2026-11-11]
+    businesses:
+      - name: 云课堂测评初始化
+        aliases: [云课堂测评]
+        match: { pageid: 云课堂, eventname: TalVoiceEvalManager }
+      - name: 英语绘本测评
+        aliases: [英语绘本Android]
+        match: { pageid: 学而思HD, eventid: 英语绘本 }
+      - name: 背单词测评
+        aliases: [背单词Android]
+        match: { pageid: 学而思, eventid: 背单词 }
+
+  - id: log-fe-native-android-001-prod
+    source: aliyun_sls
+    log_kind: product_event
+    platform: android
+    client_form: phone
+    store_ref: prod-android
+    aliases: [安卓, 安卓AI, Android WS, 小思WS, Android WebSocket, 安卓埋点, log-fe-native-android-001]
+    description: Android AI 链路埋点（appid=log-fe-native-android-001-prod，store=prod-android）。样本主事件：eventname=WS（WS_POINT_* 收发/断开）与 ASR（识别起止）；pageid 常见 AiFullScreenDialog。
+    key_fields: [pageid, eventid, eventname, desc]
+    notes: [product_event_not_apm, verified_sample_2026-11-11]
+    businesses:
+      - name: AI WebSocket
+        aliases: [WS链路]
+        match: { eventname: WS }
+      - name: ASR 识别
+        aliases: [安卓ASR]
+        match: { eventname: ASR }
+
+  # --- Aliyun SLS product_event (cloudlearn store) ---
+  # prod-cloudlearn：appid/pageid 非 KV 索引；查 appid 用全文 "log-eagle-xxxx" 或 `* | where appid='…'`
+  - id: log-eagle-0008-prod
+    source: aliyun_sls
+    log_kind: product_event
+    platform: h5
+    client_form: h5
+    store_ref: prod-cloudlearn
+    aliases: [口语岛, 新口语岛, log-eagle-0008]
+    description: 新口语岛 H5 埋点（appid=log-eagle-0008-prod，store=prod-cloudlearn）。样本主事件：pageid=新口语岛；renderEngineModule / evaluationModule（clickid=oralIsLandRenderEngineReport / oralIsLandPractiseEvaluationResult）。
+    key_fields: [pageid, eventid, eventname, desc, clickid, uid, customtraceid, status]
+    notes: [appid_not_sql_groupable, use_fulltext_or_where, product_event_not_apm, verified_sample_2026-11-11]
+    businesses:
+      - name: 渲染引擎上报
+        aliases: [口语岛渲染]
+        match:
+          pageid: 新口语岛
+          eventid: renderEngineModule
+          clickid: oralIsLandRenderEngineReport
+      - name: 测评结果
+        aliases: [口语岛测评]
+        match:
+          pageid: 新口语岛
+          eventid: evaluationModule
+          clickid: oralIsLandPractiseEvaluationResult
+
+  - id: log-eagle-0009-prod
+    source: aliyun_sls
+    log_kind: product_event
+    platform: h5
+    client_form: h5
+    store_ref: prod-cloudlearn
+    aliases: [英语绘本, 绘本馆, 英语绘本馆, log-eagle-0009]
+    description: 英语绘本馆 H5 埋点（appid=log-eagle-0009-prod，store=prod-cloudlearn）。样本主事件：pageid=英语绘本馆；evaluationModule 测评结果为主，另有 speakSubmitModule、studentLoginModule、invokeJsBridgeModule。
+    key_fields: [pageid, eventid, eventname, desc, clickid, uid, status]
+    notes: [appid_not_sql_groupable, use_fulltext_or_where, product_event_not_apm, verified_sample_2026-11-11]
+    businesses:
+      - name: 语音测评结果
+        aliases: [绘本测评]
+        match:
+          pageid: 英语绘本馆
+          eventid: evaluationModule
+          clickid: evaluationResult
+      - name: 学员登录
+        aliases: [绘本登录]
+        match: { pageid: 英语绘本馆, eventid: studentLoginModule }
+
+  - id: log-eagle-0016-prod
+    source: aliyun_sls
+    log_kind: product_event
+    platform: h5
+    client_form: h5
+    store_ref: prod-cloudlearn
+    aliases: [磨耳朵, log-eagle-0016]
+    description: 磨耳朵 H5 播放埋点（appid=log-eagle-0016-prod，store=prod-cloudlearn）。样本主事件：pageid=磨耳朵，eventid=grindingearPlayAudioModule；clickid 为 Native↔H5 双向桥接。
+    key_fields: [pageid, eventid, eventname, desc, clickid, uid, customtraceid]
+    notes: [appid_not_sql_groupable, use_fulltext_or_where, product_event_not_apm, verified_sample_2026-11-11]
+    businesses:
+      - name: 音频播放桥接
+        aliases: [磨耳朵播放]
+        match: { pageid: 磨耳朵, eventid: grindingearPlayAudioModule }
+
+  # --- Aliyun SLS product_event (prod-ios physical store: iOS + Harmony + mall share topic) ---
+  - id: log-fe-native-iOS-001-prod
+    source: aliyun_sls
+    log_kind: product_event
+    platform: ios
+    client_form: phone
+    store_ref: prod-ios
+    aliases: [iOS播放器, xes_player, 语音JSBridge, iOS埋点, ios原生, log-fe-native-iOS-001]
+    description: iOS Native 播放器与语音评测 JSBridge 埋点（appid=log-fe-native-iOS-001-prod，store=prod-ios，OS=iOS）。样本主事件：xes_player/xes_player_buffer；另有 pageid=语音评测JSBridge 下 EnglishLibrary、EnglishSpeakIsland 录音链。
+    key_fields: [pageid, eventid, eventname, desc, OS, bundleName]
+    notes: [product_event_not_apm, verified_sample_2026-11-11]
+    businesses:
+      - name: 播放器缓冲
+        aliases: [播放器缓冲进度]
+        match: { eventid: xes_player_buffer, eventname: xes_player }
+      - name: 绘本馆录音
+        aliases: [EnglishLibrary录音]
+        match: { pageid: 语音评测JSBridge, eventname: EnglishLibrary }
+      - name: 口语岛录音
+        aliases: [EnglishSpeakIsland录音]
+        match: { pageid: 语音评测JSBridge, eventname: EnglishSpeakIsland }
+
+  - id: log-fe-virtually-mall-prod
+    source: aliyun_sls
+    log_kind: product_event
+    platform: h5
+    client_form: h5
+    store_ref: prod-ios
+    aliases: [装扮商城, 换装, log-fe-virtually-mall]
+    description: 装扮商城 WebView/H5 埋点（appid=log-fe-virtually-mall-prod，物理库 prod-ios）。样本 pageid=装扮商城；主事件 CHANGE_SKIN/SCENE_INIT/CLOSE_WINDOW 等；ua 以 Android Pad WebView 为主，也有 iPhone。
+    key_fields: [pageid, eventid, eventname, desc, clickid, status, ua]
+    notes: [product_event_not_apm, shares_prod_ios_store, verified_sample_2026-11-11]
+    businesses:
+      - name: 换装性能
+        aliases: [换装耗时]
+        match: { pageid: 装扮商城, eventid: CHANGE_SKIN }
+      - name: 场景初始化
+        aliases: [装扮场景初始化]
+        match: { pageid: 装扮商城, eventid: SCENE_INIT }
+      - name: 购买装扮
+        aliases: [买装扮]
+        match: { pageid: 装扮商城, eventid: BUY_PAINTING }
+
+  - id: log-har-001-prod
+    source: aliyun_sls
+    log_kind: product_event
+    platform: harmony
+    client_form: phone
+    store_ref: prod-ios
+    aliases: [鸿蒙, HarmonyOS, 学而思鸿蒙, 鸿蒙主端, 鸿蒙埋点, log-har-001, com.xes.harmonyapp]
+    description: 学而思鸿蒙手机端埋点（appid=log-har-001-prod，store=prod-ios，bundle=com.xes.harmonyapp，ua=学而思）。样本主事件：app_lifecycle（前后台/冷启），另有 view、WS、sls_init；量大。
+    key_fields: [pageid, eventid, eventname, desc, OS, bundleName, ua]
+    notes: [product_event_not_apm, shares_prod_ios_store, verified_sample_2026-11-11]
+
+  - id: log-har-002-prod
+    source: aliyun_sls
+    log_kind: product_event
+    platform: harmony
+    client_form: pad
+    store_ref: prod-ios
+    aliases: [学而思鸿蒙HD, 鸿蒙HD, harmonyHD, log-har-002, com.xes.harmonyHD]
+    description: 学而思鸿蒙 HD 埋点（appid=log-har-002-prod，store=prod-ios，bundle=com.xes.harmonyHD，ua=学而思HD）。样本主事件：app_lifecycle、sls_login、sls_init（非语音评测链）。
+    key_fields: [pageid, eventid, eventname, desc, OS, bundleName, ua]
+    notes: [product_event_not_apm, shares_prod_ios_store, verified_sample_2026-11-11]
+
+  - id: log-har-003-prod
+    source: aliyun_sls
+    log_kind: product_event
+    platform: harmony
+    client_form: phone
+    store_ref: prod-ios
+    aliases: [学家云鸿蒙, 学家云, xuejia鸿蒙, log-har-003, com.xes.xuejia.harmonyapp]
+    description: 学家云鸿蒙手机端埋点（appid=log-har-003-prod，store=prod-ios，bundle=com.xes.xuejia.harmonyapp，ua=学家云）。样本主事件：app_lifecycle、sls_init；page 常见播放器/回放页。
+    key_fields: [pageid, eventid, eventname, desc, OS, bundleName, ua]
+    notes: [product_event_not_apm, shares_prod_ios_store, verified_sample_2026-11-11]
+
+  - id: log-har-004-prod
+    source: aliyun_sls
+    log_kind: product_event
+    platform: harmony
+    client_form: pad
+    store_ref: prod-ios
+    aliases: [学家云鸿蒙HD, 学家云HD, xuejiaHD, log-har-004, com.xes.xuejia.harmonyHD]
+    description: 学家云鸿蒙 HD 埋点（appid=log-har-004-prod，store=prod-ios，bundle=com.xes.xuejia.harmonyHD，ua=学家云HD）。样本主事件：app_lifecycle、sls_init；page 常见 Online/Playback、结课页。
+    key_fields: [pageid, eventid, eventname, desc, OS, bundleName, ua]
+    notes: [product_event_not_apm, shares_prod_ios_store, verified_sample_2026-11-11]
+
+  # --- 未来云日志中心 client_apm ---
+  - id: apm-pad-android
+    source: logcenter
+    log_kind: client_apm
+    platform: android
+    client_form: pad
+    service_id: 1116
+    app_clientid: XesPadPyAndroid
+    topic: basiclog-monitor_26_1003041
+    env: prod
+    aliases:
+      - 培优Pad安卓监控
+      - Pad安卓APM
+      - Pad Android 监控
+      - XesPadPyAndroid
+      - TAL Pad 监控
+    description: 培优 Pad Android 客户端 APM（service_id=1116，app_clientid=XesPadPyAndroid）。近1h 可见 monitorLogType 1网络/2性能/5业务/7Web离线；样本含 c.pp（机型/版本/渠道）与 traceInfo 等实体。
+    key_fields:
+      - c.monitorLogType
+      - c.pp
+      - c.netWorkLogEntity
+      - c.traceInfo
+      - c.userLogInfo
+      - c.jsBridgeInfo
+      - c.webOffline
+    monitor_types:
+      "1": 网络请求
+      "2": 性能指标
+      "5": 业务自定义
+      "7": Web离线
+    suggested_query: 'c.monitorLogType:1'
+    notes: [client_apm_not_product_event, verified_sample_2026-11-11]
+
+  - id: apm-phone-android
+    source: logcenter
+    log_kind: client_apm
+    platform: android
+    client_form: phone
+    service_id: 846
+    app_clientid: XesPyAndroid
+    topic: basiclog-monitor_26_1002935
+    env: prod
+    aliases:
+      - 安卓
+      - 培优手机安卓监控
+      - 手机安卓APM
+      - Android App 监控
+      - XesPyAndroid
+      - 安卓监控
+      - 安卓APM
+    description: 培优手机 Android 客户端 APM（service_id=846，app_clientid=XesPyAndroid）。近1h 可见 monitorLogType 1网络/2性能/5业务/7Web离线；样本以 type=5 userLogInfo 与 c.pp 为主。
+    key_fields:
+      - c.monitorLogType
+      - c.pp
+      - c.netWorkLogEntity
+      - c.traceInfo
+      - c.userLogInfo
+      - c.jsBridgeInfo
+    monitor_types:
+      "1": 网络请求
+      "2": 性能指标
+      "5": 业务自定义
+      "7": Web离线
+    suggested_query: 'c.monitorLogType:1'
+    notes: [client_apm_not_product_event, verified_sample_2026-11-11]
+
+  - id: apm-ipad-ios
+    source: logcenter
+    log_kind: client_apm
+    platform: ios
+    client_form: pad
+    service_id: 1028
+    app_clientid: XesPyIOSHD
+    topic: basiclog-monitor_26_1002996
+    env: prod
+    aliases:
+      - 培优iPad监控
+      - iPad HD 监控
+      - iOS HD APM
+      - XesPyIOSHD
+      - 培优HD iOS监控
+    description: 培优 iPad / HD iOS 客户端 APM（service_id=1028，app_clientid=XesPyIOSHD）。近1h 可见 monitorLogType 1/2/5/7（type7 Web离线相对更多）；样本常见 jsBridgeInfo 与 c.pp（iPad 机型）。
+    key_fields:
+      - c.monitorLogType
+      - c.pp
+      - c.netWorkLogEntity
+      - c.traceInfo
+      - c.userLogInfo
+      - c.jsBridgeInfo
+      - c.webOffline
+    monitor_types:
+      "1": 网络请求
+      "2": 性能指标
+      "5": 业务自定义
+      "7": Web离线
+    suggested_query: 'c.monitorLogType:1'
+    notes: [client_apm_not_product_event, verified_sample_2026-11-11]
+
+  - id: apm-iphone-ios
+    source: logcenter
+    log_kind: client_apm
+    platform: ios
+    client_form: phone
+    service_id: 847
+    app_clientid: XesPyIOS
+    topic: basiclog-monitor_26_1002936
+    env: prod
+    aliases:
+      - iOS
+      - 培优iPhone监控
+      - iPhone APM
+      - XesPyIOS
+      - iOS监控
+      - iOS APM
+    description: 培优 iPhone 客户端 APM（service_id=847，主 app_clientid=XesPyIOS；偶见 XesTeacherIOS 混入同 service）。近1h 可见 monitorLogType 1/2/5/7；样本常见 jsBridgeInfo 与网络/性能实体。
+    key_fields:
+      - c.monitorLogType
+      - c.pp
+      - c.netWorkLogEntity
+      - c.traceInfo
+      - c.userLogInfo
+      - c.jsBridgeInfo
+    monitor_types:
+      "1": 网络请求
+      "2": 性能指标
+      "5": 业务自定义
+      "7": Web离线
+    suggested_query: 'c.monitorLogType:1'
+    notes: [client_apm_not_product_event, verified_sample_2026-11-11, may_include_XesTeacherIOS]
