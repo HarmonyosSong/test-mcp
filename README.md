@@ -132,23 +132,24 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_MASTRA_SERVE_WEB` | `false` | 是否托管 `web/dist` |
 | `HARMONY_AGENT_CORS_ORIGINS` | 本地 Vite 的 5173/5174 地址 | 允许跨源访问的来源，逗号分隔 |
 | `VITE_API_PROXY_TARGET` | `http://127.0.0.1:8000` | Vite 开发服务器转发 `/api` 的 runtime 地址 |
-| `HARMONY_MASTRA_DATA_DIR` | `.data/mastra` | LibSQL 数据目录 |
+| `HARMONY_AGENT_DATA_ROOT` | `<项目根>/.data` | 统一数据根；派生 LibSQL、mirror、snapshot、模型配置与知识归档。容器设为 `/data/troubleshoot-odyssey` 并挂持久卷（见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)） |
+| `HARMONY_MASTRA_DATA_DIR` | `<data-root>/mastra` | LibSQL 数据目录；设置后优先于数据根 |
 | `HARMONY_MASTRA_DATABASE_URL` | `file:<data-dir>/runtime.db` | 自定义 LibSQL URL |
 | `HARMONY_MASTRA_WEB_DIST` | `web/dist` | 生产静态网页目录 |
 | `HARMONY_MASTRA_PROJECT_ROOT` | 仓库根目录 | MCP 项目根目录 |
 | `HARMONY_AGENT_ALLOWED_ROOTS` | 仓库根目录 | 允许读取的本地目录，逗号分隔 |
 | `HARMONY_MASTRA_MCP_COMMAND` | `uv` | 启动 Python MCP 的命令 |
 | `HARMONY_MASTRA_SKILLS_DIR` | `skills` | Skill Markdown 目录 |
-| `HARMONY_MASTRA_GIT_MIRROR_DIR` | `.data/git-mirrors` | Git mirror 目录 |
-| `HARMONY_MASTRA_SNAPSHOT_DIR` | `.data/workspaces` | detached snapshot 目录 |
+| `HARMONY_MASTRA_GIT_MIRROR_DIR` | `<data-root>/git-mirrors` | Git mirror 目录；设置后优先于数据根 |
+| `HARMONY_MASTRA_SNAPSHOT_DIR` | `<data-root>/workspaces` | detached snapshot 目录；设置后优先于数据根 |
 | `HARMONY_MASTRA_GIT_TIMEOUT_MS` | `120000` | Git 操作超时 |
 | `HARMONY_AGENT_KNOWLEDGE_ROOT` | `knowledge` | 知识 MCP 根目录 |
 | `HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE` | `legacy` | 知识召回模式：`legacy` 或实验性的 `v2`；`shadow` 尚未支持 |
 | `HARMONY_AGENT_KNOWLEDGE_PREVIEW_STRATEGY` | 随召回模式 | 知识正文预览策略：`legacy` 或 `ranked` |
-| `HARMONY_AGENT_KNOWLEDGE_QUERY_LOG` | `.data/knowledge-queries.jsonl` | 知识查询和诊断 outcome 的 JSONL 日志 |
-| `HARMONY_AGENT_KNOWLEDGE_CASES_DIR` | `.data/knowledge-cases` | 终态诊断案例归档目录 |
+| `HARMONY_AGENT_KNOWLEDGE_QUERY_LOG` | `<data-root>/knowledge-queries.jsonl` | 知识查询和诊断 outcome 的 JSONL 日志；设置后优先于数据根 |
+| `HARMONY_AGENT_KNOWLEDGE_CASES_DIR` | `<data-root>/knowledge-cases` | 终态诊断案例归档目录；设置后优先于数据根 |
 | `HARMONY_AGENT_MODEL` | `deepseek:deepseek-flash` | 环境模式使用的正式支持模型；其他 provider/model 仍可配置但处于实验或未验收状态 |
-| `HARMONY_AGENT_MODEL_CONFIG_FILE` | `.data/model-config.json` | 本地模型配置文件 |
+| `HARMONY_AGENT_MODEL_CONFIG_FILE` | `<data-root>/model-config.json` | 本地模型配置文件；设置后优先于数据根 |
 | `HARMONY_AGENT_RUN_MODE` | `server` | `local` 本机免登；`server` 走知音楼 SSO（生产必须） |
 | `HARMONY_AGENT_PUBLIC_BASE_URL` | 空 | 浏览器 origin（不含 `/xesapp-agent`）；SSO 与 CSRF Origin 校验依赖它 |
 | `HARMONY_AGENT_APP_PREFIX` | `/xesapp-agent` | 应用 path 前缀 |
@@ -161,7 +162,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_LOGCENTER_BASE_URL` | `https://logcenter-api.tal.com/api` | 日志平台网关地址 |
 | `HARMONY_AGENT_LOGCENTER_TIMEOUT_MS` | `15000` | 单次日志 HTTP 请求超时，范围 100–120000 毫秒；随诊断轮取消 |
 
-网页设置写入 `.data/model-config.json`，文件权限为 `0600`。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key；Mastra 内部日志已关闭，应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证，不能据此保证所有日志都不含敏感内容。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
+网页设置写入 `<data-root>/model-config.json`（默认 `.data/model-config.json`），文件权限为 `0600`。容器部署见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)：只设 `HARMONY_AGENT_DATA_ROOT=/data/troubleshoot-odyssey`，由平台挂卷，勿再写相对 `.data/...` 单项。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key；Mastra 内部日志已关闭，应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证，不能据此保证所有日志都不含敏感内容。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
 
 知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续。仓库 MCP 按会话工作区启动：Git 仓库会绑定 detached Commit 快照，本地目录则读取授权根目录中的实时文件，诊断过程中工作区变化可能影响后续读取。知识检索和仓库代码检查需要 Python/uv 已安装，并已通过 `make setup` 安装 `mcp_server/` 依赖。
 
