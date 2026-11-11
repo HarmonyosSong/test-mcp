@@ -3,9 +3,12 @@
 面向 HarmonyOS 开发问题的证据驱动诊断工作台。用户可以粘贴现象、hilog 或代码片段，也可以绑定本地工作区或 Git 仓库；系统通过只读 MCP 工具读取真实证据，并生成可复核的诊断报告。
 
 ```text
-React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应商
-                                      |
-                                      +-> LibSQL 产品数据与证据状态
+React/Vite 网页 -> Mastra + Hono Runtime -> 能力会话 -> 模型供应商
+                                      ├-> Knowledge MCP（客户端业务知识）
+                                      ├-> Repository MCP（文本搜索 / 可选 CBM 导航）
+                                      ├-> Log Catalog（可选 SLS / LogCenter 查询）
+                                      ├-> Compass A2A（可选服务端 Agent 槽位）
+                                      └-> LibSQL 产品数据与证据状态
 ```
 
 诊断能力只读，不修改业务仓库，也不执行任意 Shell 命令、构建、设备操作或 DevEco CLI。登记 Git 仓库时，runtime 会通过 Git CLI 更新自己的 mirror 并创建 detached 快照；不会在用户工作树中切换分支或写入文件。
@@ -16,7 +19,7 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 - 证据账本：正向根因只能引用本轮或历史工具实际观测到的源码/日志证据。
 - 本地 Markdown 知识库和声明式 `skills/*/SKILL.md`。
 - 客户端本地 Markdown 知识库通过 Knowledge MCP 提供检索；云学习知识能力由后续 A2A 对端 Agent 提供，不在客户端直连第二套知识 MCP。
-- 可选 LogCenter / Aliyun SLS 四工具：私有身份发现、用户原文目标绑定、超时取消和脱敏观察已接入共享能力会话；目标绑定且身份匹配的远程日志可携带 Runtime 观察上下文进入证据账本。上述链路已有合成 mock 测试，真实生产字段覆盖和真实学员联调尚未验收，Catalog 的 appid 查询兼容性仍需修正。
+- 可选 LogCenter / Aliyun SLS 日志目录查询：通过 Catalog 将业务名称解析为 SLS `appid` 或 LogCenter `service_id`，再按来源调用对应查询工具。当前远程查询结果主要作为排查辅助，不自动成为证据账本；真实生产字段、权限和真实学员联调尚未验收。
 - 本地工作区只读检查，以及 Git 分支查询和 detached Commit 快照；本地目录绑定读取实时工作区，Git 会话读取固定 Commit 快照。
 - 可选的 codebase-memory-mcp 已封装在 Repository MCP 内部，提供符号搜索、文件 outline 和调用路径候选；未配置时继续使用文本搜索，任何图结果都必须回读源码后才能成为证据。
 - 正式支持 DeepSeek `deepseek-flash`；同时保留 OpenAI、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 配置入口作为实验/未验收选项。可配置不等于正式支持；评估入口和口径见 [`docs/triage-feedback-and-evaluation.md`](docs/triage-feedback-and-evaluation.md)。
@@ -24,6 +27,7 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 - 知音楼网页 SSO：未登录不可用业务 API；应用挂在 `/xesapp-agent` 前缀下。设计见 [`spec/sso-login-design.md`](spec/sso-login-design.md)。
 - 云学习服务端 Agent 通过 Compass A2A Agent Slot 接入；Supervisor 已支持确定性调查计划、客户端 `observe → source` 门禁、服务端外发审批、自动跨侧、并行调查、取消和联合报告。新工单没有本地 `kind=log` 观测时，即使带服务端关键词和 traceId 也先进行客户端观察。远端结论独立保存为 `external_findings`，不进入本地证据。接入契约见 [`spec/compass-a2a-integration.md`](spec/compass-a2a-integration.md)，编排细则见 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)。
 - 客户端只有一个统一的 `ClientDiagnosisAgent`，HarmonyOS、iOS 和 Android 通过会话端上下文、Skill、知识排序和仓库适配处理差异；服务端或专项 Agent 通过 A2A Agent Slot 接入，Compass 是首个具体实例。
+- 可选知音楼 IM 渠道使用 `yach-cli` 接收私聊和群 @，复用同一套 Runtime 诊断链路并以 Markdown 回复；不使用旧 SDK bridge 或 `yach-mcp`，同一机器人长连接要求单副本运行。接入说明见 [`spec/yach-cli-channel.md`](spec/yach-cli-channel.md)。
 - 技术分享版见 [`docs/architecture-sharing.html`](docs/architecture-sharing.html)，配套 Markdown 和分模块 SVG 位于 `docs/` 与 `docs/diagrams/`。
 
 ## 技术栈
@@ -63,10 +67,12 @@ HARMONY_AGENT_MODEL=deepseek:deepseek-flash
 DEEPSEEK_API_KEY=your-api-key
 HARMONY_AGENT_ALLOWED_ROOTS=/absolute/path/to/your/HarmonyOS/project
 
-# 本地免登；线上改为 server
+# 本地免登；未配置本地证书时使用 http
 HARMONY_AGENT_RUN_MODE=local
-# 知音楼 SSO（PUBLIC_BASE_URL 只写 origin，不含 /xesapp-agent；server 模式必填）
-HARMONY_AGENT_PUBLIC_BASE_URL=https://127.0.0.1:5174
+# 知音楼 SSO：改为 server，并使用 HTTPS；PUBLIC_BASE_URL 只写 origin
+HARMONY_AGENT_PUBLIC_BASE_URL=http://127.0.0.1:5174
+# HARMONY_AGENT_RUN_MODE=server
+# HARMONY_AGENT_PUBLIC_BASE_URL=https://127.0.0.1:5174
 HARMONY_AGENT_APP_PREFIX=/xesapp-agent
 HARMONY_AGENT_SSO_BASE_URL=https://sso.zhiyinlou.com
 HARMONY_AGENT_SSO_APP_ID=your-app-id
@@ -87,7 +93,7 @@ mkdir -p .certs
 mkcert -cert-file .certs/local.pem -key-file .certs/local-key.pem 127.0.0.1 localhost
 ```
 
-平台登记回调：`{PUBLIC_BASE_URL}/xesapp-agent/auth/sso/callback`；退出回跳建议白名单：`{PUBLIC_BASE_URL}/xesapp-agent/?auth=logged-out`。
+平台登记回调：`{HARMONY_AGENT_PUBLIC_BASE_URL}/xesapp-agent/auth/sso/callback`；退出回跳建议白名单：`{HARMONY_AGENT_PUBLIC_BASE_URL}/xesapp-agent/?auth=logged-out`。
 
 然后打开两个终端：
 
@@ -95,11 +101,11 @@ mkcert -cert-file .certs/local.pem -key-file .certs/local-key.pem 127.0.0.1 loca
 # 终端一：Mastra runtime，默认 http://127.0.0.1:8000
 make dev-api
 
-# 终端二：Vite 网页，默认 https://127.0.0.1:5174（配置了证书时）
+# 终端二：Vite 网页，默认 http://127.0.0.1:5174；配置证书后为 https
 make dev-web
 ```
 
-浏览器访问 `https://127.0.0.1:5174/xesapp-agent/`。Vite 会把 `/xesapp-agent/api` 与 `/xesapp-agent/auth` 代理到 `127.0.0.1:8000`。`RUN_MODE=local` 时无需企业登录即可进入工作台；`server` 且未配置 SSO 时页面会提示登录配置未完成。没有模型配置时进入工作台后发送诊断消息会返回配置提示。未安装 Python/uv 时，Mastra API 仍可启动；知识 MCP 会降级为空能力，仓库代码检查不可用。
+浏览器访问 `http://127.0.0.1:5174/xesapp-agent/`；如果配置了 mkcert，则访问 `https://127.0.0.1:5174/xesapp-agent/`。Vite 会把 `/xesapp-agent/api` 与 `/xesapp-agent/auth` 代理到 `127.0.0.1:8000`。`HARMONY_AGENT_RUN_MODE=local` 时无需企业登录即可进入工作台；`HARMONY_AGENT_RUN_MODE=server` 且未配置 SSO 时页面会提示登录配置未完成。没有模型配置时进入工作台后发送诊断消息会返回配置提示。未安装 Python/uv 时，Mastra API 仍可启动；知识 MCP 会降级为空能力，仓库代码检查不可用。
 
 停止服务时，在对应终端按 `Ctrl+C`。
 
@@ -120,7 +126,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 ## 第一次使用
 
-1. 用企业账号完成知音楼 SSO 登录。
+1. `HARMONY_AGENT_RUN_MODE=server` 时先用企业账号完成知音楼 SSO 登录；`HARMONY_AGENT_RUN_MODE=local` 可直接进入工作台。
 2. 在模型设置中配置供应商、模型和 API Key，或在 `.env` 中配置环境变量。
 3. 新建会话，输入问题和已知 hilog/代码片段。
 4. 需要检查代码时，设置 `HARMONY_AGENT_ALLOWED_ROOTS`，再绑定本地目录；或先登记 Git 仓库并选择分支。
@@ -163,11 +169,21 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_SSO_BASE_URL` | 空 | 知音楼 SSO 网关，如 `https://sso.zhiyinlou.com` |
 | `HARMONY_AGENT_SSO_APP_ID` | 空 | 平台下发的应用 ID |
 | `HARMONY_AGENT_SSO_APP_KEY` | 空 | 平台下发的应用密钥（禁止提交仓库） |
+| `HARMONY_AGENT_A2A_BASE_URL` | `https://dev-agent-fz.speiyou.com` | Compass 服务端 Agent origin；不包含 `/compass` 路径 |
+| `HARMONY_AGENT_A2A_CLIENT_ID` | `xesapp-agent` | A2A 客户端标识 |
+| `HARMONY_AGENT_A2A_TOKEN` | 空 | A2A Token；为空时不挂载 Compass 槽位 |
+| `HARMONY_AGENT_A2A_WAIT_SECONDS` | `180` | A2A 单次等待上限，范围 1–3600 秒 |
+| `HARMONY_AGENT_A2A_MAX_OUTPUT_CHARS` | `12000` | 服务端结论最大字符数 |
+| `HARMONY_AGENT_A2A_DEBUG_ENABLED` | `false` | 仅 `local` 模式启用本地 A2A 调试对端 |
 | `HARMONY_AGENT_LOG_CATALOG` | `runtime/contracts/log-catalog/catalog.yaml` | 日志业务目录路径 |
 | `HARMONY_AGENT_LOGCENTER_APP_ID` | 空 | LogCenter 应用 ID；与 Secret 同时配置才挂载工具 |
 | `HARMONY_AGENT_LOGCENTER_APP_SECRET` | 空 | LogCenter 应用密钥，只在本地配置 |
 | `HARMONY_AGENT_LOGCENTER_BASE_URL` | `https://logcenter-api.tal.com/api` | 日志平台网关地址 |
 | `HARMONY_AGENT_LOGCENTER_TIMEOUT_MS` | `15000` | 单次日志 HTTP 请求超时，范围 100–120000 毫秒；随诊断轮取消 |
+| `HARMONY_AGENT_YACH_ENABLED` | `false` | 是否启动知音楼 IM 渠道 |
+| `HARMONY_AGENT_YACH_APP_KEY` / `_SECRET` | 空 | Yach 机器人凭证；只放在本地或部署环境 |
+| `HARMONY_AGENT_YACH_CLI_PATH` | `yach-cli` | `yach-cli` 可执行文件路径 |
+| `HARMONY_AGENT_YACH_ROBOT_ID` | 空 | 机器人备注配置，当前不参与路由 |
 
 网页设置写入 `<data-root>/model-config.json`（默认 `.data/model-config.json`），文件权限为 `0600`。容器部署见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)：只设 `HARMONY_AGENT_DATA_ROOT=/data/troubleshoot-odyssey`，由平台挂卷，勿再写相对 `.data/...` 单项。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key；Mastra 内部日志已关闭，应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证，不能据此保证所有日志都不含敏感内容。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
 
@@ -177,7 +193,11 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 启用时在部署环境放置 **codebase-memory-mcp 0.12.1** 二进制，并在 `.env` 填写 `HARMONY_AGENT_CODE_INDEX_COMMAND=/absolute/path/to/codebase-memory-mcp`，重启 Runtime 后生效；不需要额外配置一个 MCP 服务。首版只索引授权工作区内的允许代码文件副本，排除已知依赖目录、符号链接和超大文件；查询前后核对源码内容指纹，轮内源码变化时拒绝旧图查询。`.data/codebase-memory` 下的 `source-views/` 和 `engine/` 分别保存源码副本与派生索引，Docker 部署应挂载持久卷；缓存可清理重建，不替代会话和证据数据的持久化。真实 HarmonyOS 工程已验证导航与源码回读，iOS/Android 的关系精度及真实诊断效果仍待验收。
 
-LogCenter 能力：Catalog 双 source（阿里云 SLS 产品埋点 + 未来云 APM `service_id`）。AppID / AppSecret 留空即可使用其余功能；框架验收使用本机模拟 HTTP。工具为 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`count_logs`、`query_logs`。不等于动态服务发现或日志证据门禁，契约见 [`日志目录与查询规格`](spec/log-catalog-query-capability.md)。
+LogCenter 能力：Catalog 双 source（阿里云 SLS 产品埋点 + 未来云 APM `service_id`）。AppID / AppSecret 同时配置后才挂载远程查询工具；框架验收使用本机模拟 HTTP。五个工具为 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`count_logs`、`query_logs`。它不等于动态服务发现，也不把普通查询结果自动升级为日志证据；契约见 [`spec/log-catalog-query-capability.md`](spec/log-catalog-query-capability.md)。
+
+Compass A2A 是客户端 Runtime 对云学习服务端 Agent 的可选出站槽位。客户端先执行本地观察，只有调查计划明确需要服务端、用户批准外发且满足关联条件时才发起远端任务；服务端返回内容会限长并作为 `external_findings` 保存，不能直接替代本地源码或日志证据。Token 留空时整个槽位不注册。
+
+Yach-CLI 是 Runtime 的渠道适配层，不是模型工具。启用后 Runtime 启动 `yach-cli event consume`，把私聊或群 @ 转成普通诊断轮次；群 @ 会先读取有限的群历史，最终用 `yach-cli im send` 回复。相同机器人只允许一个实例消费长连接，避免多副本抢占事件。
 
 ## 仓库与快照
 
@@ -219,7 +239,7 @@ make build
 
 - `uv: command not found`：安装 Python 3.11+ 与 uv，再从仓库根目录运行 `make setup`。网页和 API 可单独运行，但知识检索及仓库检查需要 MCP 依赖。
 - 页面能打开但 API 请求失败：开发模式需同时运行 `make dev-api` 和 `make dev-web`；确认 API 监听 `8000`、Vite 监听 `5174`，并访问带前缀的地址 `/xesapp-agent/`。API 端口冲突时，在 `.env` 同时设置 `HARMONY_MASTRA_PORT` 和 `VITE_API_PROXY_TARGET`，例如 `8001` 与 `http://127.0.0.1:8001`。
-- 提示登录配置未完成 / SSO 回调失败：检查 `HARMONY_AGENT_PUBLIC_BASE_URL`、`SSO_*` 是否配齐，本地是否启用 Vite HTTPS，以及平台回调是否登记为 `{PUBLIC_BASE_URL}/xesapp-agent/auth/sso/callback`。
+- 提示登录配置未完成 / SSO 回调失败：检查 `HARMONY_AGENT_PUBLIC_BASE_URL`、`HARMONY_AGENT_SSO_*` 是否配齐，本地是否启用 Vite HTTPS，以及平台回调是否登记为 `{HARMONY_AGENT_PUBLIC_BASE_URL}/xesapp-agent/auth/sso/callback`。
 - 聊天提示模型未配置：在网页模型设置中保存可用配置，或在 `.env` 中启用 `HARMONY_AGENT_MODE=model` 并配置相应 provider key。
 
 ## 目录
