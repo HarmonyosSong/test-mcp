@@ -20,7 +20,12 @@ describe('serveWeb static assets', () => {
     projectRoot = await mkdtemp(join(tmpdir(), 'serve-web-root-'));
     await mkdir(join(projectRoot, 'skills'), { recursive: true });
     await mkdir(join(projectRoot, 'mcp_server'), { recursive: true });
+    await mkdir(join(projectRoot, 'runtime/contracts'), { recursive: true });
     await mkdir(join(projectRoot, 'web/dist/assets'), { recursive: true });
+    await writeFile(
+      join(projectRoot, 'runtime/contracts/server-signals.yaml'),
+      'version: 1\nserviceNames: []\napiPrefixes: []\nerrorCodePatterns: []\n',
+    );
     await writeFile(join(projectRoot, 'web/dist/index.html'), '<script type="module" src="/xesapp-agent/assets/index-test.js"></script>');
     await writeFile(join(projectRoot, 'web/dist/assets/index-test.js'), 'export const ok = 1;\n');
 

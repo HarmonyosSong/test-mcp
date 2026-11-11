@@ -291,6 +291,8 @@ export class CompassA2AClient {
     contextId?: string;
     messageId?: string;
     onProgress?: (progress: CompassA2AProgress) => void;
+    /**  artifact 增量到达时同步可恢复的半截结果，供超时/取消保留。 */
+    onPartialResult?: (result: CompassA2AResult) => void;
     abortSignal?: AbortSignal;
   }): Promise<CompassA2AResult> {
     const text = input.text.trim();
@@ -386,6 +388,10 @@ export class CompassA2AClient {
           if (artifact && typeof artifact === 'object' && !Array.isArray(artifact)) {
             const parts = extractTextParts((artifact as Record<string, unknown>).parts);
             artifactTexts.push(...parts);
+            const partialText = artifactTexts.join('\n').trim();
+            if (partialText) {
+              input.onPartialResult?.({ text: partialText, taskId, contextId, state });
+            }
             const name =
               typeof (artifact as Record<string, unknown>).name === 'string'
                 ? ((artifact as Record<string, unknown>).name as string)

@@ -148,6 +148,31 @@ test('rejects invalid ports before server startup', () => {
   );
 });
 
+test('loads and validates the global run concurrency limit', () => {
+  assert.equal(loadRuntimeConfig({}).maxConcurrentRuns, 4);
+  assert.equal(loadRuntimeConfig({ HARMONY_AGENT_MAX_CONCURRENT_RUNS: '2' }).maxConcurrentRuns, 2);
+  assert.throws(() => loadRuntimeConfig({ HARMONY_AGENT_MAX_CONCURRENT_RUNS: '0' }));
+});
+
+test('A2A 调试提供端默认关闭，只允许本地模式且必须配置本地测试令牌', () => {
+  assert.equal(loadRuntimeConfig({}).a2aDebugEnabled, false);
+  const enabled = loadRuntimeConfig({
+    HARMONY_AGENT_RUN_MODE: 'local',
+    HARMONY_AGENT_A2A_DEBUG_ENABLED: 'true',
+    HARMONY_AGENT_A2A_TOKEN: 'local-debug-only',
+  });
+  assert.equal(enabled.a2aDebugEnabled, true);
+  assert.throws(() => loadRuntimeConfig({
+    HARMONY_AGENT_RUN_MODE: 'server',
+    HARMONY_AGENT_A2A_DEBUG_ENABLED: 'true',
+    HARMONY_AGENT_A2A_TOKEN: 'local-debug-only',
+  }), /RUN_MODE=local/);
+  assert.throws(() => loadRuntimeConfig({
+    HARMONY_AGENT_RUN_MODE: 'local',
+    HARMONY_AGENT_A2A_DEBUG_ENABLED: 'true',
+  }), /TOKEN/);
+});
+
 test('loads knowledge retrieval and preview strategy settings from environment', () => {
   const config = loadRuntimeConfig({
     HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE: 'v2',

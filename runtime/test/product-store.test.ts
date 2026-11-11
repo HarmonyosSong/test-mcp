@@ -68,6 +68,44 @@ test("product store owns conversation CRUD and repairs stale streaming messages"
       },
     ],
   });
+  await store.createConversation({
+    id: "conv-waiting",
+    run_state: "waiting_confirmation",
+    messages: [
+      {
+        id: "assistant-waiting",
+        role: "assistant",
+        content: "本地调查已完成，等待确认",
+        status: "streaming",
+        steps: [],
+        error: null,
+        report: null,
+        input_tokens: null,
+        output_tokens: null,
+        tool_usage: {},
+        created_at: "2026-11-03T00:00:00.000Z",
+      },
+    ],
+    consultations: [
+      {
+        id: "consult-waiting",
+        conversation_id: "conv-waiting",
+        message_id: "assistant-waiting",
+        run_id: "run-waiting",
+        status: "pending",
+        reason: "需要服务端协查",
+        outbound_text: "已脱敏的问题",
+        outbound_digest: "digest",
+        redaction_version: "v1",
+        attachment_items: [],
+        expires_at: "2026-11-04T00:00:00.000Z",
+        task_id: null,
+        context_id: null,
+        created_at: "2026-11-03T00:00:00.000Z",
+        updated_at: "2026-11-03T00:00:00.000Z",
+      },
+    ],
+  });
   await client.close();
 
   const restarted = new ProductStore(createClient({ url: config.databaseUrl }));
@@ -77,7 +115,12 @@ test("product store owns conversation CRUD and repairs stale streaming messages"
   assert.equal(recovered.messages[1]?.report, null);
   assert.equal(recovered.messages[1]?.error, "回复中断：服务重启前未完成");
   assert.equal(recovered.messages[1]?.steps[0]?.status, "failed");
-  assert.equal(recovered.messages[0]?.content, "白屏");
+  assert.equal(recovered.run_state, "failed");
+  const waiting = await restarted.getConversation("conv-waiting");
+  assert.equal(waiting.run_state, "waiting_confirmation");
+  assert.equal(waiting.messages[0]?.status, "streaming");
+  assert.equal(waiting.messages[0]?.error, null);
+  await restarted.deleteConversation("conv-waiting");
 
   let followupInput: DiagnosisRunInput | undefined;
   const routes = createConversationRoutes(

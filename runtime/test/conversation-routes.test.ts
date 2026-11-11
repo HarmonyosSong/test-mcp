@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { createClient } from '@libsql/client';
+import { Hono } from 'hono';
+import type { AuthVariables } from '../src/auth/index.js';
 
 import { createConversationRoutes } from '../src/http/conversations.js';
 import { ProductNotFoundError, ProductStore } from '../src/product/store.js';
@@ -13,6 +15,7 @@ import { RepositoryGitError, RepositoryNotFoundError } from '../src/capabilities
 import type { CapabilityMcp } from '../src/capabilities/mcp.js';
 import type { ModelConfiguration } from '../src/model/configuration.js';
 import { redactSensitiveText } from '../src/security/redaction.js';
+import { InMemoryRunAdmission } from '../src/orchestration/admission.js';
 
 function observabilityOptions(directory: string) {
   return {
@@ -94,6 +97,35 @@ test('conversation routes preserve product DTO and hide runtime-only state', asy
     });
     assert.equal(missingUpdate.status, 404);
     assert.deepEqual(await missingUpdate.json(), { detail: 'conversation not found' });
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Web 新建会话绑定当前登录主体', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mastra-conversation-owner-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  const routes = createConversationRoutes(store);
+  const app = new Hono<{ Variables: AuthVariables }>();
+  app.use('*', async (context, next) => {
+    context.set('identity', {
+      subject: 'teacher-1',
+      displayName: 'IT 老师',
+      issuer: 'test',
+    });
+    await next();
+  });
+  app.route('/', routes);
+  try {
+    const response = await app.request('/conversations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'owned' }),
+    });
+    assert.equal(response.status, 201);
+    const created = await response.json() as { id: string };
+    assert.equal((await store.getConversation(created.id)).owner_subject, 'teacher-1');
   } finally {
     await store.close();
     await rm(directory, { recursive: true, force: true });
@@ -494,6 +526,73 @@ test('message stream persists completion and emits the stable AG-UI terminal seq
   }
 });
 
+test('逐字符文本流不会向 SSE 或助手持久化泄露拆分的学员标识', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mastra-stream-privacy-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  const conversation = await store.createConversation();
+  const learnerId = 'student-fixture-001';
+  const phone = '13800000000';
+  const modelText = `已定位学员 ${learnerId}，联系电话 ${phone}，继续检查日志。`;
+  const inputText = `学员编号: ${learnerId}; 联系电话: ${phone}; 页面打不开`;
+  const correlations: Array<{ identifiers?: Record<string, string>; sourceText: string }> = [];
+  const diagnosisAgent = {
+    async *stream() {
+      for (const delta of modelText) yield { type: 'text', delta };
+      yield {
+        type: 'completed', text: modelText, report: null,
+        evidence_state: {}, messages_state: [], tool_usage: {},
+      };
+    },
+  } as unknown as DiagnosisAgent;
+  const app = createConversationRoutes(
+    store,
+    diagnosisAgent,
+    {
+      createKnowledgeSession: async () => null,
+      createLogCatalogTools: async (options: { correlation: { identifiers?: Record<string, string>; sourceText: string } }) => {
+        correlations.push(options.correlation);
+        return null;
+      },
+    } as unknown as CapabilityMcp,
+    { enabled: true } as ModelConfiguration,
+    observabilityOptions(directory),
+  );
+  try {
+    const response = await app.request(`/conversations/${conversation.id}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: inputText }),
+    });
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    const streamedText = [...body.matchAll(/event: TEXT_MESSAGE_CONTENT\ndata: (.+)\n/g)]
+      .map((match) => (JSON.parse(match[1]!) as { delta: string }).delta).join('');
+    assert.equal(streamedText.includes(learnerId), false);
+    assert.equal(streamedText.includes(phone), false);
+    assert.match(streamedText, /继续检查日志/);
+    const saved = await store.getConversation(conversation.id);
+    const assistant = saved.messages.find((message) => message.role === 'assistant');
+    assert.equal(assistant?.content.includes(learnerId), false);
+    assert.equal(assistant?.content.includes(phone), false);
+    assert.equal(assistant?.status, 'completed');
+    const user = saved.messages.find((message) => message.role === 'user');
+    assert.equal(user?.content, inputText);
+    const next = await app.request(`/conversations/${conversation.id}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: '继续排查' }),
+    });
+    assert.equal(next.status, 200);
+    await next.text();
+    assert.equal(correlations[1]?.identifiers?.learner_id, learnerId);
+    assert.equal(correlations[1]?.identifiers?.phone, phone);
+    assert.equal(correlations[1]?.sourceText.includes(inputText), true);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('persists tool transitions and evidence before streaming, so restart retains completed observations', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'mastra-conversation-checkpoint-'));
   const databaseUrl = `file:${join(directory, 'runtime.db')}`;
@@ -592,6 +691,62 @@ test('serializes concurrent turns for the same conversation', async () => {
     await first.text();
     const saved = await store.getConversation(conversation.id);
     assert.equal(saved.messages.filter((message) => message.role === 'user').length, 1);
+  } finally {
+    releaseRun();
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('global admission returns 429 before persisting a message and releases for a later turn', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mastra-global-admission-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  const firstConversation = await store.createConversation();
+  const secondConversation = await store.createConversation();
+  let releaseRun!: () => void;
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => { markStarted = resolve; });
+  const blocked = new Promise<void>((resolve) => { releaseRun = resolve; });
+  let runs = 0;
+  const diagnosisAgent = {
+    async *stream() {
+      runs += 1;
+      if (runs === 1) {
+        markStarted();
+        await blocked;
+      }
+      yield { type: 'completed', text: '完成', report: null, evidence_state: {}, messages_state: [], tool_usage: {} };
+    },
+  } as unknown as DiagnosisAgent;
+  const app = createConversationRoutes(
+    store,
+    diagnosisAgent,
+    { createKnowledgeSession: async () => null } as unknown as CapabilityMcp,
+    { enabled: true } as ModelConfiguration,
+    { ...observabilityOptions(directory), admission: new InMemoryRunAdmission(1) },
+  );
+  const request = (id: string) => app.request(`/conversations/${id}/messages`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ content: '检查问题' }),
+  });
+
+  try {
+    const first = await request(firstConversation.id);
+    assert.equal(first.status, 200);
+    await started;
+    const rejected = await request(secondConversation.id);
+    assert.equal(rejected.status, 429);
+    assert.equal(rejected.headers.get('retry-after'), '1');
+    assert.deepEqual(await rejected.json(), { detail: '当前诊断任务较多，请稍后重试', retry_after: 1 });
+    assert.equal((await store.getConversation(secondConversation.id)).messages.length, 0);
+
+    releaseRun();
+    await first.text();
+    const next = await request(secondConversation.id);
+    assert.equal(next.status, 200);
+    await next.text();
+    assert.equal((await store.getConversation(secondConversation.id)).messages.length, 2);
   } finally {
     releaseRun();
     await store.close();

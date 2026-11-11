@@ -212,10 +212,21 @@ export class ProductStore {
       const conversation = ConversationRecordSchema.parse(
         parseData<unknown>(row.data),
       );
+      const hasPendingConsultation = conversation.consultations.some(
+        (consultation) => consultation.status === "pending",
+      );
+      // 等待外发确认是可恢复的暂停态，不是崩溃留下的半截回复。
+      if (conversation.run_state === "waiting_confirmation" && hasPendingConsultation) {
+        continue;
+      }
       const hasStreaming = conversation.messages.some(
         (message) => message.status === "streaming",
       );
-      if (!hasStreaming) continue;
+      const wasInterrupted =
+        hasStreaming ||
+        conversation.run_state === "running" ||
+        conversation.run_state === "waiting_confirmation";
+      if (!wasInterrupted) continue;
       const messages = conversation.messages.map((message) => {
         if (message.status !== "streaming") return message;
         return ChatMessageSchema.parse({
@@ -235,7 +246,11 @@ export class ProductStore {
           report: null,
         });
       });
-      await this.saveConversationReady({ ...conversation, messages });
+      await this.saveConversationReady({
+        ...conversation,
+        messages,
+        run_state: "failed",
+      });
     }
   }
 

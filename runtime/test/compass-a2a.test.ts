@@ -161,16 +161,19 @@ test('fetches agent card, streams final text, and cancels tasks over JSON-RPC SS
     assert.equal(card.capabilities?.streaming, true);
 
     const progress: string[] = [];
+    const partials: Array<{ text: string; state: string | null }> = [];
     const result = await client.sendStreamingMessage({
       text: 'hello',
       contextId: 'ctx-reuse',
       onProgress: (event) => progress.push(event.kind),
+      onPartialResult: (partial) => partials.push({ text: partial.text, state: partial.state }),
     });
     assert.equal(result.text, 'final answer');
     assert.equal(result.taskId, 'task-1');
     assert.equal(result.contextId, 'ctx-reuse');
     assert.equal(result.state, 'TASK_STATE_COMPLETED');
     assert.deepEqual(progress, ['task', 'artifact', 'status']);
+    assert.deepEqual(partials, [{ text: 'final answer', state: 'TASK_STATE_WORKING' }]);
 
     await client.cancelTask('task-1');
     assert.equal(requests[0]?.auth, 'Bearer test-token');

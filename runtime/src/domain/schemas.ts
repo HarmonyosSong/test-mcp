@@ -21,6 +21,78 @@ export const VerdictSchema = z.enum([
 export const SeveritySchema = z.enum(['critical', 'high', 'medium', 'low', 'unknown']);
 export const EvidenceKindSchema = z.enum(['user', 'log', 'source', 'config', 'tool']);
 export const ChatMessageStatusSchema = z.enum(['streaming', 'completed', 'failed']);
+export const ResponsibilitySchema = z.enum(['client', 'server', 'shared', 'unknown']);
+export const RunStateSchema = z.enum([
+  'idle',
+  'running',
+  'waiting_confirmation',
+  'completed',
+  'failed',
+  'cancelled',
+]);
+
+export const RemoteConclusionSchema = z.strictObject({
+  consultation_id: z.string().min(1),
+  task_id: nullableText,
+  context_id: nullableText,
+  agent_id: nullableText,
+  agent_version: nullableText,
+  state: nullableText,
+  text: z.string(),
+  truncated: z.boolean(),
+  scope: z.array(z.string()),
+  limitations: z.array(z.string()),
+  request_digest: z.string().min(1),
+  received_at: isoDateTime,
+});
+
+export const VerifiedClaimSchema = z.strictObject({
+  claim: z.string().min(1),
+  evidence_ids: z.array(z.string().min(1)).min(1),
+});
+
+export const JointAssessmentSchema = z.strictObject({
+  relation: z.enum(['corroborated', 'conflicting', 'unverified']),
+  text: z.string(),
+  verified_claims: z.array(VerifiedClaimSchema),
+  unverified_claims: z.array(z.string()),
+  next_actions: z.array(z.string()),
+});
+
+export const NextActionSchema = z.strictObject({
+  target: z.enum(['client', 'server', 'user']),
+  question: z.string().trim().min(1),
+});
+
+export const LogObservationContextSchema = z.strictObject({
+  environment: z.string().min(1),
+  storage_alias: z.string().min(1),
+  account: z.string().min(1),
+  collection: z.string().min(1),
+  store_id: z.string().min(1),
+  topic: z.string().min(1),
+  appid: z.string().min(1),
+  query: z.string().max(2_000),
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+  page: z.number().int().nonnegative(),
+  entry_id: z.string().regex(/^log-[a-f0-9]{24}$/),
+  redaction_version: z.string().min(1),
+  matched_identifiers: z.array(z.strictObject({
+    kind: z.enum(['learner_id', 'phone', 'trace_id', 'request_id']),
+    matched: z.literal(true),
+  })),
+  matched_error_features: z.array(z.string()),
+  service_binding: z.strictObject({
+    status: z.enum(['confirmed', 'unconfirmed']),
+    method: z.enum(['user_selected', 'observed_client_session']).nullable(),
+  }),
+  observed_platform: z.enum(['harmony', 'android', 'ios', 'unknown']),
+  observed_version: nullableText,
+  device_ref: nullableText,
+  session_ref: nullableText,
+  platform_conflict: z.boolean(),
+});
 
 export const EvidenceSchema = z.strictObject({
   id: z.string().default(defaultEvidenceId),
@@ -29,6 +101,8 @@ export const EvidenceSchema = z.strictObject({
   location: nullableText.default(null),
   excerpt: z.string().max(2_000),
   supports: z.string(),
+  // 只能由 Runtime 的观测适配器写入，模型草稿没有该字段。
+  observation_context: LogObservationContextSchema.optional(),
 });
 
 export const EvidenceCitationSchema = z.strictObject({
@@ -56,6 +130,9 @@ const reportFields = {
   checks_performed: z.array(z.string()).default([]),
   limitations: z.array(z.string()).default([]),
   confidence: z.number().min(0).max(1),
+  responsibility: ResponsibilitySchema.default('unknown'),
+  next_action: NextActionSchema.nullable().default(null),
+  joint_assessment: JointAssessmentSchema.nullable().default(null),
 };
 
 function validateReportReferences(
@@ -104,6 +181,9 @@ export const DiagnosisReportSchema = z
   .strictObject({
     ...reportFields,
     evidence: z.array(EvidenceSchema).default([]),
+    // 外部结论只能由 Runtime 合并，绝不出现在模型草稿 Schema 中。
+    remote_conclusion: RemoteConclusionSchema.nullable().default(null),
+    external_findings: z.array(RemoteConclusionSchema).default([]),
   })
   .superRefine((value, ctx) => validateReportReferences(value, value.evidence, ctx, 'evidence'));
 
@@ -141,6 +221,46 @@ export const ChatMessageSchema = z.object({
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
 
+// 编排计划仍在演进；持久化层先保留完整 JSON 对象，不锁死内部分支字段。
+export const InvestigationStateSchema = JsonObjectSchema;
+
+export const ExternalConsultationSchema = z.strictObject({
+  id: z.string().min(1),
+  conversation_id: z.string().min(1),
+  message_id: z.string().min(1),
+  run_id: z.string().min(1),
+  status: z.enum([
+    'pending',
+    'approved',
+    'rejected',
+    'sent',
+    'completed',
+    'failed',
+    'cancel_requested',
+    'unknown',
+    'expired',
+  ]),
+  reason: z.string(),
+  outbound_text: z.string(),
+  outbound_digest: z.string().min(1),
+  redaction_version: z.string().min(1),
+  attachment_items: z.array(z.string()).max(0),
+  expires_at: isoDateTime,
+  task_id: nullableText,
+  context_id: nullableText,
+  created_at: isoDateTime,
+  updated_at: isoDateTime,
+});
+
+export const SlotAuditSchema = z.strictObject({
+  operation: z.enum(['invoke', 'cancel']),
+  slotId: z.string().min(1),
+  taskId: nullableText,
+  state: nullableText,
+  durationMs: z.number().min(0),
+  truncated: z.boolean(),
+});
+
 export const ConversationRecordSchema = z.object({
   id: z.string().default(defaultConversationId),
   title: z.string().default('新会话'),
@@ -152,6 +272,12 @@ export const ConversationRecordSchema = z.object({
   requested_ref: nullableText.optional().default(null),
   resolved_commit: nullableText.optional().default(null),
   model_override: z.string().max(250).nullable().optional().default(null),
+  run_state: RunStateSchema.default('idle'),
+  consult_compass: z.boolean().default(false),
+  investigation: InvestigationStateSchema.nullable().default(null),
+  consultations: z.array(ExternalConsultationSchema).default([]),
+  external_findings: z.array(RemoteConclusionSchema).default([]),
+  slot_audit: z.array(SlotAuditSchema).default([]),
   messages: z.array(ChatMessageSchema).default([]),
   messages_state: z.array(JsonObjectSchema).default([]),
   evidence_state: JsonObjectSchema.default({}),
@@ -188,6 +314,8 @@ export const SendMessageRequestSchema = z.object({
 export const UpdateConversationRequestSchema = z.object({
   title: z.string().trim().min(1).max(120).nullable().optional(),
   model_override: z.string().trim().max(250).nullable().optional(),
+  // 仅允许产品 UI 通过 PATCH 显式修改；聊天文本和模型输出没有该写路径。
+  consult_compass: z.boolean().optional(),
 });
 
 const credentialFreeHttpUrl = (value: string) => {
@@ -275,10 +403,22 @@ export const ModelConnectionResultSchema = z.object({
   response_preview: z.string(),
 });
 
+export const ClientPlatformSchema = z.enum(['harmony', 'android', 'ios']);
+export const RepositoryVersionMappingSchema = z.strictObject({
+  branch: z.string().trim().min(1).max(500),
+  expected_commit: z.string().regex(/^[0-9a-f]{40,64}$/),
+});
+export const RepositoryVersionMapSchema = z.record(
+  z.string().trim().min(1).max(100),
+  RepositoryVersionMappingSchema,
+);
+
 export const RegisterRepositoryRequestSchema = z.object({
   name: z.string().trim().min(2).max(80).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
   url: z.string().trim().min(8).max(2_000),
   default_branch: z.string().trim().max(500).nullable().default(null),
+  platform: ClientPlatformSchema.nullable().default(null),
+  version_map: RepositoryVersionMapSchema.default({}),
 }).superRefine((value, ctx) => {
   const url = value.url.trim();
   let parsed: URL | undefined;
@@ -304,11 +444,22 @@ export const RegisterRepositoryRequestSchema = z.object({
   ctx.addIssue({ code: 'custom', path: ['url'], message: 'repository URL must use HTTP(S), SSH, or SCP syntax' });
 });
 
+export const UpdateRepositoryRequestSchema = z.strictObject({
+  default_branch: z.string().trim().min(1).max(500).optional(),
+  platform: ClientPlatformSchema.nullable().optional(),
+  version_map: RepositoryVersionMapSchema.optional(),
+}).refine(
+  (value) => value.default_branch !== undefined || value.platform !== undefined || value.version_map !== undefined,
+  { message: 'at least one repository setting is required' },
+);
+
 export const RepositoryRecordSchema = z.object({
   id: z.string().default(() => `repo-${randomUUID().replaceAll('-', '').slice(0, 10)}`),
   name: z.string(),
   url: z.string(),
   default_branch: z.string(),
+  platform: ClientPlatformSchema.nullable().default(null),
+  version_map: RepositoryVersionMapSchema.default({}),
   created_at: isoDateTime.default(nowIsoDateTime),
   updated_at: isoDateTime.default(nowIsoDateTime),
 });
@@ -342,6 +493,12 @@ export const HealthResponseSchema = z.object({
 export type Verdict = z.infer<typeof VerdictSchema>;
 export type Severity = z.infer<typeof SeveritySchema>;
 export type EvidenceKind = z.infer<typeof EvidenceKindSchema>;
+export type Responsibility = z.infer<typeof ResponsibilitySchema>;
+export type RunState = z.infer<typeof RunStateSchema>;
+export type RemoteConclusion = z.infer<typeof RemoteConclusionSchema>;
+export type VerifiedClaim = z.infer<typeof VerifiedClaimSchema>;
+export type JointAssessment = z.infer<typeof JointAssessmentSchema>;
+export type NextAction = z.infer<typeof NextActionSchema>;
 export type Evidence = z.infer<typeof EvidenceSchema>;
 export type EvidenceCitation = z.infer<typeof EvidenceCitationSchema>;
 export type RootCauseCandidate = z.infer<typeof RootCauseCandidateSchema>;
@@ -349,8 +506,13 @@ export type DiagnosisReport = z.infer<typeof DiagnosisReportSchema>;
 export type DiagnosisReportDraft = z.infer<typeof DiagnosisReportDraftSchema>;
 export type ToolEvent = z.infer<typeof ToolEventSchema>;
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+export type InvestigationState = z.infer<typeof InvestigationStateSchema>;
+export type ExternalConsultation = z.infer<typeof ExternalConsultationSchema>;
+export type SlotAudit = z.infer<typeof SlotAuditSchema>;
 export type ConversationRecord = z.infer<typeof ConversationRecordSchema>;
 export type ModelConfigRequest = z.infer<typeof ModelConfigRequestSchema>;
 export type RepositoryRecord = z.infer<typeof RepositoryRecordSchema>;
+export type ClientPlatform = z.infer<typeof ClientPlatformSchema>;
+export type RepositoryVersionMapping = z.infer<typeof RepositoryVersionMappingSchema>;
 export type RepositoryBranch = z.infer<typeof RepositoryBranchSchema>;
 export type RepositorySnapshot = z.infer<typeof RepositorySnapshotSchema>;

@@ -35,6 +35,7 @@ integrationInfo('a2a', 'startup config', {
   baseUrl: config.a2aBaseUrl,
   clientId: config.a2aClientId,
   waitSeconds: config.a2aWaitSeconds,
+  debugProvider: config.a2aDebugEnabled,
 });
 
 const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {

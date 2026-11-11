@@ -5,6 +5,7 @@ import { chmod, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RuntimeConfig } from './config.js';
+import { compassA2AClientConfig } from './config.js';
 import { createMastra } from './mastra.js';
 import { createRuntimeDatabase } from './migration/legacy.js';
 import { createConversationRoutes } from './http/conversations.js';
@@ -27,6 +28,16 @@ import {
   type IdentityProvider,
 } from './auth/index.js';
 import { isYachImConfigured, YachChannel } from './channels/yach/index.js';
+import { InMemoryRunAdmission, type RunAdmission } from './orchestration/admission.js';
+import { InMemoryAgentSlotRegistry } from './orchestration/agent-slot-registry.js';
+import {
+  COMPASS_A2A_AGENT_CARD_PATH,
+  CompassA2AClient,
+  isCompassA2AConfigured,
+} from './capabilities/compass-a2a.js';
+import { CompassSlotAdapter } from './capabilities/compass-slot.js';
+import { createCompassA2ADebugRoutes } from './capabilities/compass-a2a-debug.js';
+import { loadServerSignals } from './orchestration/server-signals.js';
 
 export interface RuntimeApp {
   app: Hono<{ Variables: AuthVariables }>;
@@ -37,6 +48,8 @@ export interface RuntimeApp {
   capabilities: CapabilityMcp;
   skills: SkillRegistry;
   diagnosisAgent: DiagnosisAgent;
+  admission: RunAdmission;
+  slotRegistry: InMemoryAgentSlotRegistry;
   identityProvider: IdentityProvider;
   yachChannel: YachChannel | null;
 }
@@ -65,6 +78,25 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
     const skills = new SkillRegistry(config.skillsDir);
     await skills.load();
     const diagnosisAgent = new DiagnosisAgent(modelConfiguration, skills, mastra);
+    const admission = new InMemoryRunAdmission(config.maxConcurrentRuns);
+    const serverSignals = await loadServerSignals(resolve(config.projectRoot, 'runtime/contracts/server-signals.yaml'));
+    const slotRegistry = new InMemoryAgentSlotRegistry();
+    if (isCompassA2AConfigured(config.a2aToken)) {
+      const compass = new CompassA2AClient(compassA2AClientConfig(config));
+      slotRegistry.register({
+        slot: {
+          slotId: 'compass',
+          agentCardUrl: new URL(COMPASS_A2A_AGENT_CARD_PATH, `${config.a2aBaseUrl}/`).toString(),
+          role: 'server',
+          capabilities: ['server-diagnosis'],
+          authRef: 'runtime:a2aToken',
+          timeoutMs: config.a2aWaitSeconds * 1000,
+          maxOutputChars: config.a2aMaxOutputChars,
+          evidenceMode: 'external_findings',
+        },
+        adapter: new CompassSlotAdapter(compass),
+      });
+    }
     const identityProvider: IdentityProvider =
       config.authMode === 'local'
         ? new LocalIdentityProvider({ publicBaseUrl: config.publicBaseUrl })
@@ -112,6 +144,14 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
     app.route('/api', createConversationRoutes(store, diagnosisAgent, capabilities, modelConfiguration, {
       knowledgeQueryLog: config.knowledgeQueryLog,
       caseArchiveDir: config.caseArchiveDir,
+      admission,
+      serverSignals,
+      slotRegistry,
+      compassAvailable: isCompassA2AConfigured(config.a2aToken),
+      investigationBudget: {
+        maxSeconds: config.investigationMaxSeconds,
+        maxRemoteCalls: config.investigationMaxRemoteCalls,
+      },
       createConversationSource: async ({ repositoryId, branch, workspacePath }) => {
         if (repositoryId && branch) {
           const snapshot = await repositories.prepareSnapshot(repositoryId, branch);
@@ -151,6 +191,12 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       });
     }
 
+    if (config.a2aDebugEnabled) {
+      root.route('/', createCompassA2ADebugRoutes({
+        token: config.a2aToken,
+        modelConfiguration,
+      }));
+    }
     root.route('/', app);
     const yachChannel = isYachImConfigured(config)
       ? new YachChannel({
@@ -159,6 +205,9 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         diagnosisAgent,
         capabilities,
         modelConfiguration,
+        admission,
+        slotRegistry,
+        serverSignals,
       })
       : null;
     return {
@@ -170,6 +219,8 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       capabilities,
       skills,
       diagnosisAgent,
+      admission,
+      slotRegistry,
       identityProvider,
       yachChannel,
     };

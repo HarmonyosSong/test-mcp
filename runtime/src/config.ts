@@ -72,6 +72,9 @@ export const runtimeConfigSchema = z.object({
   gitMirrorDir: z.string().default('.data/git-mirrors'),
   snapshotDir: z.string().default('.data/workspaces'),
   gitTimeoutMs: z.coerce.number().int().min(1_000).max(600_000).default(120_000),
+  maxConcurrentRuns: z.coerce.number().int().min(1).max(100).default(4),
+  investigationMaxSeconds: z.coerce.number().int().min(10).max(3_600).default(300),
+  investigationMaxRemoteCalls: z.coerce.number().int().min(0).max(10).default(2),
   runMode: z.enum(['local', 'server']).default('server'),
   publicBaseUrl: z.string().default(''),
   appPrefix: z.string().default('/xesapp-agent'),
@@ -82,6 +85,8 @@ export const runtimeConfigSchema = z.object({
   a2aClientId: z.string().default(A2A_CONFIG_DEFAULTS.clientId),
   a2aToken: z.string().default(''),
   a2aWaitSeconds: z.coerce.number().int().min(1).max(3_600).default(A2A_CONFIG_DEFAULTS.waitSeconds),
+  a2aMaxOutputChars: z.coerce.number().int().min(1_000).max(200_000).default(12_000),
+  a2aDebugEnabled: booleanFromEnv,
   yachEnabled: booleanFromEnv,
   yachAppKey: z.string().default(''),
   yachAppSecret: z.string().default(''),
@@ -129,6 +134,9 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     gitMirrorDir: env.HARMONY_MASTRA_GIT_MIRROR_DIR,
     snapshotDir: env.HARMONY_MASTRA_SNAPSHOT_DIR,
     gitTimeoutMs: env.HARMONY_MASTRA_GIT_TIMEOUT_MS,
+    maxConcurrentRuns: env.HARMONY_AGENT_MAX_CONCURRENT_RUNS,
+    investigationMaxSeconds: env.HARMONY_AGENT_INVESTIGATION_MAX_SECONDS,
+    investigationMaxRemoteCalls: env.HARMONY_AGENT_INVESTIGATION_MAX_REMOTE_CALLS,
     runMode: env.HARMONY_AGENT_RUN_MODE || undefined,
     publicBaseUrl: env.HARMONY_AGENT_PUBLIC_BASE_URL,
     appPrefix: env.HARMONY_AGENT_APP_PREFIX,
@@ -139,6 +147,8 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     a2aClientId: env.HARMONY_AGENT_A2A_CLIENT_ID,
     a2aToken: env.HARMONY_AGENT_A2A_TOKEN,
     a2aWaitSeconds: env.HARMONY_AGENT_A2A_WAIT_SECONDS,
+    a2aMaxOutputChars: env.HARMONY_AGENT_A2A_MAX_OUTPUT_CHARS,
+    a2aDebugEnabled: env.HARMONY_AGENT_A2A_DEBUG_ENABLED,
     yachEnabled: env.HARMONY_AGENT_YACH_ENABLED,
     yachAppKey: env.HARMONY_AGENT_YACH_APP_KEY ?? env.YACH_APP_KEY,
     yachAppSecret: env.HARMONY_AGENT_YACH_APP_SECRET ?? env.YACH_APP_SECRET,
@@ -173,6 +183,12 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     ? (config.yachBridgePath.startsWith('/') ? config.yachBridgePath : fromRoot(config.yachBridgePath))
     : resolve(projectRoot, 'runtime/yach-bridge/bridge.cjs');
   const authMode = config.runMode === 'local' ? 'local' : 'sso';
+  if (config.a2aDebugEnabled && config.runMode !== 'local') {
+    throw new Error('A2A debug provider requires HARMONY_AGENT_RUN_MODE=local');
+  }
+  if (config.a2aDebugEnabled && !config.a2aToken.trim()) {
+    throw new Error('A2A debug provider requires a non-empty local HARMONY_AGENT_A2A_TOKEN');
+  }
   return {
     ...config,
     projectRoot,
@@ -199,6 +215,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     a2aBaseUrl,
     a2aClientId: config.a2aClientId.trim() || A2A_CONFIG_DEFAULTS.clientId,
     a2aToken: config.a2aToken.trim(),
+    a2aDebugEnabled: Boolean(config.a2aDebugEnabled),
     yachEnabled: Boolean(config.yachEnabled),
     yachAppKey: config.yachAppKey.trim(),
     yachAppSecret: config.yachAppSecret.trim(),
