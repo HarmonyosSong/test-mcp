@@ -1,10 +1,24 @@
 # Log catalog
 
-Static routing for optional Aliyun SLS log tools (`resolve_log_target` / `count_cloud_logs` / `search_cloud_logs` / `discover_client_sessions`).
+Config-driven routing for optional dual-source log tools (same HTTP APIs as logcenterskill; **business rules live here**, not in code).
 
-- Edit [`catalog.yaml`](./catalog.yaml) via PR; do not put AppID/AppSecret here.
-- Runtime loads the file from `HARMONY_AGENT_LOG_CATALOG` or defaults to this path.
-- Tools mount only when `HARMONY_AGENT_LOGCENTER_APP_ID` and `HARMONY_AGENT_LOGCENTER_APP_SECRET` are set.
-- Extend appids with `identity_fields` and `observation_fields` only after verifying the real field semantics; also declare every identity field used for discovery in `key_fields`. Leave unknown production mappings empty rather than guessing.
-- These fields are additive: preserve existing coordinates, aliases, business matches and consumers. Only identity-matched, target-bound entries can confirm an observed platform or enter EvidenceLedger; raw learner identifiers stay in Runtime-private correlation and never belong in this file.
-- Spec: [`spec/log-catalog-query-capability.md`](../../../spec/log-catalog-query-capability.md)
+- **Aliyun SLS** (`source: aliyun_sls`): resolve `targets[]` by **appid** → join thin `stores[]` for account/collection/topic → `count_cloud_logs` / `search_cloud_logs`
+- **未来云 APM** (`source: logcenter`): resolve `targets[]` by aliases → `service_id` → `count_logs` / `query_logs`
+
+## Layout (v3)
+
+| Section | Role |
+| --- | --- |
+| `defaults` | Shared SLS account/collection/region/time |
+| `stores[]` | Physical Logstore only (no business aliases) |
+| `targets[]` | First-class resolve units: SLS `appid` (`store_ref`) or APM (`service_id`) |
+
+Resolve prefers business/appid aliases; vague platform words may return `ambiguous`. Query strings prefer each target’s `suggested_query` / `businesses[].match` from this file.
+
+## Tools
+
+`resolve_log_target` · `count_cloud_logs` · `search_cloud_logs` · `count_logs` · `query_logs`
+
+Mount when `HARMONY_AGENT_LOGCENTER_APP_ID` + `SECRET` are set. Path: `HARMONY_AGENT_LOG_CATALOG` or this file.
+
+Spec: [`spec/log-catalog-query-capability.md`](../../../spec/log-catalog-query-capability.md) · APM fields: [`apm-field-notes.md`](./apm-field-notes.md)

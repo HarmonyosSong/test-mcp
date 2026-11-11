@@ -5,6 +5,8 @@ export function progressLabelForTool(toolName: string): string {
   if (
     name.includes('log_target')
     || name.includes('cloud_logs')
+    || name === 'count_logs'
+    || name === 'query_logs'
     || name.includes('log_catalog')
     || name.includes('logcenter')
     || name.includes('client_sessions')

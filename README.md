@@ -135,7 +135,8 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_MASTRA_SERVE_WEB` | `false` | 是否托管 `web/dist` |
 | `HARMONY_AGENT_CORS_ORIGINS` | 本地 Vite 的 5173/5174 地址 | 允许跨源访问的来源，逗号分隔 |
 | `VITE_API_PROXY_TARGET` | `http://127.0.0.1:8000` | Vite 开发服务器转发 `/api` 的 runtime 地址 |
-| `HARMONY_MASTRA_DATA_DIR` | `.data/mastra` | LibSQL 数据目录 |
+| `HARMONY_AGENT_DATA_ROOT` | `<项目根>/.data` | 统一数据根；派生 LibSQL、mirror、snapshot、模型配置与知识归档。容器设为 `/data/troubleshoot-odyssey` 并挂持久卷（见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)） |
+| `HARMONY_MASTRA_DATA_DIR` | `<data-root>/mastra` | LibSQL 数据目录；设置后优先于数据根 |
 | `HARMONY_MASTRA_DATABASE_URL` | `file:<data-dir>/runtime.db` | 自定义 LibSQL URL |
 | `HARMONY_MASTRA_WEB_DIST` | `web/dist` | 生产静态网页目录 |
 | `HARMONY_MASTRA_PROJECT_ROOT` | 仓库根目录 | MCP 项目根目录 |
@@ -146,16 +147,16 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_CODE_INDEX_MODE` | `fast` | 首版仅接受 `fast`，其他模式会明确报错 |
 | `HARMONY_AGENT_CODE_INDEX_TIMEOUT_SECONDS` | `90` | 单次索引或查询的超时，范围 5–600 秒；首次调用包含两个操作 |
 | `HARMONY_MASTRA_SKILLS_DIR` | `skills` | Skill Markdown 目录 |
-| `HARMONY_MASTRA_GIT_MIRROR_DIR` | `.data/git-mirrors` | Git mirror 目录 |
-| `HARMONY_MASTRA_SNAPSHOT_DIR` | `.data/workspaces` | detached snapshot 目录 |
+| `HARMONY_MASTRA_GIT_MIRROR_DIR` | `<data-root>/git-mirrors` | Git mirror 目录；设置后优先于数据根 |
+| `HARMONY_MASTRA_SNAPSHOT_DIR` | `<data-root>/workspaces` | detached snapshot 目录；设置后优先于数据根 |
 | `HARMONY_MASTRA_GIT_TIMEOUT_MS` | `120000` | Git 操作超时 |
 | `HARMONY_AGENT_KNOWLEDGE_ROOT` | `knowledge` | 知识 MCP 根目录 |
 | `HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE` | `legacy` | 知识召回模式：`legacy` 或实验性的 `v2`；`shadow` 尚未支持 |
 | `HARMONY_AGENT_KNOWLEDGE_PREVIEW_STRATEGY` | 随召回模式 | 知识正文预览策略：`legacy` 或 `ranked` |
-| `HARMONY_AGENT_KNOWLEDGE_QUERY_LOG` | `.data/knowledge-queries.jsonl` | 知识查询和诊断 outcome 的 JSONL 日志 |
-| `HARMONY_AGENT_KNOWLEDGE_CASES_DIR` | `.data/knowledge-cases` | 终态诊断案例归档目录 |
+| `HARMONY_AGENT_KNOWLEDGE_QUERY_LOG` | `<data-root>/knowledge-queries.jsonl` | 知识查询和诊断 outcome 的 JSONL 日志；设置后优先于数据根 |
+| `HARMONY_AGENT_KNOWLEDGE_CASES_DIR` | `<data-root>/knowledge-cases` | 终态诊断案例归档目录；设置后优先于数据根 |
 | `HARMONY_AGENT_MODEL` | `deepseek:deepseek-flash` | 环境模式使用的正式支持模型；其他 provider/model 仍可配置但处于实验或未验收状态 |
-| `HARMONY_AGENT_MODEL_CONFIG_FILE` | `.data/model-config.json` | 本地模型配置文件 |
+| `HARMONY_AGENT_MODEL_CONFIG_FILE` | `<data-root>/model-config.json` | 本地模型配置文件；设置后优先于数据根 |
 | `HARMONY_AGENT_RUN_MODE` | `server` | `local` 本机免登；`server` 走知音楼 SSO（生产必须） |
 | `HARMONY_AGENT_PUBLIC_BASE_URL` | 空 | 浏览器 origin（不含 `/xesapp-agent`）；SSO 与 CSRF Origin 校验依赖它 |
 | `HARMONY_AGENT_APP_PREFIX` | `/xesapp-agent` | 应用 path 前缀 |
@@ -168,7 +169,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_LOGCENTER_BASE_URL` | `https://logcenter-api.tal.com/api` | 日志平台网关地址 |
 | `HARMONY_AGENT_LOGCENTER_TIMEOUT_MS` | `15000` | 单次日志 HTTP 请求超时，范围 100–120000 毫秒；随诊断轮取消 |
 
-网页设置写入 `.data/model-config.json`，文件权限为 `0600`。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key；Mastra 内部日志已关闭，应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证，不能据此保证所有日志都不含敏感内容。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
+网页设置写入 `<data-root>/model-config.json`（默认 `.data/model-config.json`），文件权限为 `0600`。容器部署见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)：只设 `HARMONY_AGENT_DATA_ROOT=/data/troubleshoot-odyssey`，由平台挂卷，勿再写相对 `.data/...` 单项。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key；Mastra 内部日志已关闭，应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证，不能据此保证所有日志都不含敏感内容。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
 
 知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续。仓库 MCP 按会话工作区启动：Git 仓库会绑定 detached Commit 快照，本地目录则读取授权根目录中的实时文件，诊断过程中工作区变化可能影响后续读取。知识检索和仓库代码检查需要 Python/uv 已安装，并已通过 `make setup` 安装 `mcp_server/` 依赖。
 
@@ -176,7 +177,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 启用时在部署环境放置 **codebase-memory-mcp 0.12.1** 二进制，并在 `.env` 填写 `HARMONY_AGENT_CODE_INDEX_COMMAND=/absolute/path/to/codebase-memory-mcp`，重启 Runtime 后生效；不需要额外配置一个 MCP 服务。首版只索引授权工作区内的允许代码文件副本，排除已知依赖目录、符号链接和超大文件；查询前后核对源码内容指纹，轮内源码变化时拒绝旧图查询。`.data/codebase-memory` 下的 `source-views/` 和 `engine/` 分别保存源码副本与派生索引，Docker 部署应挂载持久卷；缓存可清理重建，不替代会话和证据数据的持久化。真实 HarmonyOS 工程已验证导航与源码回读，iOS/Android 的关系精度及真实诊断效果仍待验收。
 
-LogCenter 的 AppID / AppSecret 留空即可使用其余功能。当前四个工具是 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`discover_client_sessions`。Runtime 私有注入当前用户明确提供的学员标识，目标必须由用户原文选择；目标绑定且身份匹配的日志脱敏后可进入 EvidenceLedger，空结果和未关联日志不能确认平台或支持正向根因。合成 mock 已覆盖关联、脱敏、发现和入账；测试网关只完成基本 count/search 连通性，生产 Catalog 字段、appid 索引兼容性和真实学员链路仍未验收。契约见 [`日志目录与查询规格`](spec/log-catalog-query-capability.md)，后续边界见 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)。
+LogCenter 能力：Catalog 双 source（阿里云 SLS 产品埋点 + 未来云 APM `service_id`）。AppID / AppSecret 留空即可使用其余功能；框架验收使用本机模拟 HTTP。工具为 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`count_logs`、`query_logs`。不等于动态服务发现或日志证据门禁，契约见 [`日志目录与查询规格`](spec/log-catalog-query-capability.md)。
 
 ## 仓库与快照
 

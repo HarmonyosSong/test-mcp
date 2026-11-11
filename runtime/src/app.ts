@@ -213,9 +213,6 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         diagnosisAgent,
         capabilities,
         modelConfiguration,
-        admission,
-        slotRegistry,
-        serverSignals,
       })
       : null;
     return {

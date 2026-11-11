@@ -71,10 +71,11 @@ const REUSABLE_TOOLS = new Set([
   "resolve_log_target",
   "count_cloud_logs",
   "search_cloud_logs",
-  "discover_client_sessions",
+  "count_logs",
+  "query_logs",
 ]);
 
-const LOG_CATALOG_INSTRUCTIONS = `使用远程日志目录前必须加载 use-log-catalog Skill。有学员编号、联系电话或请求级标识时，优先用 discover_client_sessions 发现设备/会话；原始标识由 Runtime 私有注入，不要在工具参数中复述。按用户原文业务词通过 resolve_log_target 绑定目标后才能 count/search，禁止编造或改写 account/collection/topic/appid。远程日志只有在返回 observation_status=correlated 且 evidence_refs 非空时才进入账本；空结果、身份未匹配、查询失败和平台冲突都不能确认实际平台。故障调查的 observe→source 顺序由 Runtime 工具门禁保证，降级后必须保留现场证据缺口。`;
+const LOG_CATALOG_INSTRUCTIONS = `When remote log catalog tools are available, load the use-log-catalog Skill before calling them. Resolve via resolve_log_target first; use candidate fields and suggested_query from catalog—never invent account/collection/topic/service_id/appid filters. source=aliyun_sls → count_cloud_logs/search_cloud_logs (filter by appid; note Harmony and iOS may share prod-ios store); source=logcenter → count_logs/query_logs. Prefer count before search/query. Vague 安卓/iOS/鸿蒙 may be ambiguous—clarify. Remote hits are optional helpers, not ledger evidence in this phase. Do not replace pasted hilog or source evidence with catalog routing alone.`;
 
 function stableValue(value: unknown): unknown {
   if (value === undefined) return ["undefined"];
@@ -543,7 +544,8 @@ function promptFor(
     availableTools.add("resolve_log_target");
     availableTools.add("count_cloud_logs");
     availableTools.add("search_cloud_logs");
-    availableTools.add("discover_client_sessions");
+    availableTools.add("count_logs");
+    availableTools.add("query_logs");
   }
   const availableSkills = skills.available("chat", availableTools);
   const catalog = availableSkills.map((skill) => `- ${skill.name}: ${skill.description}`).join("\n") || "（当前没有可用技能）";
