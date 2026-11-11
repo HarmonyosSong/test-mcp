@@ -1,116 +1,142 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1060" role="img" aria-labelledby="title description">
-  <title id="title">Troubleshoot Odyssey 知识与代码图谱架构</title>
-  <desc id="description">区分本地规范知识检索、Graphify 代码知识图谱查询和云学习服务端知识，展示知识线索如何回到源码证据。</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1120" role="img" aria-labelledby="title description">
+  <title id="title">客户端 Agent 的知识、代码导航与证据架构</title>
+  <desc id="description">用户问题进入统一客户端 Diagnosis Agent，按需查询本地 Knowledge MCP 或通过 Repository MCP 内部可选 codebase-memory-mcp 导航代码，再回读或搜索绑定源码快照。只有实际观测可以进入 EvidenceLedger，知识和代码图始终只是线索。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#63758b"/>
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#65758b"/>
     </marker>
     <marker id="arrow-green" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#16816f"/>
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#43805c"/>
     </marker>
     <style>
-      text { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #26364b; }
+      text { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #27364a; }
       .title { font-size: 32px; font-weight: 700; }
-      .subtitle { font-size: 16px; fill: #5f6f84; }
-      .section { font-size: 13px; font-weight: 700; fill: #62738a; }
-      .heading { font-size: 18px; font-weight: 700; }
-      .body { font-size: 13px; fill: #506177; }
-      .small { font-size: 12px; fill: #65758a; }
-      .frame { fill: #fbfcfe; stroke: #dce3eb; stroke-width: 1.5; }
-      .external-frame { fill: #f7fbfa; stroke: #9dc8bd; stroke-width: 1.5; stroke-dasharray: 8 6; }
-      .box { fill: #ffffff; stroke: #b8c5d3; stroke-width: 1.5; }
-      .knowledge { fill: #fff4e7; stroke: #dfb16b; stroke-width: 1.7; }
-      .graph { fill: #f1efff; stroke: #a99be0; stroke-width: 1.7; }
-      .data { fill: #f1f6ed; stroke: #a5bc89; stroke-width: 1.7; }
-      .planned { fill: #fffaf0; stroke: #d99a3c; stroke-width: 1.7; stroke-dasharray: 7 5; }
-      .external { fill: #eef7f6; stroke: #83b9ad; stroke-width: 1.7; }
-      .edge { fill: none; stroke: #718299; stroke-width: 2; marker-end: url(#arrow); }
-      .edge-green { fill: none; stroke: #16816f; stroke-width: 2; stroke-dasharray: 7 5; marker-end: url(#arrow-green); }
-      .edge-label { font-size: 12px; font-weight: 600; fill: #56657d; }
-      .pill { fill: #e7f3ed; stroke: #a7cdb7; }
-      .pill-plan { fill: #fff7e9; stroke: #dfb16b; }
-      .pill-text { font-size: 11px; font-weight: 700; fill: #286b4d; }
-      .pill-plan-text { font-size: 11px; font-weight: 700; fill: #9b6315; }
+      .subtitle { font-size: 16px; fill: #58697e; }
+      .eyebrow { font-size: 13px; font-weight: 700; fill: #66768b; }
+      .heading { font-size: 19px; font-weight: 700; }
+      .heading-small { font-size: 16px; font-weight: 700; }
+      .body { font-size: 14px; fill: #4c5d72; }
+      .small { font-size: 12px; fill: #617187; }
+      .tiny { font-size: 11px; fill: #65758a; }
+      .frame { fill: #f9fbfd; stroke: #d9e1e9; stroke-width: 1.5; }
+      .runtime { fill: #edf3fb; stroke: #94aaca; stroke-width: 1.7; }
+      .knowledge { fill: #fff5e8; stroke: #d9a85e; stroke-width: 1.7; }
+      .code { fill: #eaf5f3; stroke: #75aaa1; stroke-width: 1.7; }
+      .index { fill: #f1effb; stroke: #a69bd3; stroke-width: 1.5; stroke-dasharray: 7 5; }
+      .source { fill: #eef5eb; stroke: #9eb78b; stroke-width: 1.7; }
+      .ledger { fill: #eaf4ed; stroke: #72a17f; stroke-width: 1.8; }
+      .white { fill: #fff; stroke: #d7dfe8; stroke-width: 1.3; }
+      .route { fill: none; stroke: #74849a; stroke-width: 2.2; marker-end: url(#arrow); }
+      .hint-route { fill: none; stroke: #74849a; stroke-width: 2; stroke-dasharray: 7 6; marker-end: url(#arrow); }
+      .evidence-route { fill: none; stroke: #43805c; stroke-width: 2.5; marker-end: url(#arrow-green); }
+      .route-label { font-size: 12px; font-weight: 600; fill: #58697e; }
+      .tag { fill: #e6f1e8; stroke: #abc9b0; }
+      .tag-text { font-size: 11px; font-weight: 700; fill: #356c48; }
+      .tag-outline { fill: #fff7e9; stroke: #dfbd7d; }
+      .tag-outline-text { font-size: 11px; font-weight: 700; fill: #90621c; }
+      .number { fill: #526c88; }
+      .number-text { font-size: 12px; font-weight: 700; fill: #fff; }
     </style>
   </defs>
 
-  <rect width="1400" height="1060" fill="#ffffff"/>
-  <text x="54" y="56" class="title">Troubleshoot Odyssey | 知识与代码图谱</text>
-  <text x="54" y="84" class="subtitle">规范知识负责缩小候选；代码知识图谱负责导航；源码回读才形成现场证据</text>
+  <rect width="1600" height="1120" fill="#fff"/>
+  <text x="64" y="62" class="title">知识与代码导航如何协同</text>
+  <text x="64" y="93" class="subtitle">统一客户端 Agent 按问题选择线索，最终核对同一份源码快照</text>
+  <g transform="translate(1265 42)">
+    <rect width="112" height="28" rx="6" class="tag"/>
+    <text x="56" y="19" text-anchor="middle" class="tag-text">框架已接入</text>
+    <rect x="124" width="142" height="28" rx="6" class="tag-outline"/>
+    <text x="195" y="19" text-anchor="middle" class="tag-outline-text">三端精度待验收</text>
+  </g>
 
-  <rect x="54" y="120" width="1292" height="250" rx="12" class="frame"/>
-  <text x="78" y="150" class="section">01 · 本地规范知识检索 · Knowledge MCP</text>
-  <rect x="82" y="198" width="216" height="84" rx="8" class="box"/>
-  <text x="102" y="232" class="heading">用户问题</text>
-  <text x="102" y="257" class="body">现象、业务词、端和版本</text>
-  <rect x="338" y="198" width="236" height="84" rx="8" class="knowledge"/>
-  <text x="358" y="232" class="heading">Knowledge MCP</text>
-  <text x="358" y="257" class="body">lookup_issue · search_knowledge</text>
-  <rect x="614" y="198" width="236" height="84" rx="8" class="knowledge"/>
-  <text x="634" y="232" class="heading">候选与判据</text>
-  <text x="634" y="257" class="body">symptoms · facts · cross_refs</text>
-  <rect x="890" y="198" width="236" height="84" rx="8" class="knowledge"/>
-  <text x="910" y="232" class="heading">get_knowledge_entry</text>
-  <text x="910" y="257" class="body">分页读取完整知识正文</text>
-  <rect x="1166" y="198" width="154" height="84" rx="8" class="data"/>
-  <text x="1186" y="232" class="heading">排序上下文</text>
-  <text x="1186" y="257" class="body">域 · 端 · 版本</text>
-  <path d="M 298 240 H 338" class="edge"/>
-  <path d="M 574 240 H 614" class="edge"/>
-  <path d="M 850 240 H 890" class="edge"/>
-  <path d="M 1126 240 H 1166" class="edge"/>
-  <text x="78" y="329" class="small">知识条目是候选线索，不是当前故障的证明；业务域和端适用性只参与排序，不作硬过滤。</text>
+  <rect x="48" y="130" width="1504" height="960" rx="10" class="frame"/>
 
-  <rect x="54" y="404" width="1292" height="300" rx="12" class="frame"/>
-  <text x="78" y="434" class="section">02 · 代码知识图谱查询 · Graphify / code_graph</text>
-  <rect x="82" y="486" width="218" height="96" rx="8" class="box"/>
-  <text x="102" y="520" class="heading">绑定代码快照</text>
-  <text x="102" y="545" class="body">仓库 · commit · tree hash</text>
-  <text x="102" y="565" class="small">runtime 选择，模型不能指定路径</text>
-  <rect x="340" y="486" width="236" height="96" rx="8" class="graph"/>
-  <text x="360" y="520" class="heading">Graphify 产物</text>
-  <text x="360" y="545" class="body">graph.json · 节点 · 边 · provenance</text>
-  <text x="360" y="565" class="small">离线生成，只读加载</text>
-  <rect x="616" y="486" width="236" height="96" rx="8" class="graph"/>
-  <text x="636" y="520" class="heading">code_graph.search</text>
-  <text x="636" y="545" class="body">组件 · 方法 · 文件 · 符号</text>
-  <text x="636" y="565" class="small">按真实图词表召回</text>
-  <rect x="892" y="486" width="236" height="96" rx="8" class="graph"/>
-  <text x="912" y="520" class="heading">code_graph.expand</text>
-  <text x="912" y="545" class="body">一跳关系 · 最多两跳</text>
-  <text x="912" y="565" class="small">EXTRACTED / INFERRED</text>
-  <rect x="1168" y="486" width="152" height="96" rx="8" class="planned"/>
-  <text x="1188" y="520" class="heading">导航结果</text>
-  <text x="1188" y="545" class="body">节点与边</text>
-  <text x="1188" y="565" class="small">不是证据</text>
-  <path d="M 300 534 H 340" class="edge"/>
-  <path d="M 576 534 H 616" class="edge"/>
-  <path d="M 852 534 H 892" class="edge"/>
-  <path d="M 1128 534 H 1168" class="edge"/>
+  <text x="80" y="170" class="eyebrow">01  问题理解与路线选择</text>
+  <rect x="90" y="195" width="330" height="112" rx="8" class="white"/>
+  <circle cx="122" cy="230" r="16" class="number"/>
+  <text x="122" y="234" text-anchor="middle" class="number-text">1</text>
+  <text x="151" y="235" class="heading">用户问题</text>
+  <text x="116" y="270" class="body">业务现象、日志线索或代码位置</text>
+  <text x="116" y="291" class="small">可能模糊，也可能已经给出技术锚点</text>
 
-  <rect x="604" y="618" width="236" height="58" rx="8" class="box"/>
-  <text x="624" y="653" class="heading">read_project_file</text>
-  <rect x="880" y="618" width="236" height="58" rx="8" class="data"/>
-  <text x="900" y="653" class="heading">真实源码观测</text>
-  <rect x="1156" y="618" width="164" height="58" rx="8" class="data"/>
-  <text x="1176" y="653" class="heading">EvidenceLedger</text>
-  <path d="M 1244 582 V 600 H 722 V 618" class="edge"/>
-  <path d="M 840 647 H 880" class="edge"/>
-  <path d="M 1116 647 H 1156" class="edge"/>
-  <text x="78" y="687" class="small">Graphify 是代码知识图谱导航，不等同于规范知识库；图中没有边也不能证明源码中不存在调用。</text>
+  <path d="M 420 251 H 570" class="route"/>
 
-  <rect x="54" y="738" width="1292" height="196" rx="12" class="external-frame"/>
-  <text x="78" y="768" class="section">03 · 远端 Agent 知识归属 · A2A 插槽</text>
-  <rect x="94" y="812" width="300" height="72" rx="8" class="external"/>
-  <text x="118" y="844" class="heading">A2A Agent Slot</text>
-  <text x="118" y="868" class="body">只传授权范围内的脱敏上下文</text>
-  <rect x="470" y="812" width="330" height="72" rx="8" class="external"/>
-  <text x="494" y="844" class="heading">远端 Agent</text>
-  <text x="494" y="868" class="body">自主查询服务端知识、代码和日志</text>
-  <rect x="876" y="812" width="400" height="72" rx="8" class="external"/>
-  <text x="900" y="844" class="heading">远端 Agent 知识库</text>
-  <text x="900" y="868" class="body">由远端 Agent 所有；返回 external_findings</text>
-  <path d="M 394 848 H 470" class="edge-green"/>
-  <path d="M 800 848 H 876" class="edge-green"/>
-  <text x="78" y="916" class="small">客户端不直连云学习 Knowledge MCP，也不把 A2A 返回写入本地 evidence_refs；它作为有来源的外部结论展示。</text>
+  <rect x="575" y="185" width="925" height="132" rx="8" class="runtime"/>
+  <circle cx="612" cy="222" r="16" class="number"/>
+  <text x="612" y="226" text-anchor="middle" class="number-text">2</text>
+  <text x="642" y="228" class="heading">ClientDiagnosisAgent</text>
+  <text x="610" y="263" class="body">先区分业务问题与代码定位问题，再按需组合两类能力</text>
+  <line x1="610" y1="279" x2="1465" y2="279" stroke="#d3ddeb" stroke-width="1"/>
+  <text x="620" y="301" class="small">业务规则 / 现象</text>
+  <text x="1030" y="301" class="small">组件 / 函数 / 文件</text>
+
+  <path d="M 810 317 V 360 H 430 V 410" class="route"/>
+  <text x="480" y="352" class="route-label">业务语义线索</text>
+  <path d="M 1260 317 V 360 H 1170 V 410" class="route"/>
+  <text x="1280" y="352" class="route-label">代码结构线索</text>
+
+  <text x="80" y="398" class="eyebrow">02  两种线索来源，解决不同问题</text>
+
+  <rect x="90" y="420" width="680" height="305" rx="8" class="knowledge"/>
+  <circle cx="126" cy="459" r="16" class="number"/>
+  <text x="126" y="463" text-anchor="middle" class="number-text">A</text>
+  <text x="156" y="465" class="heading">本地 Knowledge MCP</text>
+  <text x="122" y="494" class="body">回答：用户描述可能对应哪条业务规则或业务链路？</text>
+
+  <rect x="122" y="520" width="278" height="116" rx="7" class="white"/>
+  <text x="144" y="550" class="heading-small">业务知识</text>
+  <text x="144" y="577" class="body">现象、事实、术语与跨域引用</text>
+  <text x="144" y="603" class="small">提供候选原因和区分判据</text>
+
+  <rect x="430" y="520" width="302" height="116" rx="7" class="white"/>
+  <text x="452" y="550" class="heading-small">检索结果</text>
+  <text x="452" y="577" class="body">候选规则与代码入口</text>
+  <text x="452" y="603" class="small">端、域、版本只参与排序</text>
+
+  <text x="122" y="678" class="small">知识是业务判据和定位提示；命中本身不能证明当前故障。</text>
+
+  <rect x="830" y="420" width="680" height="305" rx="8" class="code"/>
+  <circle cx="866" cy="459" r="16" class="number"/>
+  <text x="866" y="463" text-anchor="middle" class="number-text">B</text>
+  <text x="896" y="465" class="heading">Repository MCP</text>
+  <text x="862" y="494" class="body">回答：符号在哪里？文件结构和静态调用候选是什么？</text>
+
+  <rect x="862" y="520" width="285" height="116" rx="7" class="index"/>
+  <text x="884" y="550" class="heading-small">可选 CBM 内部后端</text>
+  <text x="884" y="577" class="body">不另接 MCP，不暴露索引管理</text>
+  <text x="884" y="603" class="small">只读授权快照中的代码副本</text>
+
+  <rect x="1176" y="520" width="302" height="116" rx="7" class="white"/>
+  <text x="1198" y="550" class="heading-small">受限导航工具</text>
+  <text x="1198" y="577" class="body">符号搜索 · 文件大纲</text>
+  <text x="1198" y="603" class="body">静态调用路径候选</text>
+
+  <text x="862" y="664" class="small">保留 search_project_text；图结果仅作导航，空结果不等于不存在。</text>
+  <text x="862" y="687" class="small">动态调用、语言解析覆盖和三端精度仍需验收。</text>
+
+  <path d="M 430 725 V 765 H 680 V 805" class="hint-route"/>
+  <text x="456" y="754" class="route-label">知识给出代码入口时</text>
+  <path d="M 1170 725 V 765 H 920 V 805" class="hint-route"/>
+  <text x="950" y="754" class="route-label">索引返回文件或符号时</text>
+
+  <text x="80" y="796" class="eyebrow">03  回到真实源码，建立可引用观测</text>
+  <rect x="260" y="815" width="1080" height="148" rx="8" class="source"/>
+  <circle cx="306" cy="854" r="16" class="number"/>
+  <text x="306" y="858" text-anchor="middle" class="number-text">3</text>
+  <text x="338" y="860" class="heading">Repository MCP · 源码核验</text>
+  <text x="300" y="895" class="body">read_project_file 回读目标范围；search_project_text 的实际匹配也可作为源码观测</text>
+  <text x="300" y="923" class="small">确认原文与行号来自同一绑定快照。知识候选和代码图节点 / 边不直接入账。</text>
+
+  <path d="M 800 963 V 1001" class="evidence-route"/>
+
+  <rect x="410" y="1005" width="780" height="78" rx="8" class="ledger"/>
+  <text x="800" y="1037" text-anchor="middle" class="heading-small">EvidenceLedger</text>
+  <text x="800" y="1062" text-anchor="middle" class="small">保存实际观测及来源；正向根因必须引用可核验的源码或日志证据</text>
+
+  <g transform="translate(1370 993)">
+    <line x1="0" y1="0" x2="42" y2="0" class="hint-route"/>
+    <text x="52" y="4" class="tiny">线索流</text>
+    <line x1="0" y1="24" x2="42" y2="24" class="evidence-route"/>
+    <text x="52" y="28" class="tiny">实际观测</text>
+  </g>
 </svg>

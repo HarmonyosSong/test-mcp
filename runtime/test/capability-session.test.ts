@@ -1,9 +1,70 @@
 import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
 import test from 'node:test';
+import { MCPClient } from '@mastra/mcp';
 
 import { createCapabilitySession, createRoundCapabilitySession } from '../src/capabilities/session.js';
-import { CapabilityMcp } from '../src/capabilities/mcp.js';
+import {
+  CapabilityMcp,
+  MCP_TOOL_DISCOVERY_TIMEOUT_MS,
+  repositoryMcpTimeoutMs,
+  repositoryServerEnvironment,
+} from '../src/capabilities/mcp.js';
 import { loadRuntimeConfig } from '../src/config.js';
+
+test('code index 默认关闭但显式传递空 command，配置后总超时覆盖索引、查询和清理宽限', () => {
+  const disabled = loadRuntimeConfig({});
+  const disabledEnvironment = repositoryServerEnvironment(disabled, '/tmp/runtime-snapshot');
+  assert.equal(disabled.codeIndexCommand, '');
+  assert.equal(disabled.codeIndexCacheDir, resolve(disabled.projectRoot, '.data/codebase-memory'));
+  assert.equal(disabledEnvironment.HARMONY_AGENT_CODE_INDEX_COMMAND, '');
+  assert.equal(disabledEnvironment.HARMONY_AGENT_CODE_INDEX_MODE, 'fast');
+  assert.equal(disabledEnvironment.HARMONY_AGENT_CODE_INDEX_CACHE, disabled.codeIndexCacheDir);
+  assert.equal(disabledEnvironment.HARMONY_AGENT_MCP_WORKSPACE, '/tmp/runtime-snapshot');
+  assert.equal(repositoryMcpTimeoutMs(disabled), 30_000);
+  assert.equal(repositoryMcpTimeoutMs({ ...disabled, codeIndexCommand: 'cbm' }), 190_000);
+  assert.equal(loadRuntimeConfig({ HARMONY_AGENT_CODE_INDEX_COMMAND: '  ' }).codeIndexCommand, '');
+
+  const enabled = loadRuntimeConfig({
+    HARMONY_AGENT_CODE_INDEX_COMMAND: 'cbm',
+    HARMONY_AGENT_CODE_INDEX_TIMEOUT_SECONDS: '12',
+    HARMONY_AGENT_CODE_INDEX_CACHE: '.data/custom-code-index',
+  });
+  const enabledEnvironment = repositoryServerEnvironment(enabled, '/tmp/runtime-snapshot');
+  assert.equal(enabledEnvironment.HARMONY_AGENT_CODE_INDEX_COMMAND, 'cbm');
+  assert.equal(enabledEnvironment.HARMONY_AGENT_CODE_INDEX_TIMEOUT_SECONDS, '12');
+  assert.equal(enabledEnvironment.HARMONY_AGENT_CODE_INDEX_CACHE, resolve(enabled.projectRoot, '.data/custom-code-index'));
+  assert.equal(repositoryMcpTimeoutMs(enabled), 34_000);
+  assert.equal(MCP_TOOL_DISCOVERY_TIMEOUT_MS, 15_000);
+  assert.throws(() => loadRuntimeConfig({ HARMONY_AGENT_CODE_INDEX_MODE: 'moderate' }));
+  assert.throws(() => loadRuntimeConfig({ HARMONY_AGENT_CODE_INDEX_MODE: 'full' }));
+  for (const timeout of ['0', '4', '601', '1.5', 'invalid']) {
+    assert.throws(() => loadRuntimeConfig({ HARMONY_AGENT_CODE_INDEX_TIMEOUT_SECONDS: timeout }));
+  }
+});
+
+test('repository session wires both MCP timeouts and explicit environment while discovering within 15s', async (context) => {
+  const config = loadRuntimeConfig({ HARMONY_AGENT_CODE_INDEX_COMMAND: 'cbm' });
+  const toolsets = { repository: {} };
+  context.mock.method(MCPClient.prototype, 'listToolsetsWithErrors', async function (this: MCPClient, options: unknown) {
+    // Inspect the options held by the real client without starting a bridge process.
+    const configured = this as unknown as {
+      defaultTimeout: number;
+      serverConfigs: { repository: { timeout: number; env: Record<string, string> } };
+    };
+    assert.equal(configured.defaultTimeout, 190_000);
+    assert.equal(configured.serverConfigs.repository.timeout, 190_000);
+    assert.deepEqual(configured.serverConfigs.repository.env, repositoryServerEnvironment(config, '/tmp/runtime-snapshot'));
+    assert.deepEqual(options, { perServerTimeoutMs: 15_000 });
+    return { toolsets, errors: {}, errorDetails: {} };
+  });
+  const session = await new CapabilityMcp(config).createRepositorySession('configuration-test', '/tmp/runtime-snapshot');
+  try {
+    assert.equal(session.toolsets, toolsets);
+  } finally {
+    await session.client.disconnect();
+  }
+});
 
 test('capability session mounts optional capabilities and closes in reverse order', async () => {
   const closed: string[] = [];

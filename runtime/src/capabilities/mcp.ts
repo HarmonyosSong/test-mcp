@@ -8,6 +8,38 @@ import { createLogCatalogTools, type LogToolCorrelation } from './log-center.js'
 
 type LogCatalogTools = NonNullable<Awaited<ReturnType<typeof createLogCatalogTools>>>;
 
+const REPOSITORY_MCP_DEFAULT_TIMEOUT_MS = 30_000;
+const CODE_INDEX_PROCESS_GRACE_SECONDS = 10;
+export const MCP_TOOL_DISCOVERY_TIMEOUT_MS = 15_000;
+
+/**
+ * A first navigation request can run one index command and one query command.
+ * Keep discovery independently bounded by the 15 second call below.
+ */
+export function repositoryMcpTimeoutMs(
+  config: Pick<RuntimeConfig, 'codeIndexCommand' | 'codeIndexTimeoutSeconds'>,
+): number {
+  if (!config.codeIndexCommand) return REPOSITORY_MCP_DEFAULT_TIMEOUT_MS;
+  return (config.codeIndexTimeoutSeconds * 2 + CODE_INDEX_PROCESS_GRACE_SECONDS) * 1_000;
+}
+
+export function repositoryServerEnvironment(
+  config: RuntimeConfig,
+  snapshotPath: string,
+): Record<string, string> {
+  return {
+    HARMONY_AGENT_MCP_WORKSPACE: resolve(snapshotPath),
+    // Explicitly pass an empty command so the child cannot inherit an accidental enablement.
+    HARMONY_AGENT_CODE_INDEX_COMMAND: config.codeIndexCommand,
+    HARMONY_AGENT_CODE_INDEX_MODE: config.codeIndexMode,
+    HARMONY_AGENT_CODE_INDEX_TIMEOUT_SECONDS: String(config.codeIndexTimeoutSeconds),
+    HARMONY_AGENT_CODE_INDEX_CACHE: resolve(
+      config.projectRoot,
+      config.codeIndexCacheDir || '.data/codebase-memory',
+    ),
+  };
+}
+
 export function knowledgeServerEnvironment(config: RuntimeConfig, conversationId: string, messageId: string): Record<string, string> {
   return {
     HARMONY_AGENT_KNOWLEDGE_ROOT: resolve(config.projectRoot, config.knowledgeRoot),
@@ -46,7 +78,7 @@ export class CapabilityMcp {
     });
     client.__setLogger(noopLogger);
     try {
-      const discovered = await client.listToolsetsWithErrors({ perServerTimeoutMs: 15_000 });
+      const discovered = await client.listToolsetsWithErrors({ perServerTimeoutMs: MCP_TOOL_DISCOVERY_TIMEOUT_MS });
       if (discovered.errors.knowledge) throw new Error(`knowledge MCP unavailable: ${discovered.errors.knowledge}`);
       return { client, toolsets: discovered.toolsets };
     } catch {
@@ -59,9 +91,10 @@ export class CapabilityMcp {
     client: MCPClient;
     toolsets: MastraToolsets;
   }> {
+    const timeout = repositoryMcpTimeoutMs(this.config);
     const client = new MCPClient({
       id: `troubleshoot-repository-${conversationId}-${Date.now()}`,
-      timeout: 30_000,
+      timeout,
       registerProcessHooks: false,
       servers: {
         repository: {
@@ -70,14 +103,14 @@ export class CapabilityMcp {
           cwd: resolve(this.config.projectRoot),
           stderr: 'pipe',
           logger: () => undefined,
-          env: { HARMONY_AGENT_MCP_WORKSPACE: resolve(snapshotPath) },
-          timeout: 30_000,
+          env: repositoryServerEnvironment(this.config, snapshotPath),
+          timeout,
         },
       },
     });
     client.__setLogger(noopLogger);
     try {
-      const discovered = await client.listToolsetsWithErrors({ perServerTimeoutMs: 15_000 });
+      const discovered = await client.listToolsetsWithErrors({ perServerTimeoutMs: MCP_TOOL_DISCOVERY_TIMEOUT_MS });
       if (discovered.errors.repository) {
         throw new Error(`repository MCP unavailable: ${discovered.errors.repository}`);
       }

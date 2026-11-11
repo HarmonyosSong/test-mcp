@@ -5,8 +5,10 @@ from pathlib import Path
 
 from fastmcp import FastMCP
 
+from .code_index import CodeIndexBackend
 from .inspector import ProjectInspector
 from .tools.business_context import register_business_context_tools
+from .tools.code_navigation import register_code_navigation_tools
 from .tools.code_search import register_code_search_tools
 from .tools.file_reader import register_file_reader_tools
 from .tools.log_parser import register_log_parser_tools
@@ -33,6 +35,11 @@ def create_mcp_server(workspace: Path) -> FastMCP:
     register_file_reader_tools(server, inspector)
     register_log_parser_tools(server, inspector)
     register_business_context_tools(server, inspector)
+    # Keep the graph backend behind this Repository MCP. If it is unavailable,
+    # the existing text search remains the explicit, truthful fallback.
+    code_index = CodeIndexBackend(inspector)
+    if code_index.configured:
+        register_code_navigation_tools(server, code_index)
     return server
 
 

@@ -3,6 +3,9 @@ import type { ClientInvestigationStep } from './plan.js';
 const SOURCE_TOOLS = new Set([
   'list_project_files',
   'search_project_text',
+  'search_code_symbols',
+  'get_code_outline',
+  'trace_code_path',
   'read_project_file',
   'load_business_context',
 ]);

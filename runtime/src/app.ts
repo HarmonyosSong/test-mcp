@@ -18,7 +18,12 @@ import { RepositoryCapability } from './capabilities/repository.js';
 import { CapabilityMcp } from './capabilities/mcp.js';
 import { SkillRegistry } from './diagnosis/skills.js';
 import { DiagnosisAgent } from './diagnosis/agent.js';
-import { MODEL_CONTEXT_WINDOWS, MODEL_PRICES, REPOSITORY_MCP_TOOL_NAMES } from './model/metadata.js';
+import {
+  CODE_INDEX_MCP_TOOL_NAMES,
+  MODEL_CONTEXT_WINDOWS,
+  MODEL_PRICES,
+  REPOSITORY_MCP_TOOL_NAMES,
+} from './model/metadata.js';
 import { redactSensitiveText } from './security/redaction.js';
 import {
   LocalIdentityProvider,
@@ -136,7 +141,10 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       mode: modelConfiguration.enabled ? 'model' : 'demo',
       model: modelConfiguration.status().model_name,
       skills: skills.summaries(),
-      mcp_tools: REPOSITORY_MCP_TOOL_NAMES,
+      mcp_tools: [
+        ...REPOSITORY_MCP_TOOL_NAMES,
+        ...(config.codeIndexCommand ? CODE_INDEX_MCP_TOOL_NAMES : []),
+      ],
       constraints: ['read-only', 'no-shell', 'no-code-changes', 'no-deveco-cli'],
       context_windows: MODEL_CONTEXT_WINDOWS,
       model_prices: MODEL_PRICES,

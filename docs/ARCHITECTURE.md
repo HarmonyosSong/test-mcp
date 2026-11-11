@@ -17,6 +17,7 @@ RunAdmission + Runtime Supervisor
         |     +-- CapabilitySession
         |     |     +-- 本地 Knowledge MCP
         |     |     +-- Repository MCP（固定快照或授权工作区）
+        |     |     |     `-- 可选 CBM 内部适配器：符号、outline、调用候选
         |     |     `-- 可选 LogCenter Catalog/SLS 工具
         |     +-- SkillRegistry / 工具预算 / observe → source 门禁
         |     `-- EvidenceLedger + submit_diagnosis_report
@@ -67,7 +68,7 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 | Knowledge MCP / Skill / Catalog | 导航与判据线索 | 不可以 |
 | 关联 `search_cloud_logs` / `discover_client_sessions` 条目 | 脱敏后逐条进入 `EvidenceLedger`，携带 Runtime `observation_context` | 目标绑定且身份匹配时可以；未关联条目直接拒绝 |
 | Compass / 其他远端 Agent | `external_findings` | 不能作为本地已验证观测 |
-| Graphify 图节点/边 | Runtime 未接入；目标也仅是派生导航 | 不可以，必须回读同一快照源码 |
+| 代码索引图节点/边 | Repository MCP 内部导航结果 | 不可以，必须回读同一快照源码 |
 
 账本支持跨轮恢复、当前轮保护、历史容量淘汰、淘汰墓碑和相同内容重读恢复。报告引用必须逐字匹配观测；未知、过期或伪造 ID 会被拒绝，非法报告不会静默改成其他 verdict。
 
@@ -81,6 +82,8 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 - 多进程 lease/CAS 尚未实现，当前部署仍只支持一个 Runtime 进程。
 
 ## 6. 持久化与安全
+
+可选 CBM 索引是绑定快照的派生产物，缓存在 `.data/codebase-memory/`：`source-views/` 保存允许代码的副本，`engine/` 保存上游索引，两者必须分开，避免 CBM 的缓存目录排除规则漏掉源码。身份绑定源码内容和引擎；每轮首次导航重新确认索引，轮内工作区变化时拒绝旧图查询。索引不进入证据账本，生产缓存复用和回收仍需部署验收。
 
 `product_conversations` 保存消息、证据、调查计划、分支状态、审批、外部结论和 Slot 审计；`product_repositories` 与 `product_snapshots` 保存仓库和固定快照。`.data/knowledge-queries.jsonl` 与 `.data/knowledge-cases/` 是可重建的观测产物，不是对话事实源。
 
@@ -97,6 +100,6 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 | LogCenter Catalog/SLS 四工具 | 目标绑定、身份发现、脱敏和关联入账框架已实现；真实生产字段覆盖仍待验收 |
 | 学员日志 → 平台确认 → 日志证据 | 合成 mock 链路已实现；真实学员与 HarmonyOS/具体业务字段尚未联调 |
 | Android/iOS/HarmonyOS 精确版本快照选择 | 映射和固定快照选择器已实现；观察后的自动换绑尚未接入 |
-| Graphify Runtime 查询 | 未接入 |
+| Repository MCP 内部代码导航 | 可选挂载 `search_code_symbols`、`get_code_outline`、`trace_code_path`；未配置时保留原工具，失败时明确报错并引导文本搜索。真实鸿蒙工程的导航与回读已做冒烟验证，三端精度仍待验收 |
 
 启动、配置和验证命令以根目录 [README.md](../README.md) 为准。

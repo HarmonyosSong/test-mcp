@@ -67,6 +67,95 @@ test("caches only structurally identical successful tool calls and reports reuse
   assert.equal(budget.attempts, 2);
 });
 
+test('reuses defaulted CBM navigation calls without evidence or additional tool budget', async () => {
+  const { ledger, budget } = setup();
+  const calls = new Map<string, number>();
+  const cases = [
+    {
+      name: 'search_code_symbols',
+      first: { query: 'refresh' },
+      repeated: { query: 'refresh', file_pattern: '**/*', limit: 20 },
+    },
+    {
+      name: 'get_code_outline',
+      first: { relative_path: 'src/Page.ets' },
+      repeated: { relative_path: 'src/Page.ets', limit: 100 },
+    },
+    {
+      name: 'trace_code_path',
+      first: { function_name: 'refresh' },
+      repeated: { function_name: 'refresh', direction: 'inbound', depth: 1, limit: 20 },
+    },
+  ];
+
+  for (const item of cases) {
+    const tool = wrap(
+      {
+        execute: async () => {
+          calls.set(item.name, (calls.get(item.name) ?? 0) + 1);
+          return { status: 'navigation_hint', path: 'src/Page.ets', symbol: 'refresh' };
+        },
+      },
+      'repository',
+      item.name,
+      ledger,
+      budget,
+    );
+    const first = await tool.execute!(item.first, {});
+    assert.deepEqual(await tool.execute!(item.repeated, {}), first);
+  }
+
+  assert.deepEqual([...calls], cases.map(({ name }) => [name, 1]));
+  assert.equal(budget.attempts, cases.length);
+  assert.equal(budget.cacheHits, cases.length);
+  assert.equal(budget.consecutiveCacheHits, 1);
+  assert.equal(ledger.entries.size, 0);
+});
+
+test('counts empty and repeated CBM rows as no progress, including grouped outlines and paths', async () => {
+  for (const name of ['search_code_symbols', 'get_code_outline', 'trace_code_path']) {
+    const { ledger, budget } = setup();
+    const empty = wrap({ execute: async () => ({ navigation: { rows: [], query: 'first' } }) },
+      'repository', name, ledger, budget);
+    await empty.execute!({ query: 'first' }, {});
+    assert.equal(budget.consecutiveCacheHits, 1);
+
+    let score = 0;
+    const repeated = wrap({ execute: async () => ({ navigation: {
+      callers: { groups: [{ file: 'src/Page.ets', cols: ['name', 'score'], rows: [['refresh', score++]] }] },
+    } }) }, 'repository', name, ledger, budget);
+    await repeated.execute!({ query: 'second' }, {});
+    assert.equal(budget.consecutiveCacheHits, 0);
+    await repeated.execute!({ query: 'third' }, {});
+    assert.equal(budget.consecutiveCacheHits, 1);
+    await repeated.execute!({ query: 'fourth' }, {});
+    await repeated.execute!({ query: 'fifth' }, {});
+    await assert.rejects(repeated.execute!({ query: 'sixth' }, {}), /连续无进展/);
+    assert.equal(ledger.entries.size, 0);
+  }
+});
+
+test('navigation failures consume the failure budget and leave text search available as fallback', async () => {
+  for (const result of [{ isError: true, content: [{ type: 'text', text: 'unavailable' }] }, { status: 'unavailable' }]) {
+    const { ledger, budget } = setup();
+    let calls = 0;
+    const navigation = wrap({ execute: async () => { calls += 1; return result; } },
+      'repository', 'search_code_symbols', ledger, budget);
+    await assert.rejects(navigation.execute!({ query: 'refresh' }, {}), /search_project_text/);
+    await assert.rejects(navigation.execute!({ query: 'refresh', file_pattern: '**/*', limit: 20 }, {}), /禁止原样重试/);
+    assert.equal(calls, 1);
+    assert.equal(budget.failures, 1);
+    assert.equal(budget.cache.size, 0);
+    assert.equal(ledger.entries.size, 0);
+
+    const search = wrap({ execute: async () => ({ matches: [{ path: 'src/Page.ets', line: 1, content: 'refresh()' }] }) },
+      'repository', 'search_project_text', ledger, budget);
+    await search.execute!({ query: 'refresh' }, {});
+    assert.equal(ledger.entries.size, 1);
+    assert.equal(budget.attempts, 2);
+  }
+});
+
 test("counts failed executions once, does not cache failures, and resets the no-progress streak", async () => {
   const { ledger, budget } = setup();
   const failing = wrap(

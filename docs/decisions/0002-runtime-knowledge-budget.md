@@ -1,6 +1,6 @@
 # 0002：Runtime、Skill 与知识检索的成本和证据约束
 
-> 本 ADR 的策略仍生效；文中 Python Agent、`ToolFailed` 和旧评测命令是历史实现上下文。当前策略由 `runtime/src/diagnosis/agent.ts`、`runtime/src/diagnosis/evidence.ts` 和 Mastra tool wrappers 承载，剩余差异见 [`mastra-runtime-migration-spec.md`](../mastra-runtime-migration-spec.md)。
+> 本 ADR 的策略仍生效；文中 Python Agent、`ToolFailed` 和旧评测命令是历史实现上下文。当前策略由 `runtime/src/diagnosis/agent.ts`、`runtime/src/diagnosis/evidence.ts` 和 Mastra tool wrappers 承载；当前实现见 [`../ARCHITECTURE.md`](../ARCHITECTURE.md)。
 
 2026-09-23。目标是在保持排查质量的前提下减少工具往返与重复上下文。
 2026-09-24 修订：单次结构化诊断路径（HarmonyDiagnosisAgent / 四阶段案例队列）已移除，
@@ -13,7 +13,7 @@
 - Knowledge 保存术语、候选、区分判据、代码锚点与适用范围。
 - Skill 按已有线索选择检索、读取、追问或结论，不把知识命中当作根因证明。
 - Runtime 管理工具预算、复用、上下文配对、观测记录和结构化报告验证。
-- 对话路径的入口规则：业务描述默认 `lookup_issue`；明确技术锚点可直接查证据。
+- 对话路径的入口规则：规则澄清默认 `lookup_issue`；故障定位按计划先完成 `observe` 现场观察，再进入 `source` 源码分析。知识提供规则、候选与导航，不替代日志或源码观测；明确技术锚点可缩小观察范围，但不跳过客户端阶段门禁。
   模型模式不再运行按泛业务词全仓搜索的预扫描。未配置模型（demo 模式）时聊天不可用。
 - Skill 通过 metadata.modes 和 required_tools 声明模式和硬依赖；目录与加载工具使用同一过滤结果。
   绑定技能要求 `bind_repository`；报告技能要求 `submit_diagnosis_report`，两者同属对话路径。
@@ -73,7 +73,7 @@ make test-mcp
 make knowledge-validate
 ```
 
-旧 Python Agent/Server 测试命令属于本 ADR 形成时的历史验证入口，旧项目定义已退役，不再运行。以上为当前验证入口；迁移验收状态见 [`mastra-runtime-migration-spec.md`](../mastra-runtime-migration-spec.md)。
+旧 Python Agent/Server 测试命令属于本 ADR 形成时的历史验证入口，旧项目定义已退役，不再运行。以上为当前验证入口；当前实现边界见 [`../ARCHITECTURE.md`](../ARCHITECTURE.md)。
 
 ## 2026-09-24 历史验证与反馈入口
 

@@ -158,7 +158,7 @@
       <section class="diagram-section" id="architecture" aria-labelledby="diagram-title">
         <div class="diagram-heading">
           <h2 id="diagram-title">整体流程</h2>
-          <span>第一张看任务分派与结果汇总，第二张看本地知识和 Graphify 如何配合</span>
+          <span>第一张看任务分派与结果汇总，第二张看本地知识和代码索引如何配合</span>
         </div>
         <div class="diagram-grid">
           <article class="diagram-card">
@@ -172,11 +172,11 @@
           </article>
           <article class="diagram-card">
             <div class="diagram-card-header">
-              <h3>02 · 本地知识与 Graphify 的使用流程</h3>
-              <p>本地知识提供业务链路和代码入口，Graphify 提供代码关系，最后回读源码</p>
+              <h3>02 · 本地知识与代码索引的使用流程</h3>
+              <p>本地知识提供业务链路和代码入口，Repository MCP 内部代码图提供关系，最后回读源码</p>
             </div>
             <div class="diagram-frame">
-              <img src="diagrams/02-knowledge-architecture.svg" alt="鸿蒙 Agent 使用本地知识和 Graphify 的流程图，展示两个工具的选择条件，以及最后回读源码并登记证据。" />
+              <img src="diagrams/02-knowledge-architecture.svg" alt="客户端 Agent 使用本地知识与 Repository MCP 内部代码导航，回读源码后登记证据。" />
             </div>
           </article>
         </div>
@@ -293,12 +293,12 @@
 
           <section class="section" id="knowledge">
             <h2>4. 知识与代码协同</h2>
-            <p>项目将业务知识和代码结构查询分开处理。本地知识帮助 Agent 理解用户说法，Graphify 帮助 Agent 查看组件与函数关系，Repository MCP 提供最终需要核对的源码。</p>
+            <p>项目将业务知识和代码结构查询分开处理。本地知识帮助 Agent 理解用户说法，Repository MCP 内部代码图帮助 Agent 查看组件与函数关系，Repository MCP 提供最终需要核对的源码。</p>
             <table>
               <thead><tr><th>能力</th><th>适合处理的问题</th><th>在诊断中的作用</th></tr></thead>
               <tbody>
                 <tr><td>本地 Knowledge MCP</td><td>“付款没有让签合同”可能对应哪条业务链路？</td><td>返回候选原因、区分判据和代码入口。</td></tr>
-                <tr><td>Graphify 代码图</td><td>这个组件在哪里定义，和哪些函数有关？</td><td>提供定义位置、文件和相邻代码关系。</td></tr>
+                <tr><td>Repository MCP 内部代码图</td><td>这个组件在哪里定义，和哪些函数有关？</td><td>提供定义位置、文件和相邻代码关系。</td></tr>
                 <tr><td>Repository MCP</td><td>当前版本的实际实现是什么？</td><td>读取绑定快照中的源码，形成可引用观测。</td></tr>
               </tbody>
             </table>
@@ -308,9 +308,9 @@
             <p>知识条目记录用户别名、业务域、适用端、来源和人工验证日期。每条事实只有一个规范入口，跨域关联使用稳定 ID。业务域和适用端用于排序，不作硬过滤，保留跨域召回和全局回退。</p>
             <p>终态诊断会归档为案例，并记录知识查询 outcome，便于后续分析哪些知识真正帮助了排查。案例经人工确认后再提炼为知识提案，避免模型输出未经审核直接写回知识库。</p>
 
-            <h3>4.2 Graphify 的补充价值</h3>
-            <p>本地知识擅长业务语义，但不适合维护全量代码关系。Graphify 在项目外离线建图，运行时只做有界的结构化查询，可以补充组件、函数和文件之间的导航信息，而不把建图成本带入诊断过程。</p>
-            <p>图产物必须绑定源码快照；图节点和图边只作为导航线索。动态调用、UI 状态关系和条件渲染仍需回读源码，图中没有连线也不能作为“不存在调用”的证明。Graphify 当前尚未接入 Runtime。</p>
+            <h3>4.2 内部代码图的补充价值</h3>
+            <p>本地知识擅长业务语义，但不适合维护全量代码关系。codebase-memory-mcp 由 Repository MCP 内部调用，只暴露有界的结构化导航工具，可以补充组件、函数和文件之间的信息，同时不把索引管理面交给 Agent。</p>
+            <p>图产物必须绑定源码快照；图节点和图边只作为导航线索。动态调用、UI 状态关系和条件渲染仍需回读源码，图中没有连线也不能作为“不存在调用”的证明。三端精度和生产指标仍待验收。</p>
           </section>
 
           <section class="section" id="evidence">
@@ -353,7 +353,7 @@
                 <tr><td>Knowledge MCP、Repository MCP</td><td><span class="status status-live">已实现</span></td><td>支持本地知识检索、绑定快照源码查询和证据登记。</td></tr>
                 <tr><td>Compass A2A Agent Slot</td><td><span class="status status-live">已接入聊天链路</span></td><td>已有 Agent Card、JSON-RPC SSE、审批恢复、CancelTask 和外部结论隔离。</td></tr>
                 <tr><td>LogCenter</td><td><span class="status status-framework">关联入账框架已实现</span></td><td>四工具支持私有身份发现、目标绑定、脱敏和关联日志入账；真实生产字段与学员联调待验收。</td></tr>
-                <tr><td>Graphify</td><td><span class="status status-plan">规划中</span></td><td>已完成外部建图验证，Runtime 只读查询和快照门禁尚未接入。</td></tr>
+                <tr><td>Repository MCP 内部代码图</td><td><span class="status status-framework">框架已接入</span></td><td>已搭建三种只读导航工具；索引版本、三端精度、并发和生产缓存仍待验收。</td></tr>
                 <tr><td>Supervisor 并行调度、联合报告</td><td><span class="status status-live">已实现</span></td><td>支持本地优先观察、条件并行、自动跨侧、预算取消和本地/外部结论联合报告。</td></tr>
                 <tr><td>iOS、Android 多端支持</td><td><span class="status status-plan">待接入</span></td><td>复用统一 Agent，补充端上下文、Skill 和知识配置。</td></tr>
               </tbody>

@@ -31,7 +31,9 @@ class ProjectInspector:
     TEXT_EXTENSIONS = {
         ".ets",
         ".ts",
+        ".tsx",
         ".js",
+        ".jsx",
         ".py",
         ".sh",
         ".toml",
@@ -53,6 +55,12 @@ class ProjectInspector:
         ".c",
         ".h",
         ".hpp",
+        ".swift",
+        ".m",
+        ".mm",
+        ".java",
+        ".kt",
+        ".kts",
     }
     TEXT_FILENAMES = {"Makefile", "Dockerfile", "Justfile", ".gitignore", ".dockerignore"}
     EXCLUDED_DIRS = {
@@ -272,6 +280,13 @@ class ProjectInspector:
             truncation_reason=reason,
             skipped_lines=skipped,
         )
+
+    def validate_project_text_file(self, relative_path: str) -> str:
+        """Validate and normalize a relative path accepted by source inspection."""
+        path = self._resolve_inside(self.root / relative_path)
+        if not path.is_file() or not self._is_text_candidate(path):
+            raise InspectionBoundaryError("file type is not allowed")
+        return str(path.relative_to(self.root))
 
     def load_business_context(
         self,

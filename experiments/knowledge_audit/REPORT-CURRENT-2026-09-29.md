@@ -181,6 +181,5 @@ uv run --project server python experiments/knowledge_audit/recheck_v2.py --inclu
 uv run --project server python experiments/knowledge_audit/check_error_book.py --out .data/kb-reproduce-20260929/error-book.json
 ```
 
-前一项请求的运行时修改方案已另写为
-[工具调用效率实施文档](../../docs/runtime-tool-efficiency-implementation-plan.md)，
+前一项请求的运行时修改原则现由 [ADR 0002](../../docs/decisions/0002-runtime-knowledge-budget.md) 与 [ADR 0003](../../docs/decisions/0003-evidence-ledger-lifecycle.md) 保留，
 将证据生命周期、分页、报告引用协议与本报告的检索/内容问题分别处理。

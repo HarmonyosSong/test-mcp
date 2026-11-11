@@ -64,6 +64,27 @@ test('search evidence contains only delivered matches, never locator metadata', 
   assert.equal([...ledger.entries.values()][0]?.excerpt, 'onShowFileSelector(callback)');
 });
 
+test('code navigation results remain hints and never enter the evidence ledger', () => {
+  const ledger = new EvidenceLedger();
+  const navigation = {
+    search_code_symbols: { rows: [{ path: 'src/Page.ets', name: 'onShow' }] },
+    get_code_outline: { symbols: [{ name: 'onShow', line: 10 }] },
+    trace_code_path: { callers: [{ name: 'openPage', path: 'src/Page.ets' }] },
+  };
+
+  for (const [name, result] of Object.entries(navigation)) {
+    const sourceShaped = { ...result, path: 'src/Page.ets', start_line: 10, content: 'throw new Error("boom")' };
+    assert.deepEqual(ledger.capture(name, {}, sourceShaped), sourceShaped);
+  }
+  assert.equal(ledger.entries.size, 0);
+  assert.equal(ledger.snapshot().entries.length, 0);
+  assert.throws(() => ledger.resolveDraft(draft('ev-navigation', 'throw new Error("boom")')),
+    (error: unknown) => error instanceof EvidenceLedgerError && error.code === 'unknown_evidence_id');
+
+  const source = read(ledger, 'src/Page.ets', 'throw new Error("boom")');
+  assert.equal(ledger.resolveDraft(draft(source.evidence_refs[0]!.id, 'throw new Error("boom")')).evidence.length, 1);
+});
+
 test('unprovided parser input cannot be promoted to log evidence', () => {
   const ledger = new EvidenceLedger({ inputTexts: ['Only a general report'] });
   const parsed = ledger.capture('parse_hilog', { log_text: 'invented Error' }, {

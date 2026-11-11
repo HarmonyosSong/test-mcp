@@ -148,6 +148,27 @@ test('rejects invalid ports before server startup', () => {
   );
 });
 
+test('configured code navigation names remain potential capabilities in metadata', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'troubleshoot-code-index-meta-'));
+  const runtime = await createRuntimeApp(loadTestConfig(dataDir, {
+    HARMONY_AGENT_CODE_INDEX_COMMAND: '/missing/cbm',
+  }));
+  try {
+    const { cookie } = issueSession(runtime.identityProvider);
+    const response = await runtime.app.request(api('/meta'), { headers: authedGetHeaders(cookie) });
+    assert.equal(response.status, 200);
+    const meta = await response.json() as { mcp_tools: string[] };
+    assert.deepEqual(meta.mcp_tools, [
+      'list_project_files', 'search_project_text', 'read_project_file', 'parse_hilog', 'load_business_context',
+      'search_code_symbols', 'get_code_outline', 'trace_code_path',
+    ]);
+  } finally {
+    await runtime.mastra.getStorage()?.close();
+    await runtime.store.close();
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test('loads and validates the global run concurrency limit', () => {
   assert.equal(loadRuntimeConfig({}).maxConcurrentRuns, 4);
   assert.equal(loadRuntimeConfig({ HARMONY_AGENT_MAX_CONCURRENT_RUNS: '2' }).maxConcurrentRuns, 2);

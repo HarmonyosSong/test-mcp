@@ -1,6 +1,6 @@
 # 问题排查知识库
 
-> **运行时边界（2026-11-04）**：本文的知识结构、检索流程和 MCP 工具说明仍适用于当前 `mcp_server/`。聊天产品 runtime 已切换到 Mastra；知识查询会记录会话/消息关联，终态诊断会 best-effort 归档案例并写入 outcome。provider-backed evaluation 与案例人工复核/知识提案现均由 Mastra TypeScript CLI 承载；Python Agent 下的旧命令和结果仅作为历史资料保留。当前迁移验收状态见 [`docs/mastra-runtime-migration-spec.md`](../docs/mastra-runtime-migration-spec.md)。
+> **运行时边界**：本文的知识结构、检索流程和 MCP 工具说明适用于当前 `mcp_server/`。聊天产品 Runtime 由 Mastra TypeScript 承载；知识查询记录会话/消息关联，终态诊断 best-effort 归档案例并写入 outcome。真实模型评估、案例复核和知识提案入口见 [`docs/triage-feedback-and-evaluation.md`](../docs/triage-feedback-and-evaluation.md)，当前系统边界见 [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)。
 
 面向线上问题排查 Agent 的**纯内容仓库**。这里只有 Markdown，没有代码——目的是让懂业务的同学
 （一线支持、SOP 负责人）能直接改、直接提 PR，不需要碰 agent 代码。
@@ -211,7 +211,7 @@ uv run --project mcp_server harmony-knowledge-validate
 并在诊断终态 best-effort 归档案例、独立追加 outcome。通过 `make live-eval` 执行 provider-backed 固定集评测；
 通过 `npm --prefix runtime run cases -- <command>` 列出、捕获、复核案例和生成/应用知识提案，默认案例目录为
 `.data/knowledge-cases/`。确认根因必须关联报告中的源码/日志观测；新增知识保留 `authority: auto`，补齐现象入口后通过
-整库校验才会写入。一次固定集通过不代表 provider parity 或线上诊断质量已通过验收，运行结果和边界见迁移规格。
+整库校验才会写入。一次固定集通过不代表 provider parity 或线上诊断质量已通过验收，运行入口和指标边界见 [`docs/triage-feedback-and-evaluation.md`](../docs/triage-feedback-and-evaluation.md)。
 
 旧 Python Agent 的 `harmony_agent.knowledge_feedback` 命令只适用于旧案例格式，不会读写 Mastra 案例归档；
 历史人工反馈与评估背景见[修复与验证说明](../docs/triage-feedback-and-evaluation.md)。

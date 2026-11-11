@@ -325,6 +325,102 @@ test('a confirmed product-rule clarification answers directly without forcing a 
   assert.equal(events.some((event: any) => event.type === 'tool-start' && event.event.tool === 'submit_diagnosis_report'), false);
 });
 
+test('code navigation prompt requires source reads and text-search fallback', async () => {
+  const { diagnosis, scripted } = await setup([
+    { text: '需要读取命中源码并验证观察范围。' },
+  ]);
+  const navigationTool = (id: string) => createTool({
+    id,
+    description: 'Read-only code navigation hint.',
+    inputSchema: z.object({}),
+    execute: async () => ({}),
+  });
+  const events = await run(diagnosis, '请定位 refresh 的调用路径。', {
+    toolsets: {
+      repository: {
+        search_code_symbols: navigationTool('search_code_symbols'),
+        get_code_outline: navigationTool('get_code_outline'),
+        trace_code_path: navigationTool('trace_code_path'),
+        read_project_file: navigationTool('read_project_file'),
+        search_project_text: navigationTool('search_project_text'),
+      },
+    },
+  });
+
+  assert.equal(events.at(-1)?.type, 'completed');
+  const prompt = JSON.stringify(scripted.prompts);
+  assert.match(prompt, /不得引用为 evidence/);
+  assert.match(prompt, /read_project_file 核实对应文件内容/);
+  assert.match(prompt, /不能据此排除符号、文件或调用路径/);
+  assert.match(prompt, /回退到 search_project_text/);
+});
+
+test('navigation stays behind observation gate and a failed trace can fall back to source evidence', async () => {
+  const { diagnosis } = await setup([
+    { tool: 'search_code_symbols', args: { query: 'refresh' } },
+    { tool: 'resolve_log_target', args: { query: '页面打开失败' } },
+    { tool: 'search_code_symbols', args: { query: 'refresh' } },
+    { tool: 'get_code_outline', args: { relative_path: 'src/Page.ets' } },
+    { tool: 'trace_code_path', args: { function_name: 'refresh' } },
+    { tool: 'search_project_text', args: { query: 'refresh' } },
+    { tool: 'read_project_file', args: { relative_path: 'src/Page.ets' } },
+    { text: '已读取源码；调用路径和现场平台仍需补充验证。' },
+  ]);
+  const source = { path: 'src/Page.ets', start_line: 1, content: 'refresh() { return this.value; }' };
+  let searches = 0;
+  const repository = {
+    search_code_symbols: createTool({
+      id: 'search_code_symbols', description: 'Find symbols.',
+      inputSchema: z.object({ query: z.string(), file_pattern: z.string().default('**/*'), limit: z.number().default(20) }),
+      execute: async () => { searches += 1; return { ...source, navigation: { rows: [['refresh', 'src/Page.ets']] } }; },
+    }),
+    get_code_outline: createTool({
+      id: 'get_code_outline', description: 'Outline file.',
+      inputSchema: z.object({ relative_path: z.string(), limit: z.number().default(100) }),
+      execute: async () => ({ ...source, navigation: { rows: [['refresh']] } }),
+    }),
+    trace_code_path: createTool({
+      id: 'trace_code_path', description: 'Trace static callers.',
+      inputSchema: z.object({ function_name: z.string(), direction: z.string().default('inbound'), depth: z.number().default(1), limit: z.number().default(20) }),
+      execute: async () => ({ isError: true, content: [{ type: 'text', text: 'code index unavailable' }] }),
+    }),
+    search_project_text: createTool({
+      id: 'search_project_text', description: 'Search source.', inputSchema: z.object({ query: z.string() }),
+      execute: async () => ({ matches: [{ ...source, line: 1 }] }),
+    }),
+    read_project_file: createTool({
+      id: 'read_project_file', description: 'Read source.', inputSchema: z.object({ relative_path: z.string() }),
+      execute: async () => source,
+    }),
+  };
+  const logs = {
+    resolve_log_target: createTool({
+      id: 'resolve_log_target', description: 'Resolve log target.', inputSchema: z.object({ query: z.string() }),
+      execute: async () => ({ status: 'not_found', candidates: [] }),
+    }),
+    search_cloud_logs: createTool({
+      id: 'search_cloud_logs', description: 'Query logs.', inputSchema: z.object({}), execute: async () => ({}),
+    }),
+  };
+  const events = await run(diagnosis, '请定位 refresh 调用失败。', {
+    toolsets: { repository, logs }, clientSteps: ['observe', 'source'],
+  });
+  const ends = events.filter((event) => event.type === 'tool-end');
+  assert.deepEqual(ends.map(({ event }) => event.status), [
+    'failed', 'completed', 'completed', 'completed', 'failed', 'completed', 'completed',
+  ]);
+  assert.equal(searches, 1);
+  assert.match(ends[0]!.event.result_summary ?? '', /client_observation_required/);
+  for (const end of ends.slice(0, 5)) assert.equal((end.evidence_state.entries as unknown[]).length, 0);
+  const terminal = events.at(-1);
+  assert.equal(terminal?.type, 'completed');
+  if (terminal?.type !== 'completed') return;
+  const evidence = terminal.evidence_state.entries as Array<{ source: string }>;
+  assert.deepEqual(evidence.map(({ source }) => source), ['mcp:search_project_text', 'mcp:read_project_file']);
+  assert.equal(terminal.tool_usage.budget_attempted, 6);
+  assert.equal(terminal.tool_usage.budget_failures, 1);
+});
+
 test('skills requiring unavailable tools are omitted and cannot be loaded', async () => {
   const { diagnosis } = await setup([
     { tool: 'load_skill', args: { name: 'bind-harmony-workspace' } },

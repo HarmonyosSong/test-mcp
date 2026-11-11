@@ -19,7 +19,7 @@
 | 远程 SLS 日志证据化 | 目标绑定、身份匹配、脱敏和 `observation_context` 入账已实现；未关联条目不收录 |
 | 平台/版本 → 固定源码快照 | 唯一映射与本地精确快照选择器已实现；会话轮内自动换绑尚未接入 |
 | 多端知识库与端上下文完整产品化 | 仍需 Android/iOS 真实端到端验收 |
-| Graphify Runtime 接入 | 未接入，不属于编排层现有依赖 |
+| 代码索引导航 | 由 Repository MCP 可选挂载，不属于 Supervisor 编排依赖；导航结果不能进入 EvidenceLedger |
 | 多进程 lease/CAS | 未实现，只支持单进程准入 |
 
 ### 1.3 文档关系

@@ -1,0 +1,88 @@
+{
+  "date": "2026-11-11",
+  "source_repository": "xesapp_xuejia_hd/lc_stu_harmonyos",
+  "source_head": "5c768f8975bde510676345deecd0aea9911ff6ba",
+  "source_state": "dirty working tree with two pre-existing modified files",
+  "scope": {
+    "source_files": 649,
+    "source_extension": ".ets",
+    "manifest_sha256": "c71ee5f22288bbab03ce02345999d1d5289b02b6ac2f9569e3c77fbb3c1db147",
+    "content_probe_extension": ".ets renamed to .ts in a temporary copy; file contents unchanged",
+    "runtime_integration": false
+  },
+  "tools": {
+    "ripgrep": "installed project baseline",
+    "ast_grep": "0.51.1",
+    "zvec_grep": "0.3.0"
+  },
+  "cases": [
+    {
+      "tool": "ripgrep",
+      "query": "new GroupClassViewModel",
+      "input": ".ets source",
+      "result": {
+        "matches": 2,
+        "paths": [
+          "features/classroom/src/main/ets/beforeClass/pages/GroupPermissionPage.ets:59",
+          "features/classroom/src/main/ets/beforeClass/pages/GroupSignPage.ets:33"
+        ],
+        "elapsed_ms": 80
+      }
+    },
+    {
+      "tool": "ast-grep",
+      "query": "new GroupClassViewModel($$$ARGS)",
+      "input": ".ets source with --lang typescript",
+      "result": {
+        "matches": 0,
+        "files_scanned": 1,
+        "note": "Direct .ets path did not yield the expected match. It also did not provide reliable ArkUI struct/decorator matching."
+      }
+    },
+    {
+      "tool": "ast-grep",
+      "query": "new GroupClassViewModel($$$ARGS)",
+      "input": ".ets content renamed to .ts",
+      "result": {
+        "matches": 2,
+        "files_scanned": 2,
+        "note": "Standard TypeScript call pattern matched, but this does not validate ArkUI syntax."
+      }
+    },
+    {
+      "tool": "ast-grep",
+      "query": "export struct $NAME { $$$ }",
+      "input": ".ets content renamed to .ts",
+      "result": {
+        "matches": 0,
+        "note": "The pattern is not standard TypeScript syntax."
+      }
+    },
+    {
+      "tool": "zvecgrep",
+      "query": "index",
+      "input": ".ets source",
+      "result": {
+        "indexable_files": 0,
+        "unsupported_files": 646,
+        "note": "Version 0.3.0 file-type help does not list .ets; the indexer reported .ets as unsupported."
+      }
+    },
+    {
+      "tool": "zvecgrep",
+      "query": "上课前 小组签到 进班",
+      "input": ".ets content renamed to .ts",
+      "result": {
+        "status": "blocked_by_model_setup",
+        "note": "local/potion-code-16m-v2 could not be downloaded: Hugging Face timed out and ModelScope returned HTTP 403. No semantic recall result was produced."
+      }
+    }
+  ],
+  "conclusion": {
+    "production_ready": ["ripgrep"],
+    "needs_arkts_adapter": ["ast-grep", "zvecgrep"],
+    "semantic_quality_evaluated": false,
+    "source_modified": false,
+    "project_dependencies_modified": false
+  }
+}

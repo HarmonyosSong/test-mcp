@@ -18,6 +18,7 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 - 客户端本地 Markdown 知识库通过 Knowledge MCP 提供检索；云学习知识能力由后续 A2A 对端 Agent 提供，不在客户端直连第二套知识 MCP。
 - 可选 LogCenter / Aliyun SLS 四工具：私有身份发现、用户原文目标绑定、超时取消和脱敏观察已接入共享能力会话；目标绑定且身份匹配的远程日志可携带 Runtime 观察上下文进入证据账本。上述链路已有合成 mock 测试，真实生产字段覆盖和真实学员联调尚未验收，Catalog 的 appid 查询兼容性仍需修正。
 - 本地工作区只读检查，以及 Git 分支查询和 detached Commit 快照；本地目录绑定读取实时工作区，Git 会话读取固定 Commit 快照。
+- 可选的 codebase-memory-mcp 已封装在 Repository MCP 内部，提供符号搜索、文件 outline 和调用路径候选；未配置时继续使用文本搜索，任何图结果都必须回读源码后才能成为证据。
 - 正式支持 DeepSeek `deepseek-flash`；同时保留 OpenAI、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 配置入口作为实验/未验收选项。可配置不等于正式支持；评估入口和口径见 [`docs/triage-feedback-and-evaluation.md`](docs/triage-feedback-and-evaluation.md)。
 - 会话、仓库、快照和证据状态保存在 runtime 的 LibSQL；模型配置仍保存在 owner-only 的 `.data/model-config.json`，旧 `.data` JSON 可通过迁移命令导入。
 - 知音楼网页 SSO：未登录不可用业务 API；应用挂在 `/xesapp-agent` 前缀下。设计见 [`spec/sso-login-design.md`](spec/sso-login-design.md)。
@@ -140,6 +141,10 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_MASTRA_PROJECT_ROOT` | 仓库根目录 | MCP 项目根目录 |
 | `HARMONY_AGENT_ALLOWED_ROOTS` | 仓库根目录 | 允许读取的本地目录，逗号分隔 |
 | `HARMONY_MASTRA_MCP_COMMAND` | `uv` | 启动 Python MCP 的命令 |
+| `HARMONY_AGENT_CODE_INDEX_COMMAND` | 空 | 可选 codebase-memory-mcp 可执行文件路径；只由 Repository MCP 内部调用，不直接暴露给模型 |
+| `HARMONY_AGENT_CODE_INDEX_CACHE` | `.data/codebase-memory` | 代码索引缓存目录，按快照复用的派生产物 |
+| `HARMONY_AGENT_CODE_INDEX_MODE` | `fast` | 首版仅接受 `fast`，其他模式会明确报错 |
+| `HARMONY_AGENT_CODE_INDEX_TIMEOUT_SECONDS` | `90` | 单次索引或查询的超时，范围 5–600 秒；首次调用包含两个操作 |
 | `HARMONY_MASTRA_SKILLS_DIR` | `skills` | Skill Markdown 目录 |
 | `HARMONY_MASTRA_GIT_MIRROR_DIR` | `.data/git-mirrors` | Git mirror 目录 |
 | `HARMONY_MASTRA_SNAPSHOT_DIR` | `.data/workspaces` | detached snapshot 目录 |
@@ -166,6 +171,10 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 网页设置写入 `.data/model-config.json`，文件权限为 `0600`。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key；Mastra 内部日志已关闭，应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证，不能据此保证所有日志都不含敏感内容。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
 
 知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续。仓库 MCP 按会话工作区启动：Git 仓库会绑定 detached Commit 快照，本地目录则读取授权根目录中的实时文件，诊断过程中工作区变化可能影响后续读取。知识检索和仓库代码检查需要 Python/uv 已安装，并已通过 `make setup` 安装 `mcp_server/` 依赖。
+
+代码图索引是 Repository MCP 的可选内部后端。配置 `HARMONY_AGENT_CODE_INDEX_COMMAND` 后，仓库 MCP 会在当前快照中按需建立或复用 CBM 索引，并仅挂载 `search_code_symbols`、`get_code_outline`、`trace_code_path` 三个只读导航工具。模型不能创建、删除或指定索引；索引命中、outline 和调用边只能缩小源码范围，必须继续调用 `read_project_file`。命令未配置时不挂载扩展工具，命令不可用、索引失败或超时时会明确报错并保留文本搜索兜底。
+
+启用时在部署环境放置 **codebase-memory-mcp 0.12.1** 二进制，并在 `.env` 填写 `HARMONY_AGENT_CODE_INDEX_COMMAND=/absolute/path/to/codebase-memory-mcp`，重启 Runtime 后生效；不需要额外配置一个 MCP 服务。首版只索引授权工作区内的允许代码文件副本，排除已知依赖目录、符号链接和超大文件；查询前后核对源码内容指纹，轮内源码变化时拒绝旧图查询。`.data/codebase-memory` 下的 `source-views/` 和 `engine/` 分别保存源码副本与派生索引，Docker 部署应挂载持久卷；缓存可清理重建，不替代会话和证据数据的持久化。真实 HarmonyOS 工程已验证导航与源码回读，iOS/Android 的关系精度及真实诊断效果仍待验收。
 
 LogCenter 的 AppID / AppSecret 留空即可使用其余功能。当前四个工具是 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`discover_client_sessions`。Runtime 私有注入当前用户明确提供的学员标识，目标必须由用户原文选择；目标绑定且身份匹配的日志脱敏后可进入 EvidenceLedger，空结果和未关联日志不能确认平台或支持正向根因。合成 mock 已覆盖关联、脱敏、发现和入账；测试网关只完成基本 count/search 连通性，生产 Catalog 字段、appid 索引兼容性和真实学员链路仍未验收。契约见 [`日志目录与查询规格`](spec/log-catalog-query-capability.md)，后续边界见 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)。
 
@@ -223,4 +232,4 @@ skills/       声明式诊断 Skill
 docs/         当前架构、迁移规格、运维文档和历史设计记录
 ```
 
-设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 和 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)。真实学员日志链验收、观察后的自动源码换绑、多端产品化和 Graphify 接入只看 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)；完整文档入口见 [`docs/README.md`](docs/README.md)。
+设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 和 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)。真实学员日志链验收、观察后的自动源码换绑、多端产品化和代码索引验收只看 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)；完整文档入口见 [`docs/README.md`](docs/README.md)。

@@ -40,3 +40,9 @@ export const REPOSITORY_MCP_TOOL_NAMES = [
   'parse_hilog',
   'load_business_context',
 ];
+
+export const CODE_INDEX_MCP_TOOL_NAMES = [
+  'search_code_symbols',
+  'get_code_outline',
+  'trace_code_path',
+];

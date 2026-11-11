@@ -1,0 +1,1024 @@
+{
+  "date": "2026-11-11",
+  "engine": "codebase-memory-mcp",
+  "engine_version": "0.12.1",
+  "binary_sha256": "a36cfa1f5d10d8c4762501d63feef082711aae4704b9e8f9066db52779a8601e",
+  "source_repository": "xesapp_xuejia_hd/lc_stu_harmonyos",
+  "source_head": "5c768f8975bde510676345deecd0aea9911ff6ba",
+  "source_state": "dirty working tree; 2 existing modified files; not a release-snapshot benchmark",
+  "ets_manifest": {
+    "file_count": 649,
+    "sha256": "c71ee5f22288bbab03ce02345999d1d5289b02b6ac2f9569e3c77fbb3c1db147",
+    "hash_algorithm": "sha256 of sorted relative UTF-8 path + NUL + sha256(file bytes) digest, repeated for each file",
+    "scope": "rg-visible .ets only; excludes dependencies/build; not a buildable complete snapshot"
+  },
+  "index_tool_reported_ms": {
+    "original_full": 11597,
+    "ets_only_copy": 2897
+  },
+  "limits": [
+    "Exploratory single-project test, not an accuracy benchmark.",
+    "CLI end-to-end query latency includes temporary-daemon startup; omitted from performance claims.",
+    "Graph confidence is supplied by the engine, not measured precision.",
+    "The ArkTS-only manifest does not identify the entire original repository snapshot.",
+    "Temporary cache is separate from the product runtime; no evidence-ledger integration."
+  ],
+  "cases": {
+    "original_status": {
+      "tool": "index_status",
+      "arguments": {
+        "project": "harmony-full-poc",
+        "diagnostics": "summary",
+        "format": "json"
+      },
+      "payload": {
+        "project": "harmony-full-poc",
+        "nodes": 28213,
+        "edges": 98765,
+        "status": "ready",
+        "root_path": "<local-harmony-repository>",
+        "indexed_at": "2026-11-11T07:15:25Z",
+        "parse_partial": {
+          "files": [],
+          "count": 0,
+          "truncated": false
+        },
+        "parse_unusable": {
+          "files": [],
+          "count": 0,
+          "truncated": false
+        },
+        "skipped": {
+          "files": [],
+          "count": 0,
+          "truncated": false
+        },
+        "not_indexed": {
+          "dirs": [
+            ".git",
+            "features/classroom/build",
+            "features/classroom/oh_modules",
+            "features/classroom/src/main/resources/resfile/dist"
+          ],
+          "dirs_count": 4,
+          "files": [
+            {
+              "path": "AppScope/resources/base/media/app_icon.png",
+              "reason": "ignored-suffix"
+            },
+            {
+              "path": "features/classroom/oh-package-lock.json5",
+              "reason": "gitignore"
+            },
+            {
+              "path": "features/classroom/src/main/resources/base/media/Blank_changTiao.png",
+              "reason": "ignored-suffix"
+            },
+            {
+              "path": "features/classroom/src/main/resources/base/media/EngLish_KRectangle.png",
+              "reason": "ignored-suffix"
+            },
+            {
+              "path": "features/classroom/src/main/resources/base/media/EngLish_board_dian.png",
+              "reason": "ignored-suffix"
+            }
+          ],
+          "files_count": 2480,
+          "truncated": true,
+          "files_omitted": 2475,
+          "note": "Purposely not indexed — excluded BY DESIGN via gitignore/.cbmignore/skip-lists (see each file's reason). Not an error: change the ignore rules and re-index to include them."
+        },
+        "cross_repo": {
+          "status": "never_run"
+        },
+        "doc_links": {
+          "mentions": 0,
+          "unresolved": {},
+          "status": "ok"
+        },
+        "watch": {
+          "watched": false,
+          "reason": "not_session_project",
+          "hint": "Auto-sync watches only the active MCP session's project; re-run index_repository to refresh this index."
+        }
+      }
+    },
+    "original_semantic_zh": {
+      "tool": "search_graph",
+      "arguments": {
+        "project": "harmony-full-poc",
+        "semantic_query": [
+          "上课前 小组签到 进班"
+        ],
+        "semantic_limit": 10,
+        "limit": 1,
+        "format": "json",
+        "max_output_tokens": 5000
+      },
+      "payload": {
+        "groups": [],
+        "semantic_total": 11,
+        "semantic_total_relation": "gte",
+        "semantic_returned": 10,
+        "semantic_has_more": true,
+        "semantic_next_offset": 10,
+        "semantic": {
+          "cols": [
+            "qn",
+            "label",
+            "file",
+            "score"
+          ],
+          "rows": [
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.crypto-js.min.e",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/crypto-js.min.js",
+              0.07644678498384441
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.phone-0.0.28.8.static.crypto-js.min.e",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/phone-0.0.28.8/static/crypto-js.min.js",
+              0.07345573879921738
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.phone-0.0.28.8.static.crypto-js.min.g",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/phone-0.0.28.8/static/crypto-js.min.js",
+              0.07118684968143743
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.crypto-js.min.g",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/crypto-js.min.js",
+              0.07095996867985363
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\"=\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\"!=\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\"<\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\">\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\"<=\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\">=\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ]
+          ]
+        },
+        "total": 11,
+        "returned": 10,
+        "count": 10,
+        "has_more": true,
+        "next_offset": 10,
+        "truncated": true,
+        "truncation_reason": "page_limit"
+      }
+    },
+    "original_semantic_en": {
+      "tool": "search_graph",
+      "arguments": {
+        "project": "harmony-full-poc",
+        "semantic_query": [
+          "student group sign in before class"
+        ],
+        "semantic_limit": 10,
+        "limit": 1,
+        "format": "json",
+        "max_output_tokens": 5000
+      },
+      "payload": {
+        "groups": [],
+        "semantic_total": 11,
+        "semantic_total_relation": "gte",
+        "semantic_returned": 10,
+        "semantic_has_more": true,
+        "semantic_next_offset": 10,
+        "semantic": {
+          "cols": [
+            "qn",
+            "label",
+            "file",
+            "score"
+          ],
+          "rows": [
+            [
+              "harmony-full-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AICorrect.AICorrectView.AICorrectViewBuilder",
+              "Function",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AICorrect/AICorrectView.ets",
+              0.08924461759630944
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AICorrect.AICorrectViewModel.AICorrectViewModel.showAICorrect",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AICorrect/AICorrectViewModel.ets",
+              0.08323312698998538
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AllSealoffSuperViewModel.AllSealoffSuperViewModel.AICorrectViewModel",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AllSealoffSuperViewModel.ets",
+              0.07455017937748981
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AICorrect.AICorrectView.AICorrectView.forbiddenScale",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AICorrect/AICorrectView.ets",
+              0.06570004135303077
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.classRoomLottie.Settlement.zuanshi.zuanshi.CVEffects",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/classRoomLottie/Settlement/zuanshi/zuanshi.html",
+              0.06519956824018959
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AllSealoffSuperViewModel.AllSealoffSuperViewModel.showAICorrect",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AllSealoffSuperViewModel.ets",
+              0.06268461222791968
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.classRoomLottie.Settlement.zuanshi.zuanshi.ProjectInterface",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/classRoomLottie/Settlement/zuanshi/zuanshi.html",
+              0.059551245201268733
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.classRoomLottie.Settlement.zuanshi.zuanshi.HEffects",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/classRoomLottie/Settlement/zuanshi/zuanshi.html",
+              0.05949430577502108
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.classRoomLottie.Settlement.zuanshi.zuanshi.e",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/classRoomLottie/Settlement/zuanshi/zuanshi.html",
+              0.05922034421403971
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.classRoomLottie.Settlement.zuanshi.zuanshi.A",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/classRoomLottie/Settlement/zuanshi/zuanshi.html",
+              0.059156065535037626
+            ]
+          ]
+        },
+        "total": 11,
+        "returned": 10,
+        "count": 10,
+        "has_more": true,
+        "next_offset": 10,
+        "truncated": true,
+        "truncation_reason": "page_limit"
+      }
+    },
+    "ets_only_status": {
+      "tool": "index_status",
+      "arguments": {
+        "project": "harmony-ets-poc",
+        "diagnostics": "summary",
+        "format": "json"
+      },
+      "payload": {
+        "project": "harmony-ets-poc",
+        "nodes": 14665,
+        "edges": 65234,
+        "status": "ready",
+        "root_path": "<ets-only-temp-copy>",
+        "indexed_at": "2026-11-11T07:28:34Z",
+        "parse_partial": {
+          "files": [],
+          "count": 0,
+          "truncated": false
+        },
+        "parse_unusable": {
+          "files": [],
+          "count": 0,
+          "truncated": false
+        },
+        "skipped": {
+          "files": [],
+          "count": 0,
+          "truncated": false
+        },
+        "not_indexed": {
+          "dirs": [],
+          "dirs_count": 0,
+          "files": [],
+          "files_count": 0,
+          "truncated": false
+        },
+        "cross_repo": {
+          "status": "never_run"
+        },
+        "doc_links": {
+          "mentions": 0,
+          "unresolved": {},
+          "status": "ok"
+        },
+        "watch": {
+          "watched": false,
+          "reason": "not_session_project",
+          "hint": "Auto-sync watches only the active MCP session's project; re-run index_repository to refresh this index."
+        }
+      }
+    },
+    "ets_only_semantic_zh": {
+      "tool": "search_graph",
+      "arguments": {
+        "project": "harmony-ets-poc",
+        "semantic_query": [
+          "上课前 小组签到 进班"
+        ],
+        "semantic_limit": 10,
+        "limit": 1,
+        "format": "json",
+        "max_output_tokens": 5000
+      },
+      "payload": {
+        "groups": [],
+        "semantic_total": 11,
+        "semantic_total_relation": "gte",
+        "semantic_returned": 10,
+        "semantic_has_more": true,
+        "semantic_next_offset": 10,
+        "semantic": {
+          "cols": [
+            "qn",
+            "label",
+            "file",
+            "score"
+          ],
+          "rows": [
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.common.tool.ImageTool.ImageTool.transferPixelMap2Buffer",
+              "Method",
+              "features/classroom/src/main/ets/common/tool/ImageTool.ets",
+              0.029685224413278238
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.navigation.Screenshot.ScreenshotViewModel.ScreenshotViewModel.transferPixelMap2Buffer",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/navigation/Screenshot/ScreenshotViewModel.ets",
+              0.029634085239956247
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.common.utils.GZipUtil.GZipUtil.unzip",
+              "Method",
+              "features/classroom/src/main/ets/common/utils/GZipUtil.ets",
+              0.026722354107404915
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.common.business.MessageIntegration.Channel.GraffitiMarsChannel.GraffitiMarsChannel.onRecvRoomBinaryTinyMessage",
+              "Method",
+              "features/classroom/src/main/ets/common/business/MessageIntegration/Channel/GraffitiMarsChannel.ets",
+              0.02388410885962159
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.common.utils.XOLCryptoJS.XOLCryptoJSUtil.AESCBCDecrypt",
+              "Method",
+              "features/classroom/src/main/ets/common/utils/XOLCryptoJS.ets",
+              0.023807836806027907
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.common.tool.ImageTool.ImageTool.savePixmap2SystemTempDir",
+              "Method",
+              "features/classroom/src/main/ets/common/tool/ImageTool.ets",
+              0.023740649323947975
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.common.utils.XOLCryptoJS.XOLCryptoJSUtil.AesDecrypt",
+              "Method",
+              "features/classroom/src/main/ets/common/utils/XOLCryptoJS.ets",
+              0.0208547725138496
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.common.utils.DeviceUtils.DeviceUtils.fontSizeSetting",
+              "Method",
+              "features/classroom/src/main/ets/common/utils/DeviceUtils.ets",
+              0.02084737221819988
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.common.utils.XOLCryptoJS.XOLCryptoJSUtil.AesEncrypt",
+              "Method",
+              "features/classroom/src/main/ets/common/utils/XOLCryptoJS.ets",
+              0.020832595230081317
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.common.uicomponents.XOLWebImageComponent.XOLWebImageComponent.imageKnifeWriteCacheStrategy",
+              "Method",
+              "features/classroom/src/main/ets/common/uicomponents/XOLWebImageComponent.ets",
+              0.020786985482077452
+            ]
+          ]
+        },
+        "total": 11,
+        "returned": 10,
+        "count": 10,
+        "has_more": true,
+        "next_offset": 10,
+        "truncated": true,
+        "truncation_reason": "page_limit"
+      }
+    },
+    "ets_only_semantic_en": {
+      "tool": "search_graph",
+      "arguments": {
+        "project": "harmony-ets-poc",
+        "semantic_query": [
+          "student group sign in before class"
+        ],
+        "semantic_limit": 10,
+        "limit": 1,
+        "format": "json",
+        "max_output_tokens": 5000
+      },
+      "payload": {
+        "groups": [],
+        "semantic_total": 11,
+        "semantic_total_relation": "gte",
+        "semantic_returned": 10,
+        "semantic_has_more": true,
+        "semantic_next_offset": 10,
+        "semantic": {
+          "cols": [
+            "qn",
+            "label",
+            "file",
+            "score"
+          ],
+          "rows": [
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AICorrect.AICorrectView.AICorrectViewBuilder",
+              "Function",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AICorrect/AICorrectView.ets",
+              0.0981760301174003
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AICorrect.AICorrectViewModel.AICorrectViewModel.showAICorrect",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AICorrect/AICorrectViewModel.ets",
+              0.09213793623305343
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AllSealoffSuperViewModel.AllSealoffSuperViewModel.AICorrectViewModel",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AllSealoffSuperViewModel.ets",
+              0.08332152556376173
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AICorrect.AICorrectView.AICorrectView.forbiddenScale",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AICorrect/AICorrectView.ets",
+              0.06838940949565392
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AllSealoffSuperViewModel.AllSealoffSuperViewModel.showAICorrect",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AllSealoffSuperViewModel.ets",
+              0.06583640229409304
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AICorrect.AICorrectView.AICorrect.dismiss",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AICorrect/AICorrectView.ets",
+              0.05967623950328608
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.common.business.LogService.Base.SLSRTMPLogService.SLSRTMPLogService.sharedInstance",
+              "Method",
+              "features/classroom/src/main/ets/common/business/LogService/Base/SLSRTMPLogService.ets",
+              0.05660380149470857
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AICorrect.AICorrectViewModel.AICorrectViewModel.onH5RequestGrade",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AICorrect/AICorrectViewModel.ets",
+              0.05056479086164057
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AllSealoffSuperViewModel.AllSealoffSuperViewModel.ringingBellForClassViewModel",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AllSealoffSuperViewModel.ets",
+              0.05046310278514466
+            ],
+            [
+              "harmony-ets-poc.features.classroom.src.main.ets.inclass.foundation.1_systemLayer.allSealoff.AICorrect.AICorrectViewModel.AICorrectViewModel.onNetworkSuccess",
+              "Method",
+              "features/classroom/src/main/ets/inclass/foundation/1_systemLayer/allSealoff/AICorrect/AICorrectViewModel.ets",
+              0.047652827184634254
+            ]
+          ]
+        },
+        "total": 11,
+        "returned": 10,
+        "count": 10,
+        "has_more": true,
+        "next_offset": 10,
+        "truncated": true,
+        "truncation_reason": "page_limit"
+      }
+    },
+    "semantic_file_filter": {
+      "tool": "search_graph",
+      "arguments": {
+        "project": "harmony-full-poc",
+        "semantic_query": [
+          "上课前 小组签到 进班"
+        ],
+        "file_pattern": "*.ets",
+        "semantic_limit": 10,
+        "limit": 1,
+        "format": "json",
+        "max_output_tokens": 5000
+      },
+      "payload": {
+        "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+        "cols": [
+          "name",
+          "label",
+          "lines",
+          "in",
+          "out"
+        ],
+        "groups": [
+          {
+            "qn_prefix": "harmony-full-poc.features.classroom.src.main.ets.common.utils.XOLCryptoJS.XOLCryptoJSUtil",
+            "file": "features/classroom/src/main/ets/common/utils/XOLCryptoJS.ets",
+            "rows": [
+              [
+                "AESCBCDecrypt",
+                "Method",
+                "13-38",
+                0,
+                1
+              ]
+            ]
+          }
+        ],
+        "semantic_total": 11,
+        "semantic_total_relation": "gte",
+        "semantic_returned": 10,
+        "semantic_has_more": true,
+        "semantic_next_offset": 10,
+        "semantic": {
+          "cols": [
+            "qn",
+            "label",
+            "file",
+            "score"
+          ],
+          "rows": [
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.crypto-js.min.e",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/crypto-js.min.js",
+              0.07644678498384441
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.phone-0.0.28.8.static.crypto-js.min.e",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/phone-0.0.28.8/static/crypto-js.min.js",
+              0.07345573879921738
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.phone-0.0.28.8.static.crypto-js.min.g",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/phone-0.0.28.8/static/crypto-js.min.js",
+              0.07118684968143743
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.crypto-js.min.g",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/crypto-js.min.js",
+              0.07095996867985363
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\"=\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\"!=\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\"<\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\">\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\"<=\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ],
+            [
+              "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.static.mathjax-3.2.tex-svg-full.\">=\"",
+              "Function",
+              "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/static/mathjax-3.2/tex-svg-full.js",
+              0.07084363469758145
+            ]
+          ]
+        },
+        "total": 14332,
+        "returned": 1,
+        "count": 1,
+        "has_more": true,
+        "next_offset": 1,
+        "truncated": true,
+        "truncation_reason": "page_limit"
+      }
+    },
+    "callers_GroupClassViewModel": {
+      "tool": "trace_path",
+      "arguments": {
+        "project": "harmony-full-poc",
+        "function_name": "GroupClassViewModel",
+        "direction": "inbound",
+        "depth": 1,
+        "limit": 20,
+        "format": "json",
+        "include_evidence": true
+      },
+      "payload": {
+        "function": "GroupClassViewModel",
+        "direction": "inbound",
+        "callers_total": 2,
+        "callers_total_relation": "eq",
+        "callers": {
+          "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+          "cols": [
+            "name",
+            "hop",
+            "strategy",
+            "confidence"
+          ],
+          "groups": [
+            {
+              "qn_prefix": "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupPermissionPage.GroupPermissionPage",
+              "rows": [
+                [
+                  "viewModel",
+                  1,
+                  "heuristic",
+                  0.95
+                ]
+              ]
+            },
+            {
+              "qn_prefix": "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage",
+              "rows": [
+                [
+                  "viewModel",
+                  1,
+                  "heuristic",
+                  0.95
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "callers_signInToGroupInfo": {
+      "tool": "trace_path",
+      "arguments": {
+        "project": "harmony-full-poc",
+        "function_name": "signInToGroupInfo",
+        "direction": "inbound",
+        "depth": 1,
+        "limit": 20,
+        "format": "json",
+        "include_evidence": true
+      },
+      "payload": {
+        "function": "signInToGroupInfo",
+        "direction": "inbound",
+        "callers_total": 1,
+        "callers_total_relation": "eq",
+        "callers": {
+          "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+          "cols": [
+            "name",
+            "hop",
+            "strategy",
+            "confidence"
+          ],
+          "groups": [
+            {
+              "qn_prefix": "harmony-full-poc.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel",
+              "rows": [
+                [
+                  "changGroupFromSourceGroupId",
+                  1,
+                  "heuristic",
+                  0.38
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "callers_getGroupsInfo": {
+      "tool": "trace_path",
+      "arguments": {
+        "project": "harmony-full-poc",
+        "function_name": "getGroupsInfo",
+        "direction": "inbound",
+        "depth": 1,
+        "limit": 20,
+        "format": "json",
+        "include_evidence": true
+      },
+      "payload": {
+        "function": "getGroupsInfo",
+        "direction": "inbound",
+        "callers_total": 1,
+        "callers_total_relation": "eq",
+        "callers": {
+          "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+          "cols": [
+            "name",
+            "hop",
+            "strategy",
+            "confidence"
+          ],
+          "groups": [
+            {
+              "qn_prefix": "harmony-full-poc.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel",
+              "rows": [
+                [
+                  "loadGroupInfoData",
+                  1,
+                  "heuristic",
+                  0.38
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "business_english_terms": {
+      "tool": "search_graph",
+      "arguments": {
+        "project": "harmony-full-poc",
+        "query": "group sign",
+        "limit": 10,
+        "format": "json",
+        "max_output_tokens": 5000
+      },
+      "payload": {
+        "cols": [
+          "qn",
+          "label",
+          "file",
+          "lines",
+          "rank"
+        ],
+        "rows": [
+          [
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel.signInToGroupInfo",
+            "Method",
+            "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+            "336-364",
+            -22.928128963384605
+          ],
+          [
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel.signInActionComplete",
+            "Method",
+            "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+            "500-519",
+            -18.46069277866745
+          ],
+          [
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel.getCountdownToSignIn",
+            "Method",
+            "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+            "104-134",
+            -18.371063670571676
+          ],
+          [
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel.xSignInWithStuInfo",
+            "Method",
+            "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+            "427-434",
+            -18.283313644251876
+          ],
+          [
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage",
+            "Struct",
+            "features/classroom/src/main/ets/beforeClass/pages/GroupSignPage.ets",
+            "25-695",
+            -18.20796856353931
+          ],
+          [
+            "harmony-full-poc.features.classroom.src.main.resources.rawfile.pad-0.0.28.8.src.LDlogger.createSign",
+            "Function",
+            "features/classroom/src/main/resources/rawfile/pad-0.0.28.8/src/LDlogger.js",
+            "23-27",
+            -17.870784499697653
+          ],
+          [
+            "harmony-full-poc.features.classroom.src.main.resources.rawfile.phone-0.0.28.8.src.LDlogger.createSign",
+            "Function",
+            "features/classroom/src/main/resources/rawfile/phone-0.0.28.8/src/LDlogger.js",
+            "23-27",
+            -17.870784499697653
+          ],
+          [
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel.changGroupFromSourceGroupId",
+            "Method",
+            "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+            "290-334",
+            -16.13141938629867
+          ],
+          [
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel.getMyGroupInfo",
+            "Method",
+            "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+            "526-536",
+            -15.047891537954879
+          ],
+          [
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.GroupItemBox",
+            "Method",
+            "features/classroom/src/main/ets/beforeClass/pages/GroupSignPage.ets",
+            "103-161",
+            -14.655706583678098
+          ]
+        ],
+        "total": 308,
+        "total_relation": "eq",
+        "search_mode": "bm25",
+        "returned": 10,
+        "count": 10,
+        "has_more": true,
+        "next_offset": 10,
+        "truncated": true,
+        "truncation_reason": "page_limit"
+      }
+    },
+    "arkui_outline": {
+      "tool": "get_file_outline",
+      "arguments": {
+        "project": "harmony-full-poc",
+        "file_path": "features/classroom/src/main/ets/beforeClass/pages/GroupSignPage.ets",
+        "limit": 100,
+        "format": "json"
+      },
+      "payload": {
+        "file_path": "features/classroom/src/main/ets/beforeClass/pages/GroupSignPage.ets",
+        "cols": [
+          "name",
+          "label",
+          "lines",
+          "qn"
+        ],
+        "rows": [
+          [
+            "TAG",
+            "Variable",
+            "20-20",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.TAG"
+          ],
+          [
+            "GroupSignPage",
+            "Struct",
+            "25-695",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage"
+          ],
+          [
+            "appUtil",
+            "Field",
+            "27-27",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.appUtil"
+          ],
+          [
+            "_viewModel",
+            "Field",
+            "28-28",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage._viewModel"
+          ],
+          [
+            "liveName",
+            "Field",
+            "29-29",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.liveName"
+          ],
+          [
+            "viewModel",
+            "Method",
+            "31-36",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.viewModel"
+          ],
+          [
+            "routerParams",
+            "Field",
+            "39-39",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.routerParams"
+          ],
+          [
+            "aboutToAppear",
+            "Method",
+            "41-70",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.aboutToAppear"
+          ],
+          [
+            "aboutToDisappear",
+            "Method",
+            "72-75",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.aboutToDisappear"
+          ],
+          [
+            "bindViewModel",
+            "Method",
+            "77-85",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.bindViewModel"
+          ],
+          [
+            "navigationBar",
+            "Method",
+            "88-99",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.navigationBar"
+          ],
+          [
+            "GroupItemBox",
+            "Method",
+            "103-161",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.GroupItemBox"
+          ],
+          [
+            "build",
+            "Method",
+            "163-458",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.build"
+          ],
+          [
+            "StuBuilder",
+            "Method",
+            "461-480",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.StuBuilder"
+          ],
+          [
+            "EmptySlot",
+            "Method",
+            "483-515",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.EmptySlot"
+          ],
+          [
+            "GroupTimeCountdownBuilder",
+            "Method",
+            "519-694",
+            "harmony-full-poc.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.GroupTimeCountdownBuilder"
+          ]
+        ],
+        "total": 16,
+        "offset": 0,
+        "limit": 100,
+        "returned": 16,
+        "has_more": false
+      }
+    }
+  },
+  "engine_release": "https://github.com/DeusData/codebase-memory-mcp/releases/tag/v0.12.1"
+}

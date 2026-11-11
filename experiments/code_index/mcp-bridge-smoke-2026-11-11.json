@@ -1,0 +1,228 @@
+{
+  "engine": "codebase-memory-mcp 0.12.1",
+  "scope": "synthetic ArkTS fixture via existing Repository MCP; not production quality acceptance",
+  "source_sha256": "4d0fc0693c1136da7f09d81c1554dc591746a5de888bf791887047e0294545ce",
+  "checks": [
+    {
+      "tool": "search_code_symbols",
+      "is_error": false,
+      "elapsed_seconds": 2.243,
+      "result": {
+        "navigation": {
+          "cols": [
+            "qn",
+            "label",
+            "file",
+            "lines",
+            "rank"
+          ],
+          "rows": [
+            [
+              "harmony-ec4901b4a704b19868c0845121f3506c.Entry.Entry",
+              "Struct",
+              "Entry.ets",
+              "1-10",
+              -35.0000017688992
+            ],
+            [
+              "harmony-ec4901b4a704b19868c0845121f3506c.Entry.Entry.build",
+              "Method",
+              "Entry.ets",
+              "5-9",
+              -10.000001527559055
+            ],
+            [
+              "harmony-ec4901b4a704b19868c0845121f3506c.Entry.startEntry",
+              "Function",
+              "Entry.ets",
+              "11-11",
+              -10.000001527559055
+            ],
+            [
+              "harmony-ec4901b4a704b19868c0845121f3506c.Entry.launch",
+              "Function",
+              "Entry.ets",
+              "12-12",
+              -10.00000136707239
+            ],
+            [
+              "harmony-ec4901b4a704b19868c0845121f3506c.Entry",
+              "Module",
+              "Entry.ets",
+              "1-13",
+              -1.6539430342956793e-06
+            ],
+            [
+              "harmony-ec4901b4a704b19868c0845121f3506c.Entry.Entry.title",
+              "Field",
+              "Entry.ets",
+              "4-4",
+              -1.5275590551181103e-06
+            ]
+          ],
+          "total": 6,
+          "total_relation": "eq",
+          "search_mode": "bm25",
+          "returned": 6,
+          "count": 6,
+          "has_more": false,
+          "truncated": false
+        },
+        "snapshot_id": "harmony-ec4901b4a704b19868c0845121f3506c",
+        "index_coverage": {
+          "not_indexed_files_count": 0,
+          "skipped_count": 0,
+          "parse_partial_count": 0,
+          "parse_unusable_count": 0,
+          "nodes": 11,
+          "edges": 16
+        },
+        "adapter_truncated": false,
+        "evidence_boundary": "Static navigation only, not observed evidence. Read the same snapshot with read_project_file before citing source. Empty results do not exclude dynamic calls.",
+        "scope": "Allowed code files only; known dependency/build directories, symlinks and oversized files excluded. Language and dynamic-call coverage are partial."
+      }
+    },
+    {
+      "tool": "get_code_outline",
+      "is_error": false,
+      "elapsed_seconds": 1.82,
+      "result": {
+        "navigation": {
+          "file_path": "Entry.ets",
+          "cols": [
+            "name",
+            "label",
+            "lines",
+            "qn"
+          ],
+          "rows": [
+            [
+              "Entry",
+              "Struct",
+              "1-10",
+              "harmony-ec4901b4a704b19868c0845121f3506c.Entry.Entry"
+            ],
+            [
+              "title",
+              "Field",
+              "4-4",
+              "harmony-ec4901b4a704b19868c0845121f3506c.Entry.Entry.title"
+            ],
+            [
+              "build",
+              "Method",
+              "5-9",
+              "harmony-ec4901b4a704b19868c0845121f3506c.Entry.Entry.build"
+            ],
+            [
+              "startEntry",
+              "Function",
+              "11-11",
+              "harmony-ec4901b4a704b19868c0845121f3506c.Entry.startEntry"
+            ],
+            [
+              "launch",
+              "Function",
+              "12-12",
+              "harmony-ec4901b4a704b19868c0845121f3506c.Entry.launch"
+            ]
+          ],
+          "total": 5,
+          "offset": 0,
+          "limit": 100,
+          "returned": 5,
+          "has_more": false
+        },
+        "snapshot_id": "harmony-ec4901b4a704b19868c0845121f3506c",
+        "index_coverage": {
+          "not_indexed_files_count": 0,
+          "skipped_count": 0,
+          "parse_partial_count": 0,
+          "parse_unusable_count": 0,
+          "nodes": 11,
+          "edges": 16
+        },
+        "adapter_truncated": false,
+        "evidence_boundary": "Static navigation only, not observed evidence. Read the same snapshot with read_project_file before citing source. Empty results do not exclude dynamic calls.",
+        "scope": "Allowed code files only; known dependency/build directories, symlinks and oversized files excluded. Language and dynamic-call coverage are partial."
+      }
+    },
+    {
+      "tool": "trace_code_path",
+      "is_error": false,
+      "elapsed_seconds": 2.0,
+      "result": {
+        "navigation": {
+          "function": "startEntry",
+          "direction": "inbound",
+          "callers_total": 1,
+          "callers_total_relation": "eq",
+          "callers": {
+            "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+            "cols": [
+              "name",
+              "hop",
+              "strategy",
+              "confidence"
+            ],
+            "groups": [
+              {
+                "qn_prefix": "harmony-ec4901b4a704b19868c0845121f3506c.Entry",
+                "rows": [
+                  [
+                    "launch",
+                    1,
+                    "heuristic",
+                    0.9
+                  ]
+                ]
+              }
+            ]
+          }
+        },
+        "snapshot_id": "harmony-ec4901b4a704b19868c0845121f3506c",
+        "index_coverage": {
+          "not_indexed_files_count": 0,
+          "skipped_count": 0,
+          "parse_partial_count": 0,
+          "parse_unusable_count": 0,
+          "nodes": 11,
+          "edges": 16
+        },
+        "adapter_truncated": false,
+        "evidence_boundary": "Static navigation only, not observed evidence. Read the same snapshot with read_project_file before citing source. Empty results do not exclude dynamic calls.",
+        "scope": "Allowed code files only; known dependency/build directories, symlinks and oversized files excluded. Language and dynamic-call coverage are partial."
+      }
+    },
+    {
+      "tool": "read_project_file",
+      "is_error": false,
+      "elapsed_seconds": 0.009,
+      "result": {
+        "path": "Entry.ets",
+        "start_line": 1,
+        "end_line": 12,
+        "requested_end_line": 200,
+        "total_lines": 12,
+        "content": "1: @Entry\n2: @Component\n3: struct Entry {\n4:   @State title: string = 'Hello'\n5:   build() {\n6:     Column() {\n7:       Text(this.title)\n8:     }\n9:   }\n10: }\n11: function startEntry(): string { return 'ready' }\n12: function launch(): string { return startEntry() }",
+        "truncated": false,
+        "next_line": null,
+        "has_more_in_file": false,
+        "truncation_reason": null,
+        "skipped_lines": []
+      }
+    }
+  ],
+  "tools": [
+    "get_code_outline",
+    "list_project_files",
+    "load_business_context",
+    "parse_hilog",
+    "read_project_file",
+    "search_code_symbols",
+    "search_project_text",
+    "trace_code_path"
+  ],
+  "original_unchanged": true,
+  "original_index_artifact_absent": true
+}

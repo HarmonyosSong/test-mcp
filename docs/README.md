@@ -9,7 +9,7 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 当前 Runtime、Supervisor、能力会话、证据与存储的权威架构说明 |
 | [orchestration-layer-design.md](orchestration-layer-design.md) | 已实现的调查计划、客户端观察门禁、Agent Slot、审批恢复、并发和联合报告细则 |
 | [multi-capability-expansion-plan.md](multi-capability-expansion-plan.md) | 尚未完成的能力及实施顺序；不是现有功能清单 |
-| [business-knowledge-and-code-search-research.md](business-knowledge-and-code-search-research.md) | 业务知识与代码索引分层、三端开源检索方案比较和 PoC 验收建议；尚未实施 |
+| [business-knowledge-and-code-search-research.md](business-knowledge-and-code-search-research.md) | 业务知识与代码索引分层、三端开源检索方案比较，以及 Repository MCP 内部 CBM 适配边界 |
 | [../spec/compass-a2a-integration.md](../spec/compass-a2a-integration.md) | Compass A2A 传输、槽位、审批与真实联调边界 |
 | [../spec/log-catalog-query-capability.md](../spec/log-catalog-query-capability.md) | 当前 Catalog/SLS 四工具、私有身份、脱敏入账契约及真实验证边界 |
 | [../spec/sso-login-design.md](../spec/sso-login-design.md) | 知音楼网页 SSO、local/server 模式和安全边界 |
@@ -38,4 +38,4 @@
 - LogCenter 四工具的私有身份发现、目标绑定、脱敏和关联入账框架已实现；真实生产字段、权限、索引兼容性和真实学员联调尚未验收。
 - 新工单命中服务端关键词不等于立即调用 Compass；没有本地 `kind=log` 观测时先执行客户端观察。
 - 精确版本快照选择器已实现，但观察后的轮内自动换绑尚未接入；不能把选择器当成完整多端源码闭环。
-- Graphify 当前只做项目外离线研究，Runtime 不查询图产物，图命中也永远不能直接成为故障证据。
+- 代码图索引现在作为 Repository MCP 的可选内部后端提供只读导航；图命中永远不能直接成为故障证据，仍须回读同一快照源码。

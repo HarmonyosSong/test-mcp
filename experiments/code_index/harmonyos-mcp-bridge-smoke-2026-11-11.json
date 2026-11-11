@@ -1,0 +1,334 @@
+{
+  "engine": "codebase-memory-mcp 0.12.1",
+  "scope": "Repository MCP bridge smoke on real HarmonyOS classroom workspace; no model calls or accuracy benchmark",
+  "source_repository": "xesapp_xuejia_hd/lc_stu_harmonyos",
+  "source_head": "5c768f8975bde510676345deecd0aea9911ff6ba",
+  "dirty_files_before": 2,
+  "checks": [
+    {
+      "tool": "search_code_symbols",
+      "is_error": false,
+      "elapsed_seconds": 4.315,
+      "result": {
+        "navigation": {
+          "cols": [
+            "qn",
+            "label",
+            "file",
+            "lines",
+            "rank"
+          ],
+          "rows": [
+            [
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel",
+              "Class",
+              "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+              "32-648",
+              -44.666746157114936
+            ],
+            [
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel.constructor",
+              "Method",
+              "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+              "64-68",
+              -19.184090617934714
+            ],
+            [
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel.getLate",
+              "Method",
+              "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+              "70-76",
+              -19.1213474478453
+            ],
+            [
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel.destroyTimer",
+              "Method",
+              "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+              "94-102",
+              -19.1213474478453
+            ],
+            [
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel.loadData",
+              "Method",
+              "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+              "153-182",
+              -19.1213474478453
+            ]
+          ],
+          "total": 58,
+          "total_relation": "eq",
+          "search_mode": "bm25",
+          "returned": 5,
+          "count": 5,
+          "has_more": true,
+          "next_offset": 5,
+          "truncated": true,
+          "truncation_reason": "page_limit"
+        },
+        "snapshot_id": "harmony-5894c5c3703725af832cb0e5b60cec3e",
+        "index_coverage": {
+          "not_indexed_files_count": 8,
+          "skipped_count": 0,
+          "parse_partial_count": 0,
+          "parse_unusable_count": 0,
+          "nodes": 14864,
+          "edges": 65173,
+          "source_files": 681
+        },
+        "adapter_truncated": false,
+        "evidence_boundary": "Static navigation only, not observed evidence. Read the same snapshot with read_project_file before citing source. Empty results do not exclude dynamic calls.",
+        "scope": "Allowed code files only; known dependency/build directories, symlinks and oversized files excluded. Language and dynamic-call coverage are partial."
+      }
+    },
+    {
+      "tool": "get_code_outline",
+      "is_error": false,
+      "elapsed_seconds": 1.446,
+      "result": {
+        "navigation": {
+          "file_path": "features/classroom/src/main/ets/beforeClass/pages/GroupSignPage.ets",
+          "cols": [
+            "name",
+            "label",
+            "lines",
+            "qn"
+          ],
+          "rows": [
+            [
+              "TAG",
+              "Variable",
+              "20-20",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.TAG"
+            ],
+            [
+              "GroupSignPage",
+              "Struct",
+              "25-695",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage"
+            ],
+            [
+              "appUtil",
+              "Field",
+              "27-27",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.appUtil"
+            ],
+            [
+              "_viewModel",
+              "Field",
+              "28-28",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage._viewModel"
+            ],
+            [
+              "liveName",
+              "Field",
+              "29-29",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.liveName"
+            ],
+            [
+              "viewModel",
+              "Method",
+              "31-36",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.viewModel"
+            ],
+            [
+              "routerParams",
+              "Field",
+              "39-39",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.routerParams"
+            ],
+            [
+              "aboutToAppear",
+              "Method",
+              "41-70",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.aboutToAppear"
+            ],
+            [
+              "aboutToDisappear",
+              "Method",
+              "72-75",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.aboutToDisappear"
+            ],
+            [
+              "bindViewModel",
+              "Method",
+              "77-85",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.bindViewModel"
+            ],
+            [
+              "navigationBar",
+              "Method",
+              "88-99",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.navigationBar"
+            ],
+            [
+              "GroupItemBox",
+              "Method",
+              "103-161",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.GroupItemBox"
+            ],
+            [
+              "build",
+              "Method",
+              "163-458",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.build"
+            ],
+            [
+              "StuBuilder",
+              "Method",
+              "461-480",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.StuBuilder"
+            ],
+            [
+              "EmptySlot",
+              "Method",
+              "483-515",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.EmptySlot"
+            ],
+            [
+              "GroupTimeCountdownBuilder",
+              "Method",
+              "519-694",
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.pages.GroupSignPage.GroupSignPage.GroupTimeCountdownBuilder"
+            ]
+          ],
+          "total": 16,
+          "offset": 0,
+          "limit": 100,
+          "returned": 16,
+          "has_more": false
+        },
+        "snapshot_id": "harmony-5894c5c3703725af832cb0e5b60cec3e",
+        "index_coverage": {
+          "not_indexed_files_count": 8,
+          "skipped_count": 0,
+          "parse_partial_count": 0,
+          "parse_unusable_count": 0,
+          "nodes": 14864,
+          "edges": 65173,
+          "source_files": 681
+        },
+        "adapter_truncated": false,
+        "evidence_boundary": "Static navigation only, not observed evidence. Read the same snapshot with read_project_file before citing source. Empty results do not exclude dynamic calls.",
+        "scope": "Allowed code files only; known dependency/build directories, symlinks and oversized files excluded. Language and dynamic-call coverage are partial."
+      }
+    },
+    {
+      "tool": "search_code_symbols",
+      "is_error": false,
+      "elapsed_seconds": 1.829,
+      "result": {
+        "navigation": {
+          "cols": [
+            "qn",
+            "label",
+            "file",
+            "lines",
+            "rank"
+          ],
+          "rows": [
+            [
+              "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel.signInToGroupInfo",
+              "Method",
+              "features/classroom/src/main/ets/beforeClass/viewModel/GroupClassViewModel.ets",
+              "336-364",
+              -53.224988140174226
+            ]
+          ],
+          "total": 1,
+          "total_relation": "eq",
+          "search_mode": "bm25",
+          "returned": 1,
+          "count": 1,
+          "has_more": false,
+          "truncated": false
+        },
+        "snapshot_id": "harmony-5894c5c3703725af832cb0e5b60cec3e",
+        "index_coverage": {
+          "not_indexed_files_count": 8,
+          "skipped_count": 0,
+          "parse_partial_count": 0,
+          "parse_unusable_count": 0,
+          "nodes": 14864,
+          "edges": 65173,
+          "source_files": 681
+        },
+        "adapter_truncated": false,
+        "evidence_boundary": "Static navigation only, not observed evidence. Read the same snapshot with read_project_file before citing source. Empty results do not exclude dynamic calls.",
+        "scope": "Allowed code files only; known dependency/build directories, symlinks and oversized files excluded. Language and dynamic-call coverage are partial."
+      }
+    },
+    {
+      "tool": "trace_code_path",
+      "is_error": false,
+      "elapsed_seconds": 1.506,
+      "result": {
+        "navigation": {
+          "function": "signInToGroupInfo",
+          "direction": "inbound",
+          "callers_total": 1,
+          "callers_total_relation": "eq",
+          "callers": {
+            "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+            "cols": [
+              "name",
+              "hop",
+              "strategy",
+              "confidence"
+            ],
+            "groups": [
+              {
+                "qn_prefix": "harmony-5894c5c3703725af832cb0e5b60cec3e.features.classroom.src.main.ets.beforeClass.viewModel.GroupClassViewModel.GroupClassViewModel",
+                "rows": [
+                  [
+                    "changGroupFromSourceGroupId",
+                    1,
+                    "heuristic",
+                    0.38
+                  ]
+                ]
+              }
+            ]
+          }
+        },
+        "snapshot_id": "harmony-5894c5c3703725af832cb0e5b60cec3e",
+        "index_coverage": {
+          "not_indexed_files_count": 8,
+          "skipped_count": 0,
+          "parse_partial_count": 0,
+          "parse_unusable_count": 0,
+          "nodes": 14864,
+          "edges": 65173,
+          "source_files": 681
+        },
+        "adapter_truncated": false,
+        "evidence_boundary": "Static navigation only, not observed evidence. Read the same snapshot with read_project_file before citing source. Empty results do not exclude dynamic calls.",
+        "scope": "Allowed code files only; known dependency/build directories, symlinks and oversized files excluded. Language and dynamic-call coverage are partial."
+      }
+    },
+    {
+      "tool": "read_project_file",
+      "is_error": false,
+      "elapsed_seconds": 0.009,
+      "result": {
+        "path": "features/classroom/src/main/ets/beforeClass/pages/GroupSignPage.ets",
+        "start_line": 1,
+        "end_line": 25,
+        "source_returned": true
+      }
+    }
+  ],
+  "sample_file_unchanged": true,
+  "dirty_files_after": 2,
+  "limits": [
+    "Working tree had two existing changes before and after this read-only check; not a released version benchmark.",
+    "Static heuristic call candidates are navigation only, not observed evidence or measured precision.",
+    "CBM fast mode excluded 8 files; language coverage is partial.",
+    "CLI timings are one local sample, not production latency or a comparison against the old implementation.",
+    "No real model/provider, iOS, Android, Docker restart or concurrent indexing acceptance was run."
+  ],
+  "adapter_regression": {
+    "issue": "Placing source views inside CBM_CACHE_DIR caused CBM to exclude nested source directories.",
+    "fix": "Separate source-views and engine cache directories; retain a regression assertion on their paths.",
+    "verified": true
+  }
+}

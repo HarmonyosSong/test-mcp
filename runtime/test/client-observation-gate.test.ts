@@ -61,6 +61,32 @@ test('目录歧义和普通 count 不会提前开放源码阶段', async () => {
   await assert.rejects(read.execute!({}, {}), /client_observation_required/);
 });
 
+test('代码导航工具受 observe→source 门禁约束，现场降级后允许继续导航', async () => {
+  const navigationTools = ['search_code_symbols', 'get_code_outline', 'trace_code_path'];
+  const gate = new ClientObservationGate(['observe', 'source'], true);
+  let navigationCalls = 0;
+  for (const name of navigationTools) {
+    const navigation = gate.wrap(name, executable(async () => {
+      navigationCalls += 1;
+      return { status: 'navigation_hint' };
+    }));
+    await assert.rejects(navigation.execute!({}, {}), /client_observation_required/);
+  }
+  assert.equal(navigationCalls, 0);
+
+  const resolve = gate.wrap('resolve_log_target', executable(async () => ({ status: 'not_found', candidates: [] })));
+  await resolve.execute!({}, {});
+  assert.equal(gate.observationStatus, 'degraded');
+  for (const name of navigationTools) {
+    const navigation = gate.wrap(name, executable(async () => {
+      navigationCalls += 1;
+      return { status: 'navigation_hint' };
+    }));
+    await navigation.execute!({}, {});
+  }
+  assert.equal(navigationCalls, navigationTools.length);
+});
+
 test('用户粘贴 hilog 的解析可以完成现场观察阶段', async () => {
   const gate = new ClientObservationGate(['observe', 'source'], true);
   const parse = gate.wrap('parse_hilog', executable(async () => ({ entries: [] })));

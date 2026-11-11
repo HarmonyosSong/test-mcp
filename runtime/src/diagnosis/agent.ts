@@ -20,6 +20,7 @@ import { CodeLocatorRegistry } from "./locator-guidance.js";
 import { ClientObservationGate } from "../orchestration/client-observation-gate.js";
 import type { ClientInvestigationStep } from "../orchestration/plan.js";
 import { createClientLogPrivacy } from "../security/client-context.js";
+import { CODE_INDEX_MCP_TOOL_NAMES } from "../model/metadata.js";
 
 interface ToolBudget {
   attempts: number;
@@ -31,9 +32,13 @@ interface ToolBudget {
   cache: Map<string, unknown>;
 }
 
-const SEARCH_TOOLS = new Set(["search_project_text", "search_knowledge"]);
+const SEARCH_TOOLS = new Set(["search_project_text", "search_code_symbols", "search_knowledge"]);
+const CODE_NAVIGATION_TOOLS = new Set<string>(CODE_INDEX_MCP_TOOL_NAMES);
 const DEFAULT_TOOL_ARGS: Record<string, Record<string, unknown>> = {
   search_project_text: { file_glob: "**/*", limit: 10, cursor: null },
+  search_code_symbols: { file_pattern: "**/*", limit: 20 },
+  get_code_outline: { limit: 100 },
+  trace_code_path: { direction: "inbound", depth: 1, limit: 20 },
   read_project_file: { start_line: 1, end_line: 200, max_chars: 6000 },
   list_project_files: { pattern: "**/*", limit: 100 },
   search_knowledge: { scope: "symptom", limit: 3 },
@@ -57,6 +62,9 @@ const REUSABLE_TOOLS = new Set([
   "list_symptoms",
   "read_project_file",
   "search_project_text",
+  "search_code_symbols",
+  "get_code_outline",
+  "trace_code_path",
   "list_project_files",
   "load_business_context",
   "parse_hilog",
@@ -135,9 +143,42 @@ function isToolResultError(result: unknown): boolean {
   return (
     typeof result === "object" &&
     result !== null &&
-    "error" in result &&
-    result.error === true
+    (("error" in result && result.error === true) ||
+      ("isError" in result && result.isError === true))
   );
+}
+
+/** Compare delivered navigation entries, ignoring query and ranking metadata. */
+function navigationResultKeys(value: unknown, prefix = ""): Set<string> | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  const location = `${prefix}:${record.file ?? ""}:${record.qn_prefix ?? ""}`;
+  const keys = new Set<string>();
+  let recognized = false;
+  if (Array.isArray(record.rows)) {
+    recognized = true;
+    const columns = Array.isArray(record.cols) ? record.cols : [];
+    const identityColumns = columns.flatMap((column, index) =>
+      ["qn", "name", "file", "lines"].includes(String(column)) ? [index] : []);
+    for (const row of record.rows) {
+      const identity = Array.isArray(row) && identityColumns.length
+        ? identityColumns.map((index) => row[index])
+        : row;
+      keys.add(`${location}:${JSON.stringify(stableValue(identity))}`);
+    }
+  }
+  for (const field of ["navigation", "groups", "callers", "callees", "semantic"]) {
+    if (!(field in record)) continue;
+    const children = Array.isArray(record[field]) ? record[field] : [record[field]];
+    if (Array.isArray(record[field])) recognized = true;
+    for (const child of children) {
+      const childKeys = navigationResultKeys(child, `${location}:${field}`);
+      if (childKeys === null) continue;
+      recognized = true;
+      for (const key of childKeys) keys.add(key);
+    }
+  }
+  return recognized ? keys : null;
 }
 
 function failureCategory(error: unknown, cancelled: boolean): DiagnosisFailureCategory {
@@ -325,6 +366,12 @@ export function withToolBudget<T extends { execute?: (...args: any[]) => any }>(
           failedSignatures.get(signature) === true;
         try {
           const result = await execute(args, context);
+          const navigationStatus = typeof result === "object" && result !== null && "status" in result
+            ? result.status : undefined;
+          if (CODE_NAVIGATION_TOOLS.has(name) && (isToolResultError(result) ||
+              ["unavailable", "disabled", "failed", "error"].includes(String(navigationStatus)))) {
+            throw new Error(`代码导航失败，请回退到 search_project_text：${truncate(result, 800)}`);
+          }
           if (retryingTransientFailure) failedSignatures.set(signature, false);
           let guided = result;
           if (
@@ -380,11 +427,14 @@ export function withToolBudget<T extends { execute?: (...args: any[]) => any }>(
                 ("matches" in observedResult &&
                   Array.isArray(observedResult.matches) &&
                   observedResult.matches.length === 0)));
+          const navigationKeys = CODE_NAVIGATION_TOOLS.has(name)
+            ? navigationResultKeys(observedResult)
+            : null;
           let noProgress =
-            empty ||
+            empty || navigationKeys?.size === 0 ||
             resultSignatures.has(resultFingerprint(name, observedResult));
-          if (SEARCH_TOOLS.has(name)) {
-            const keys = searchResultKeys(observed);
+          if (SEARCH_TOOLS.has(name) || navigationKeys !== null) {
+            const keys = navigationKeys ?? searchResultKeys(observed);
             const previous = searchSeen.get(name) ?? new Set<string>();
             if (keys.size > 0 && [...keys].every((key) => previous.has(key)))
               noProgress = true;
@@ -497,6 +547,7 @@ function promptFor(
   }
   const availableSkills = skills.available("chat", availableTools);
   const catalog = availableSkills.map((skill) => `- ${skill.name}: ${skill.description}`).join("\n") || "（当前没有可用技能）";
+  const codeNavigationAvailable = CODE_INDEX_MCP_TOOL_NAMES.some((name) => availableTools.has(name));
   const userRefs = ledger
     .registerUserTexts()
     .map((item) => `${item.id}: ${item.preview}`)
@@ -525,6 +576,12 @@ ${phase.kind === 'local' && phase.clientSteps?.includes('observe') ? `
 - 用户或老师报告的系统只是 reported_platform，不是 observed_platform。只有匹配到本次学员/设备/会话的日志或设备事实时，才能确认实际平台；普通业务日志、目录路由和空结果都不能确认平台。
 - 现场指向 Android/iOS 等其他平台而当前只绑定 HarmonyOS 仓库时，不得继续用当前仓库解释其他端；把对应平台的固定版本源码列为缺口。
 - 日志未确认平台时仍可给出有条件的源码观察，但不得声称已确认故障设备平台，也不得把 reported_platform 当作硬过滤条件。
+` : ''}
+${codeNavigationAvailable ? `
+代码导航工具约束：
+- search_code_symbols、get_code_outline 和 trace_code_path 只提供定位线索，不是源码观察，不得引用为 evidence 或据此确认根因；导航命中后必须调用 read_project_file 核实对应文件内容，再引用源码。
+- 导航结果为空、没有目标或调用失败，只说明索引没有提供位置，不能据此排除符号、文件或调用路径；继续调用 search_project_text 搜索源码文本。
+- 导航工具返回 unavailable、disabled、error 或其他失败结果时，必须回退到 search_project_text；不要把导航失败当成“无匹配”。
 ` : ''}
 ${phase.kind === 'joint' ? `
 联合阶段补充约束：
