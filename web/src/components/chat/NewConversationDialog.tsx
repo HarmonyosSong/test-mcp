@@ -116,11 +116,17 @@ export function NewConversationDialog({ repositories, onClose, onCreate }: NewCo
           )}
           {error && <div className="form-error" role="alert"><AlertTriangle size={16} /><span>{error}</span></div>}
 
+          {pending && repositoryId && (
+            <p className="snapshot-note" role="status">
+              正在拉取分支并准备只读代码快照，首次创建可能需要一两分钟，请不要重复提交。
+            </p>
+          )}
+
           <footer className="dialog-actions">
             <button className="secondary-button" type="button" onClick={onClose} disabled={pending}>取消</button>
             <button className="primary-button" type="submit" disabled={pending || loadingBranches || Boolean(repositoryId && !branch)}>
               {pending ? <LoaderCircle className="spin" size={16} /> : <MessageSquare size={16} />}
-              {pending ? '正在创建' : '创建会话'}
+              {pending ? (repositoryId ? '正在准备代码快照' : '正在创建') : '创建会话'}
             </button>
           </footer>
         </form>

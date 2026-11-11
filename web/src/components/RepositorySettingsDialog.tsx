@@ -1,9 +1,11 @@
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   GitBranch,
   GitFork,
   LoaderCircle,
+  Pencil,
   Plus,
   ShieldCheck,
   X,
@@ -27,17 +29,20 @@ export function RepositorySettingsDialog({
   const [url, setUrl] = useState('');
   const [defaultBranch, setDefaultBranch] = useState('');
   const [pending, setPending] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingBranch, setEditingBranch] = useState('');
+  const [savingBranch, setSavingBranch] = useState(false);
   const [error, setError] = useState('');
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     nameRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !pending) onClose();
+      if (event.key === 'Escape' && !pending && !savingBranch && !editingId) onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, pending]);
+  }, [onClose, pending, savingBranch, editingId]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -60,12 +65,35 @@ export function RepositorySettingsDialog({
     }
   };
 
+  const saveBranch = async (repository: RepositoryRecord) => {
+    const branch = editingBranch.trim();
+    if (!branch) {
+      setError('默认分支不能为空。');
+      return;
+    }
+    if (branch === repository.default_branch) {
+      setEditingId(null);
+      return;
+    }
+    setSavingBranch(true);
+    setError('');
+    try {
+      const updated = await api.updateRepository(repository.id, { default_branch: branch });
+      onRegistered(updated);
+      setEditingId(null);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : '默认分支保存失败。');
+    } finally {
+      setSavingBranch(false);
+    }
+  };
+
   return (
     <div
       className="dialog-backdrop"
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !pending) onClose();
+        if (event.target === event.currentTarget && !pending && !savingBranch) onClose();
       }}
     >
       <section
@@ -83,7 +111,7 @@ export function RepositorySettingsDialog({
             className="icon-button light"
             type="button"
             onClick={onClose}
-            disabled={pending}
+            disabled={pending || savingBranch}
             title="关闭"
             aria-label="关闭仓库设置"
           >
@@ -107,13 +135,70 @@ export function RepositorySettingsDialog({
                       <strong>{repository.name}</strong>
                       <span>{repository.url}</span>
                     </div>
-                    <code>{repository.default_branch}</code>
+                    {editingId === repository.id ? (
+                      <div className="repository-branch-editor">
+                        <input
+                          aria-label={`${repository.name} 默认分支`}
+                          value={editingBranch}
+                          onChange={(event) => setEditingBranch(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') void saveBranch(repository);
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              setEditingId(null);
+                              setError('');
+                            }
+                          }}
+                          disabled={savingBranch}
+                          autoFocus
+                        />
+                        <button
+                          className="icon-button light"
+                          type="button"
+                          title="校验并保存默认分支"
+                          aria-label={`保存 ${repository.name} 默认分支`}
+                          disabled={savingBranch}
+                          onClick={() => void saveBranch(repository)}
+                        >
+                          {savingBranch ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}
+                        </button>
+                        <button
+                          className="icon-button light"
+                          type="button"
+                          title="取消修改"
+                          aria-label={`取消修改 ${repository.name} 默认分支`}
+                          disabled={savingBranch}
+                          onClick={() => { setEditingId(null); setError(''); }}
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <code title="新建会话的默认分支">{repository.default_branch}</code>
+                        <button
+                          className="icon-button light repository-branch-edit"
+                          type="button"
+                          title="修改默认分支（不影响已有会话）"
+                          aria-label={`修改 ${repository.name} 默认分支`}
+                          disabled={pending || savingBranch}
+                          onClick={() => {
+                            setEditingId(repository.id);
+                            setEditingBranch(repository.default_branch);
+                            setError('');
+                          }}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
             ) : (
               <div className="repository-empty">尚未登记业务仓库</div>
             )}
+            <p className="repository-default-note">修改默认分支只影响新建会话；已有会话仍使用创建时锁定的分支和代码版本。</p>
           </section>
 
           <form onSubmit={(event) => void submit(event)}>
@@ -172,7 +257,7 @@ export function RepositorySettingsDialog({
             )}
 
             <footer className="dialog-actions">
-              <button className="secondary-button" type="button" onClick={onClose} disabled={pending}>
+              <button className="secondary-button" type="button" onClick={onClose} disabled={pending || savingBranch}>
                 关闭
               </button>
               <button className="primary-button" type="submit" disabled={pending}>

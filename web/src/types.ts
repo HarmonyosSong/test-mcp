@@ -29,6 +29,31 @@ export type ChatStep = ToolEvent;
 
 export type ChatMessageStatus = 'streaming' | 'completed' | 'failed';
 
+export type Responsibility = 'client' | 'server' | 'shared' | 'unknown';
+
+export interface RemoteConclusion {
+  consultation_id: string;
+  task_id: string | null;
+  context_id: string | null;
+  agent_id: string | null;
+  agent_version: string | null;
+  state: string | null;
+  text: string;
+  truncated: boolean;
+  scope: string[];
+  limitations: string[];
+  request_digest: string;
+  received_at: string;
+}
+
+export interface JointAssessment {
+  relation: 'corroborated' | 'conflicting' | 'unverified';
+  text: string;
+  verified_claims: Array<{ claim: string; evidence_ids: string[] }>;
+  unverified_claims: string[];
+  next_actions: string[];
+}
+
 export interface DiagnosticReport {
   verdict: 'located' | 'probable' | 'insufficient_evidence' | 'tool_error';
   severity: 'critical' | 'high' | 'medium' | 'low' | 'unknown';
@@ -42,6 +67,10 @@ export interface DiagnosticReport {
   missing_information: string[];
   checks_performed: string[];
   limitations: string[];
+  responsibility?: Responsibility;
+  remote_conclusion?: RemoteConclusion | null;
+  external_findings?: RemoteConclusion[];
+  joint_assessment?: JointAssessment | null;
 }
 
 export interface ChatMessage {
@@ -57,6 +86,66 @@ export interface ChatMessage {
   created_at: string;
 }
 
+export type RunState =
+  | 'idle'
+  | 'running'
+  | 'waiting_confirmation'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type ConsultationStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'sent'
+  | 'completed'
+  | 'failed'
+  | 'cancel_requested'
+  | 'unknown'
+  | 'expired';
+
+export interface ExternalConsultation {
+  id: string;
+  conversation_id?: string;
+  message_id?: string;
+  run_id?: string;
+  status: ConsultationStatus;
+  reason: string;
+  outbound_text: string;
+  outbound_digest: string;
+  redaction_version?: string;
+  attachment_items?: string[];
+  expires_at: string;
+  task_id?: string | null;
+  context_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvestigationPlan {
+  mode: 'local' | 'server' | 'parallel';
+  branches: Array<'client' | 'server'>;
+  reason: string;
+  remoteSlots?: string[];
+  clientSteps?: Array<'observe' | 'source'>;
+  correlationReady?: boolean;
+  budget?: { maxSeconds: number; maxRemoteCalls: number };
+  maxHandoffRounds?: number;
+}
+
+export interface InvestigationState {
+  currentPlan?: InvestigationPlan;
+  initialPlan?: InvestigationPlan;
+  planHistory?: InvestigationPlan[];
+  [key: string]: unknown;
+}
+
+export interface ConsultationAction {
+  consultationId: string;
+  decision: 'approve' | 'reject';
+}
+
 export interface ChatConversation {
   id: string;
   title: string;
@@ -66,6 +155,11 @@ export interface ChatConversation {
   requested_ref?: string | null;
   resolved_commit?: string | null;
   model_override?: string | null;
+  run_state?: RunState;
+  consult_compass?: boolean;
+  consultations?: ExternalConsultation[];
+  external_findings?: RemoteConclusion[];
+  investigation?: InvestigationState | null;
   messages: ChatMessage[];
   created_at: string;
   updated_at: string;
@@ -110,11 +204,18 @@ export interface MetaResponse {
   model_prices: Record<string, { input: number; output: number }>;
 }
 
+export interface RepositoryVersionMapping {
+  branch: string;
+  expected_commit: string;
+}
+
 export interface RepositoryRecord {
   id: string;
   name: string;
   url: string;
   default_branch: string;
+  platform: 'harmony' | 'android' | 'ios' | null;
+  version_map: Record<string, RepositoryVersionMapping>;
   created_at: string;
   updated_at: string;
 }
@@ -128,6 +229,8 @@ export interface RegisterRepositoryInput {
   name: string;
   url: string;
   default_branch?: string;
+  platform?: 'harmony' | 'android' | 'ios' | null;
+  version_map?: Record<string, RepositoryVersionMapping>;
 }
 
 export interface RepositorySnapshot {

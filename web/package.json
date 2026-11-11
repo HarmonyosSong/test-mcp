@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --experimental-strip-types --test test/*.test.mjs"
   },
   "dependencies": {
     "@arco-design/web-react": "^2.66.16",

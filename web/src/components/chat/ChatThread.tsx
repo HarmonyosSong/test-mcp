@@ -1,10 +1,27 @@
 import { Select } from '@arco-design/web-react';
-import { AlertTriangle, Check, Copy, MessageSquare, Wrench } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  Clock3,
+  Copy,
+  LoaderCircle,
+  MessageSquare,
+  Wrench,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { InvestigationProgress } from '../../agui/progress';
 import { api } from '../../api';
+import { pendingConsultations as getPendingConsultations } from '../../consultation';
 import { estimateCost, formatCost, formatDate, formatTokens } from '../../format';
-import type { ChatConversation, ChatMessage, ModelStatus } from '../../types';
+import type {
+  ChatConversation,
+  ChatMessage,
+  ConsultationAction,
+  ModelStatus,
+} from '../../types';
 import { ChatComposer } from './ChatComposer';
+import { ConsultationCard } from './ConsultationCard';
+import { ConversationSettings } from './ConversationSettings';
 import { ReportCard } from './ReportCard';
 import { ToolStepCard } from './ToolStepCard';
 
@@ -18,6 +35,14 @@ interface ChatThreadProps {
   onSend: (content: string) => void;
   onStop: () => void;
   onModelChange: (spec: string) => void;
+  progress: InvestigationProgress | null;
+  consultationAction: ConsultationAction | null;
+  consultCompassSaving: boolean;
+  onConsultCompassChange: (allowed: boolean) => void;
+  onConsultationDecision: (
+    consultationId: string,
+    decision: ConsultationAction['decision'],
+  ) => void;
 }
 
 /** 从模型名解析上下文窗口的兜底：如 k3-256k → 256k，k3-1m → 1M。 */
@@ -146,12 +171,18 @@ export function ChatThread({
   onSend,
   onStop,
   onModelChange,
+  progress,
+  consultationAction,
+  consultCompassSaving,
+  onConsultCompassChange,
+  onConsultationDecision,
 }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const fetchingModels = useRef(false);
   const messageCount = conversation.messages.length;
   const lastMessage = conversation.messages.at(-1);
+  const pendingConsultations = getPendingConsultations(conversation);
 
   const activeModelName = useMemo(() => {
     const override = conversation.model_override;
@@ -208,7 +239,7 @@ export function ChatThread({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [messageCount, lastMessage?.content, lastMessage?.steps.length]);
+  }, [messageCount, lastMessage?.content, lastMessage?.steps.length, pendingConsultations.length, progress?.text]);
 
   const modelOptions = useMemo(() => {
     const options = new Set(availableModels);
@@ -278,7 +309,26 @@ export function ChatThread({
         {!conversation.repository_name && conversation.workspace_path && (
           <span className="chat-thread-source">{conversation.workspace_path}</span>
         )}
+        <div className="chat-thread-header-actions">
+          <ConversationSettings
+            allowed={conversation.consult_compass ?? false}
+            saving={consultCompassSaving}
+            disabled={sending}
+            onAllowedChange={onConsultCompassChange}
+          />
+        </div>
       </header>
+
+      {progress && (
+        <div className={`investigation-progress investigation-progress-${progress.state}`} role="status">
+          {progress.state === 'waiting' ? (
+            <Clock3 size={15} aria-hidden="true" />
+          ) : (
+            <LoaderCircle className="spin" size={15} aria-hidden="true" />
+          )}
+          <span>{progress.text}</span>
+        </div>
+      )}
 
       <div className="chat-messages scroll-region">
         {conversation.messages.length === 0 ? (
@@ -308,11 +358,20 @@ export function ChatThread({
             ),
           )
         )}
+        {pendingConsultations.map((consultation) => (
+          <ConsultationCard
+            key={consultation.id}
+            consultation={consultation}
+            action={consultationAction}
+            disabled={sending}
+            onDecision={onConsultationDecision}
+          />
+        ))}
         <div ref={bottomRef} />
       </div>
 
       <ChatComposer
-        disabled={composerDisabled}
+        disabled={composerDisabled || pendingConsultations.length > 0}
         sending={sending}
         toolbarExtra={toolbarExtra}
         onSend={onSend}

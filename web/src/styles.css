@@ -551,6 +551,107 @@ button:disabled {
   white-space: nowrap;
 }
 
+.chat-thread-header-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.conversation-settings {
+  position: relative;
+}
+
+.conversation-settings-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.conversation-settings-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.conversation-settings[open] .conversation-settings-trigger,
+.conversation-settings-trigger:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.conversation-settings-popover {
+  position: absolute;
+  z-index: 20;
+  top: 38px;
+  right: 0;
+  width: min(330px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-dialog);
+}
+
+.conversation-settings-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.consult-compass-setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.consult-compass-setting input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  flex: 0 0 auto;
+}
+
+.consult-compass-setting span {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.consult-compass-setting strong {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.consult-compass-setting small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.investigation-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 12px;
+}
+
+.investigation-progress-waiting {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+
 .chat-messages {
   display: flex;
   flex: 1 1 auto;
@@ -582,6 +683,123 @@ button:disabled {
   max-width: 78%;
   flex-direction: column;
   gap: 6px;
+}
+
+.consultation-card {
+  display: flex;
+  width: min(720px, 100%);
+  align-self: center;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--amber-border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.consultation-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.consultation-card-header h3 {
+  margin: 3px 0 0;
+  font-size: 15px;
+  line-height: 21px;
+}
+
+.consultation-card-icon {
+  display: flex;
+  padding: 7px;
+  border-radius: 8px;
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.consultation-status {
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.consultation-meta {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.6fr) minmax(160px, 1.6fr) minmax(140px, 1fr);
+  gap: 12px;
+  margin: 0;
+}
+
+.consultation-meta div {
+  min-width: 0;
+}
+
+.consultation-meta dt,
+.consultation-outbound-block > span {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.consultation-meta dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  word-break: break-word;
+}
+
+.consultation-outbound-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.consultation-outbound {
+  overflow: auto;
+  max-height: 260px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 19px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.consultation-card-note,
+.consultation-missing-content {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.consultation-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .consultation-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .consultation-card-actions {
+    flex-direction: column-reverse;
+  }
+
+  .consultation-card-actions button {
+    justify-content: center;
+  }
 }
 
 .chat-message-user {
@@ -2309,7 +2527,7 @@ button:disabled {
 .repository-row {
   display: grid;
   min-width: 0;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   padding: 9px 2px;
@@ -2345,6 +2563,35 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 9px;
+}
+
+.repository-row > .repository-branch-editor {
+  display: flex;
+  grid-column: 3 / 5;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+.repository-branch-editor input {
+  width: 190px;
+  min-height: 32px;
+  padding: 5px 8px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+}
+
+.repository-branch-editor .icon-button,
+.repository-branch-edit {
+  width: 30px;
+  height: 30px;
+}
+
+.repository-default-note {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 16px;
 }
 
 .repository-empty {
@@ -3014,12 +3261,26 @@ button:disabled {
   }
 
   .repository-row {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .repository-row code {
     grid-column: 2;
     width: fit-content;
+  }
+
+  .repository-branch-edit {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .repository-row > .repository-branch-editor {
+    grid-column: 2 / 4;
+  }
+
+  .repository-branch-editor input {
+    width: min(190px, 100%);
+    min-width: 0;
   }
 
   .model-dialog-actions .danger-text-button {

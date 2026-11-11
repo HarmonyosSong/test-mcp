@@ -1,4 +1,11 @@
-import type { ChatConversation, ToolEvent } from '../types';
+import type {
+  ChatConversation,
+  ExternalConsultation,
+  InvestigationPlan,
+  JointAssessment,
+  Responsibility,
+  ToolEvent,
+} from '../types';
 
 export const AGUI_EVENT_TYPES = [
   'RUN_STARTED',
@@ -10,6 +17,10 @@ export const AGUI_EVENT_TYPES = [
   'TEXT_MESSAGE_START',
   'TEXT_MESSAGE_CONTENT',
   'TEXT_MESSAGE_END',
+  'INVESTIGATION_PLAN',
+  'BRANCH_STATUS',
+  'EXTERNAL_CONSULTATION_REQUIRED',
+  'JOINT_ASSESSMENT',
 ] as const;
 
 export type AguiEventType = (typeof AGUI_EVENT_TYPES)[number];
@@ -75,6 +86,34 @@ export interface TextMessageEndEvent extends AguiEventBase {
   message_id: string;
 }
 
+export interface InvestigationPlanEvent extends AguiEventBase {
+  type: 'INVESTIGATION_PLAN';
+  plan?: InvestigationPlan;
+  mode?: InvestigationPlan['mode'];
+  branches?: InvestigationPlan['branches'];
+  reason?: string;
+  resumed?: boolean;
+}
+
+export interface BranchStatusEvent extends AguiEventBase {
+  type: 'BRANCH_STATUS';
+  branch: 'client' | 'server';
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped';
+  summary?: string;
+}
+
+export interface ExternalConsultationRequiredEvent extends AguiEventBase {
+  type: 'EXTERNAL_CONSULTATION_REQUIRED';
+  consultation?: ExternalConsultation;
+  consultation_id?: string;
+}
+
+export interface JointAssessmentEvent extends AguiEventBase {
+  type: 'JOINT_ASSESSMENT';
+  responsibility: Responsibility;
+  assessment?: JointAssessment | null;
+}
+
 export type AguiEvent =
   | RunStartedEvent
   | ToolCallStartEvent
@@ -84,7 +123,11 @@ export type AguiEvent =
   | RunErrorEvent
   | TextMessageStartEvent
   | TextMessageContentEvent
-  | TextMessageEndEvent;
+  | TextMessageEndEvent
+  | InvestigationPlanEvent
+  | BranchStatusEvent
+  | ExternalConsultationRequiredEvent
+  | JointAssessmentEvent;
 
 const EVENT_TYPE_SET = new Set<string>(AGUI_EVENT_TYPES);
 
@@ -92,4 +135,36 @@ export function isAguiEvent(value: unknown): value is AguiEvent {
   if (!value || typeof value !== 'object') return false;
   const type = (value as { type?: unknown }).type;
   return typeof type === 'string' && EVENT_TYPE_SET.has(type);
+}
+
+/** 解码单个 SSE 块；合法但尚未支持的事件类型由旧前端静默忽略。 */
+export function decodeAguiEventBlock(block: string): AguiEvent | null {
+  let namedType = '';
+  const dataLines: string[] = [];
+
+  for (const line of block.split(/\r?\n/)) {
+    if (line.startsWith(':')) continue;
+    const separator = line.indexOf(':');
+    const field = separator === -1 ? line : line.slice(0, separator);
+    let value = separator === -1 ? '' : line.slice(separator + 1);
+    if (value.startsWith(' ')) value = value.slice(1);
+    if (field === 'event') namedType = value;
+    if (field === 'data') dataLines.push(value);
+  }
+
+  if (!dataLines.length) return null;
+  const parsed: unknown = JSON.parse(dataLines.join('\n'));
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('服务返回了无法识别的 AG-UI 事件');
+  }
+
+  const candidate = parsed as { type?: unknown };
+  if (!candidate.type && namedType) candidate.type = namedType;
+  if (typeof candidate.type === 'string' && !EVENT_TYPE_SET.has(candidate.type)) {
+    return null;
+  }
+  if (!isAguiEvent(candidate)) {
+    throw new Error('服务返回了无法识别的 AG-UI 事件');
+  }
+  return candidate;
 }

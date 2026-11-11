@@ -7,6 +7,13 @@ import { runDiagnosisRound } from '../../diagnosis/run-round.js';
 import type { ModelConfiguration } from '../../model/configuration.js';
 import type { ProductStore } from '../../product/store.js';
 import type { ConversationRecord } from '../../domain/schemas.js';
+import {
+  InMemoryRunAdmission,
+  type RunAdmission,
+  type RunAdmissionGrant,
+} from '../../orchestration/admission.js';
+import type { AgentSlotRegistry } from '../../orchestration/agent-slot-registry.js';
+import type { ServerSignals } from '../../orchestration/server-signals.js';
 import { IM_MESSAGE_LIMIT, YachOAPI } from './oapi.js';
 import { InvalidYachEvent, parseYachEvent, type YachEvent } from './parse.js';
 import { YachProgressCard } from './progress.js';
@@ -36,6 +43,9 @@ export interface YachChannelDeps {
   diagnosisAgent: DiagnosisAgent;
   capabilities: CapabilityMcp;
   modelConfiguration: ModelConfiguration;
+  admission?: RunAdmission;
+  slotRegistry?: AgentSlotRegistry;
+  serverSignals?: ServerSignals;
 }
 
 export class YachChannel {
@@ -44,11 +54,13 @@ export class YachChannel {
   private readonly sessions = new Map<string, EmployeeSession>();
   private readonly seen = new Map<string, number>();
   private readonly mapping = new Map<string, string>();
+  private readonly admission: RunAdmission;
   private loop: Promise<void> | null = null;
   private closed = false;
 
   constructor(private readonly deps: YachChannelDeps) {
     const { config } = deps;
+    this.admission = deps.admission ?? new InMemoryRunAdmission(config.maxConcurrentRuns);
     this.api = new YachOAPI({
       baseUrl: config.yachBaseUrl,
       appKey: config.yachAppKey,
@@ -220,11 +232,30 @@ export class YachChannel {
     }
 
     const conversation = await this.resolveConversation(session, event, false);
+    if (conversation.run_state === 'waiting_confirmation') {
+      await this.api.sendMarkdown(event, '当前诊断等待外发确认，请先在网页工作台处理后再继续。');
+      return;
+    }
     const progress = new YachProgressCard(this.api, event);
     const abort = new AbortController();
     session.abort = abort;
     let sawText = false;
+    let admissionGrant: RunAdmissionGrant | undefined;
+    let terminalPersisted = false;
     try {
+      while (!admissionGrant && !abort.signal.aborted && !this.closed) {
+        const acquired = await this.admission.acquire({ conversationId: conversation.id });
+        if (acquired.ok) {
+          admissionGrant = acquired.grant;
+          break;
+        }
+        progress.update('等待可用诊断资源');
+        await this.admission.waitForChange(abort.signal);
+      }
+      if (!admissionGrant || abort.signal.aborted || this.closed) {
+        await progress.finish('已取消');
+        return;
+      }
       const result = await runDiagnosisRound({
         store: this.deps.store,
         diagnosisAgent: this.deps.diagnosisAgent,
@@ -232,10 +263,18 @@ export class YachChannel {
         modelConfiguration: this.deps.modelConfiguration,
         conversation,
         content: event.text,
+        runId: admissionGrant.runId,
         abortSignal: abort.signal,
         options: {
           knowledgeQueryLog: this.deps.config.knowledgeQueryLog,
           caseArchiveDir: this.deps.config.caseArchiveDir,
+          serverSignals: this.deps.serverSignals,
+          slotRegistry: this.deps.slotRegistry,
+          compassAvailable: Boolean(this.deps.slotRegistry && this.deps.config.a2aToken),
+          investigationBudget: {
+            maxSeconds: this.deps.config.investigationMaxSeconds,
+            maxRemoteCalls: this.deps.config.investigationMaxRemoteCalls,
+          },
         },
         onEvent: (streamEvent) => {
           const label = progressLabelForStreamEvent(streamEvent);
@@ -246,7 +285,27 @@ export class YachChannel {
           }
           progress.update(label);
         },
+        onOrchestrationEvent: (event) => {
+          const labels = {
+            INVESTIGATION_PLAN: '正在继续排查',
+            BRANCH_STATUS: event.type === 'BRANCH_STATUS' && event.branch === 'server'
+              ? '正在请求 Compass 协助排查'
+              : '正在检查应用',
+            EXTERNAL_CONSULTATION_REQUIRED: '等待你确认外发协查信息',
+            JOINT_ASSESSMENT: '正在整理联合调查结论',
+          } as const;
+          progress.update(labels[event.type]);
+        },
       });
+      terminalPersisted = result.terminalPersisted;
+      if (result.terminal === 'waiting_confirmation') {
+        await progress.finish('等待外发确认');
+        await this.api.sendMarkdown(
+          event,
+          `需要你确认是否发送协查信息，诊断尚未结束。请打开网页工作台核对并处理：${this.workbenchUrl()}`,
+        );
+        return;
+      }
       // /stop already sent a confirmation; skip cancelled final markdown.
       if (abort.signal.aborted) {
         await progress.finish('已取消');
@@ -270,6 +329,7 @@ export class YachChannel {
         // ignore
       }
     } finally {
+      if (admissionGrant && terminalPersisted) await this.admission.release(admissionGrant.runId);
       if (session.abort === abort) session.abort = null;
     }
   }

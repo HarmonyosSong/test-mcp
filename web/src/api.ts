@@ -17,6 +17,8 @@ import type {
 } from './types';
 
 const REQUEST_TIMEOUT_MS = 5_000;
+// 绑定仓库需要 fetch 和固定 commit 快照，不能沿用普通 API 的 5 秒超时。
+const REPOSITORY_SNAPSHOT_TIMEOUT_MS = 300_000;
 
 export class ApiError extends Error {
   constructor(
@@ -83,6 +85,12 @@ export const api = {
       },
       60_000,
     ),
+  updateRepository: (repositoryId: string, input: { default_branch: string }) =>
+    request<RepositoryRecord>(
+      `/repositories/${repositoryId}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+      60_000,
+    ),
   repositoryBranches: (repositoryId: string, query = '') =>
     request<RepositoryBranch[]>(
       `/repositories/${repositoryId}/branches?query=${encodeURIComponent(query)}`,
@@ -96,7 +104,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ branch }),
       },
-      180_000,
+      REPOSITORY_SNAPSHOT_TIMEOUT_MS,
     ),
   modelProviders: () => request<ModelProviderPreset[]>('/model/providers'),
   availableModels: () => request<string[]>('/model/available-models'),
@@ -135,9 +143,12 @@ export const api = {
     request<ChatConversation>('/conversations', {
       method: 'POST',
       body: JSON.stringify(input),
-    }),
+    }, REPOSITORY_SNAPSHOT_TIMEOUT_MS),
   getConversation: (id: string) => request<ChatConversation>(`/conversations/${id}`),
-  updateConversation: (id: string, patch: { title?: string; model_override?: string }) =>
+  updateConversation: (
+    id: string,
+    patch: { title?: string; model_override?: string; consult_compass?: boolean },
+  ) =>
     request<ChatConversation>(`/conversations/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),

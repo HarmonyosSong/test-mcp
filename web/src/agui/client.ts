@@ -1,11 +1,14 @@
 import { apiPath } from '../auth/paths';
 import { authenticatedFetch } from '../auth/session-fetch';
-import type { ChatConversation } from '../types';
+import type { ChatConversation, ConsultationAction } from '../types';
 import { reduceChatEvent } from './chatReducer';
-import { isAguiEvent, type AguiEvent, type AguiEventType } from './events';
+import { decodeAguiEventBlock, type AguiEvent } from './events';
 
 export class AguiUnavailableError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
     super(message);
     this.name = 'AguiUnavailableError';
   }
@@ -19,29 +22,6 @@ export class AguiRunError<TState> extends Error {
     super(message);
     this.name = 'AguiRunError';
   }
-}
-
-function decodeEventBlock(block: string): AguiEvent | null {
-  let namedType = '';
-  const dataLines: string[] = [];
-
-  for (const line of block.split(/\r?\n/)) {
-    if (line.startsWith(':')) continue;
-    const separator = line.indexOf(':');
-    const field = separator === -1 ? line : line.slice(0, separator);
-    let value = separator === -1 ? '' : line.slice(separator + 1);
-    if (value.startsWith(' ')) value = value.slice(1);
-    if (field === 'event') namedType = value;
-    if (field === 'data') dataLines.push(value);
-  }
-
-  if (!dataLines.length) return null;
-  const parsed = JSON.parse(dataLines.join('\n')) as Record<string, unknown>;
-  if (!parsed.type && namedType) parsed.type = namedType as AguiEventType;
-  if (!isAguiEvent(parsed)) {
-    throw new Error('服务返回了无法识别的 AG-UI 事件');
-  }
-  return parsed;
 }
 
 interface EventStreamOptions<TState> {
@@ -80,7 +60,7 @@ async function readEventStream<TState>(
     } catch {
       // The status remains actionable when the response has no JSON body.
     }
-    throw new AguiUnavailableError(message);
+    throw new AguiUnavailableError(message, response.status);
   }
 
   const contentType = response.headers.get('content-type') || '';
@@ -95,7 +75,7 @@ async function readEventStream<TState>(
   let receivedEvent = false;
 
   const consume = (block: string) => {
-    const event = decodeEventBlock(block);
+    const event = decodeAguiEventBlock(block);
     if (!event) return;
     receivedEvent = true;
     current = options.reduce(current, event);
@@ -141,6 +121,29 @@ export async function streamChatMessage(
   return readEventStream<ChatConversation>(
     apiPath(`/conversations/${conversationId}/messages`),
     { content },
+    {
+      signal: options.signal,
+      onEvent: options.onEvent,
+      reduce: reduceChatEvent,
+    },
+  );
+}
+
+/** 审批请求不携带任何可修改外发内容的字段，恢复轮次仍走统一 AG-UI 流。 */
+export async function streamConsultationDecision(
+  conversationId: string,
+  consultationId: string,
+  decision: ConsultationAction['decision'],
+  options: {
+    signal?: AbortSignal;
+    onEvent?: (event: AguiEvent, conversation: ChatConversation | null) => void;
+  } = {},
+): Promise<ChatConversation> {
+  return readEventStream<ChatConversation>(
+    apiPath(
+      `/conversations/${encodeURIComponent(conversationId)}/consultations/${encodeURIComponent(consultationId)}/${decision}`,
+    ),
+    {},
     {
       signal: options.signal,
       onEvent: options.onEvent,

@@ -10,6 +10,7 @@ import { RepositorySettingsDialog } from './components/RepositorySettingsDialog'
 import { Sidebar } from './components/Sidebar';
 import { Typewriter } from './components/Typewriter';
 import { useChatSessions } from './hooks/useChatSessions';
+import { upsertRepository } from './repositories';
 import type {
   ConnectionState,
   MetaResponse,
@@ -55,9 +56,7 @@ function App() {
   const initialized = useRef(false);
 
   const handleRepositoryRegistered = useCallback((repository: RepositoryRecord) => {
-    setRepositories((current) =>
-      [...current, repository].sort((a, b) => a.name.localeCompare(b.name)),
-    );
+    setRepositories((current) => upsertRepository(current, repository));
   }, []);
 
   const chat = useChatSessions({
@@ -232,6 +231,13 @@ function App() {
               onSend={(content) => void chat.send(content)}
               onStop={chat.stop}
               onModelChange={(spec) => void chat.setModelOverride(spec)}
+              progress={chat.progress}
+              consultationAction={chat.consultationAction}
+              consultCompassSaving={chat.consultCompassSaving}
+              onConsultCompassChange={(allowed) => void chat.setConsultCompass(allowed)}
+              onConsultationDecision={(consultationId, decision) =>
+                void chat.decideConsultation(consultationId, decision)
+              }
             />
           ) : (
             <div className="chat-guide" role="status">
