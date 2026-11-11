@@ -91,6 +91,10 @@ yach-cli config init --app_key "$HARMONY_AGENT_YACH_APP_KEY" --app_secret "$HARM
 
 约束：同一 `app_key` 的 event Bus **单副本**；多副本会抢长连接。
 
+### Docker
+
+在原平台 Dockerfile 上补充（见仓库根 [`Dockerfile`](../Dockerfile)）：去掉 `yach-bridge`；运行镜像安装钉版本 `yach-cli`。`.env` 由平台挂载，runtime 启动读配置后自动 `config init`，Dockerfile 不必再写一遍密钥/init。长连接仅 amd64。
+
 ## 6. 验收
 
 - 私聊文本进诊断并回 markdown
