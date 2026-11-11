@@ -7,6 +7,7 @@ export function progressLabelForTool(toolName: string): string {
     || name.includes('cloud_logs')
     || name.includes('log_catalog')
     || name.includes('logcenter')
+    || name.includes('client_sessions')
   ) {
     return '正在查询远程日志';
   }

@@ -142,13 +142,18 @@ async function setup(turns: Turn[], maxToolFailures?: number) {
 async function run(
   diagnosis: DiagnosisAgent,
   content: string,
-  options: { conversation?: Partial<DiagnosisRunInput['conversation']>; toolsets?: DiagnosisRunInput['toolsets'] } = {},
+  options: {
+    conversation?: Partial<DiagnosisRunInput['conversation']>;
+    toolsets?: DiagnosisRunInput['toolsets'];
+    clientSteps?: DiagnosisRunInput['clientSteps'];
+  } = {},
 ) {
   const events = [];
   for await (const event of diagnosis.stream({
     conversation: { id: 'legacy-regression', messages: [], evidence_state: {}, ...options.conversation },
     content,
     toolsets: options.toolsets,
+    clientSteps: options.clientSteps,
   })) events.push(event);
   return events;
 }
@@ -192,6 +197,29 @@ test('Mastra stream pairs each tool result with the originating call ID', async 
   assert.equal(ends.length, 1);
   assert.equal(ends[0]!.event.id, starts[0]!.event.id);
   assert.equal(ends[0]!.event.status, 'completed');
+});
+
+test('工具事件不会持久化模型复述的原始学员标识', async () => {
+  const rawQuery = 'uid=student-fixture-001 phone=+8613800000000';
+  const { diagnosis } = await setup([
+    { tool: 'lookup_issue', args: { query: rawQuery } },
+    { text: '已完成查询。' },
+  ]);
+  const lookup = createTool({
+    id: 'lookup_issue',
+    description: 'fixture query',
+    inputSchema: z.object({ query: z.string() }),
+    execute: async ({ query }) => ({ query, authorization: 'Bearer fixture-secret-token' }),
+  });
+  const events = await run(diagnosis, '学员编号: student-fixture-001; 联系电话: +8613800000000', {
+    toolsets: { knowledge: { lookup_issue: lookup } },
+  });
+  const serialized = JSON.stringify(events.filter((event) => event.type === 'tool-start' || event.type === 'tool-end'));
+  assert.equal(serialized.includes('student-fixture-001'), false);
+  assert.equal(serialized.includes('+8613800000000'), false);
+  assert.equal(serialized.includes('13800000000'), false);
+  assert.equal(serialized.includes('fixture-secret-token'), false);
+  assert.match(serialized, /learner_id:[a-f0-9]{16}/);
 });
 
 test('invalid report tool input is paired as failed and a corrected report can complete', async () => {
@@ -306,6 +334,47 @@ test('skills requiring unavailable tools are omitted and cannot be loaded', asyn
   const failedLoad = events.find((event: any) => event.type === 'tool-end' && event.event.tool === 'load_skill');
   assert.equal((failedLoad as any)?.event.status, 'failed');
   assert.match((failedLoad as any)?.event.result_summary, /unavailable skill/);
+});
+
+test('observe→source 门禁在目录不覆盖后允许重试同一源码调用', async () => {
+  const { diagnosis } = await setup([
+    { tool: 'read_project_file', args: { relative_path: 'Entry.ets' } },
+    { tool: 'resolve_log_target', args: { query: '页面打开失败' } },
+    { tool: 'read_project_file', args: { relative_path: 'Entry.ets' } },
+    { text: '日志目录未覆盖，源码观察不代表平台已确认。' },
+  ]);
+  let sourceReads = 0;
+  const read = createTool({
+    id: 'read_project_file',
+    description: 'Read source.',
+    inputSchema: z.object({ relative_path: z.string() }),
+    execute: async () => {
+      sourceReads += 1;
+      return { path: 'Entry.ets', start_line: 1, end_line: 1, content: 'const value = 1;' };
+    },
+  });
+  const resolve = createTool({
+    id: 'resolve_log_target',
+    description: 'Resolve log target.',
+    inputSchema: z.object({ query: z.string() }),
+    execute: async () => ({ status: 'not_found', candidates: [] }),
+  });
+  const events = await run(diagnosis, '页面打开失败', {
+    conversation: { workspace_path: '/fixture' },
+    clientSteps: ['observe', 'source'],
+    toolsets: { repository: { read_project_file: read }, log_catalog: { resolve_log_target: resolve, search_cloud_logs: createTool({
+      id: 'search_cloud_logs', description: 'Search logs.', inputSchema: z.object({}), execute: async () => ({ logs: [] }),
+    }) } },
+  });
+  const ends = events.filter((event: any) => event.type === 'tool-end') as Array<any>;
+  assert.deepEqual(ends.map((event) => [event.event.tool, event.event.status]), [
+    ['read_project_file', 'failed'],
+    ['resolve_log_target', 'completed'],
+    ['read_project_file', 'completed'],
+  ]);
+  assert.match(ends[0].event.result_summary, /client_observation_required/);
+  assert.equal(sourceReads, 1);
+  assert.equal(events.at(-1)?.type, 'completed');
 });
 
 test('legacy source-location case records a real observation before submitting a positive report', async () => {

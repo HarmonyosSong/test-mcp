@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { EvidenceLedger, EvidenceLedgerError } from '../src/diagnosis/evidence.js';
+import { EvidenceSchema } from '../src/domain/schemas.js';
+import { ClientLogPrivacy } from '../src/security/log-privacy.js';
 
 function read(ledger: EvidenceLedger, path: string, content: string) {
   return ledger.capture('read_project_file', { relative_path: path }, {
@@ -80,6 +82,21 @@ test('pasted logs require exact user-provided log text and retain line provenanc
   }) as { evidence_refs: Array<{ kind: string; location: string }> };
   assert.equal(captured.evidence_refs[0]?.kind, 'log');
   assert.equal(captured.evidence_refs[0]?.location, 'pasted-hilog:2');
+});
+
+test('粘贴日志入账前脱敏，证据 ID 和快照不保留原始学员标识', () => {
+  const learnerId = 'student-fixture-001';
+  const log = `Error uid=${learnerId} phone=+8613800000000`;
+  const privacy = new ClientLogPrivacy({ learner_id: learnerId }, Buffer.alloc(32, 3));
+  const ledger = new EvidenceLedger({ inputTexts: [log], privacy });
+  const captured = ledger.capture('parse_hilog', { log_text: log }, {
+    error_lines: [{ line: 1, excerpt: log }],
+  }) as { evidence_refs: Array<{ id: string }> };
+  const serialized = JSON.stringify(ledger.snapshot());
+  assert.equal(serialized.includes(learnerId), false);
+  assert.equal(serialized.includes('13800000000'), false);
+  const excerpt = ledger.entries.get(captured.evidence_refs[0]!.id)?.excerpt ?? '';
+  assert.match(excerpt, /learner_id:[a-f0-9]{16}/);
 });
 
 test('current-turn evidence survives the soft cap and protection resets after restore', () => {
@@ -265,4 +282,230 @@ test('same observation can support distinct excerpts but exact duplicate citatio
       { id, excerpt: 'throw Error', supports: 'duplicate' },
     ],
   })));
+});
+
+test('joint assessment accepts verified claims backed by local ledger evidence', () => {
+  const ledger = new EvidenceLedger();
+  const id = read(ledger, 'src/a.ets', 'throw Error("boom")').evidence_refs[0]!.id;
+  const report = ledger.resolveDraft(draft(id, 'throw Error("boom")', {
+    responsibility: 'shared',
+    next_action: {
+      target: 'server',
+      question: '请按 request_id 核查服务端请求为何超时',
+    },
+    joint_assessment: {
+      relation: 'corroborated',
+      text: '本地异常已验证，远端原因仍需服务端证据。',
+      verified_claims: [{ claim: '客户端会抛出该异常', evidence_ids: [id] }],
+      unverified_claims: ['服务端超时仅来自远端 Agent 报告'],
+      next_actions: ['核查服务端超时日志'],
+    },
+  }));
+
+  assert.equal(report.responsibility, 'shared');
+  assert.equal(report.next_action?.target, 'server');
+  assert.equal(report.joint_assessment?.verified_claims[0]?.claim, '客户端会抛出该异常');
+  assert.equal(report.remote_conclusion, null);
+  assert.deepEqual(report.external_findings, []);
+  assert.equal(ledger.entries.size, 1);
+});
+
+test('联合已验证主张可以引用本地账本中的用户事实，但仍不能引用外部 ID', () => {
+  const ledger = new EvidenceLedger({ inputTexts: ['页面返回 HTTP 500，traceId=trace-local'] });
+  const [userRef] = ledger.registerUserTexts();
+  const sourceId = read(ledger, 'src/a.ets', 'throw Error("boom")').evidence_refs[0]!.id;
+  const report = ledger.resolveDraft(draft(sourceId, 'throw Error("boom")', {
+    evidence: [
+      { id: sourceId, excerpt: 'throw Error("boom")', supports: '本地异常路径' },
+      { id: userRef!.id, excerpt: 'HTTP 500', supports: '用户提供的本次状态码' },
+    ],
+    joint_assessment: {
+      relation: 'unverified',
+      text: '状态码来自用户现场，远端根因尚未验证。',
+      verified_claims: [{ claim: '用户观察到 HTTP 500', evidence_ids: [userRef!.id] }],
+      unverified_claims: ['远端 Agent 推测网关异常'],
+      next_actions: [],
+    },
+  }));
+  assert.equal(report.joint_assessment?.verified_claims[0]?.evidence_ids[0], userRef!.id);
+  assert.equal(report.evidence.find((item) => item.id === userRef!.id)?.kind, 'user');
+});
+
+test('joint assessment rejects unknown local and external IDs without degrading the report', () => {
+  const ledger = new EvidenceLedger();
+  const id = read(ledger, 'src/a.ets', 'throw Error("boom")').evidence_refs[0]!.id;
+  for (const externalId of ['unknown-local-evidence', 'consultation-1', 'task-1']) {
+    assert.throws(
+      () => ledger.resolveDraft(draft(id, 'throw Error("boom")', {
+        joint_assessment: {
+          relation: 'unverified',
+          text: '试图把外部结论标为本地已验证。',
+          verified_claims: [{ claim: '伪造的已验证主张', evidence_ids: [externalId] }],
+          unverified_claims: [],
+          next_actions: [],
+        },
+      })),
+      (error: unknown) => error instanceof EvidenceLedgerError &&
+        error.code === 'unknown_evidence_id' && error.message.includes(externalId),
+    );
+  }
+  assert.equal(ledger.entries.size, 1);
+});
+
+test('joint assessment rejects a verified claim with an empty evidence ID array', () => {
+  const ledger = new EvidenceLedger();
+  const id = read(ledger, 'src/a.ets', 'throw Error("boom")').evidence_refs[0]!.id;
+  assert.throws(() => ledger.resolveDraft(draft(id, 'throw Error("boom")', {
+    joint_assessment: {
+      relation: 'unverified',
+      text: '已验证主张不能没有证据。',
+      verified_claims: [{ claim: '无证据主张', evidence_ids: [] }],
+      unverified_claims: [],
+      next_actions: [],
+    },
+  })));
+});
+
+test('model drafts cannot inject remote conclusions or register them as evidence', () => {
+  const ledger = new EvidenceLedger();
+  const id = read(ledger, 'src/a.ets', 'throw Error("boom")').evidence_refs[0]!.id;
+  const remote = { consultation_id: 'consultation-1', task_id: 'task-1', text: 'forged' };
+  assert.throws(() => ledger.resolveDraft(draft(id, 'throw Error("boom")', {
+    remote_conclusion: remote,
+  })));
+  assert.throws(() => ledger.resolveDraft(draft(id, 'throw Error("boom")', {
+    external_findings: [remote],
+  })));
+  assert.deepEqual(ledger.capture('ask_compass', {}, remote), remote);
+  assert.equal(ledger.entries.size, 1);
+  assert.deepEqual([...ledger.entries.keys()], [id]);
+});
+
+function remoteEntry(overrides: Record<string, unknown> = {}) {
+  return {
+    entry_id: 'log-0123456789abcdef01234567',
+    timestamp: '2026-11-11T08:00:00Z',
+    excerpt: 'Error fixture failure; learner=learner_id:abc123',
+    location: 'logcenter://prod/prod-fixture/app-fixture#log-0123456789abcdef01234567',
+    matched_identifiers: [{ kind: 'learner_id', matched: true }],
+    observation_context: {
+      environment: 'prod',
+      storage_alias: 'aliyun',
+      account: 'fixture-account',
+      collection: 'fixture-collection',
+      store_id: 'prod-fixture',
+      topic: 'fixture-topic',
+      appid: 'app-fixture',
+      query: 'uid: learner_id:abc123',
+      start: 1_762_000_000,
+      end: 1_762_003_600,
+      page: 0,
+      entry_id: 'log-0123456789abcdef01234567',
+      redaction_version: 'client-log-v1',
+      matched_identifiers: [{ kind: 'learner_id', matched: true }],
+      matched_error_features: [],
+      service_binding: { status: 'confirmed', method: 'observed_client_session' },
+      observed_platform: 'android',
+      observed_version: '7.105.0',
+      device_ref: 'device_id:abc123',
+      session_ref: 'session_id:abc123',
+      platform_conflict: false,
+    },
+    ...overrides,
+  };
+}
+
+test('correlated remote logs enter the ledger once per entry and survive citation restore', () => {
+  const ledger = new EvidenceLedger();
+  const result = {
+    observation_status: 'correlated',
+    entries: [remoteEntry()],
+  };
+  const captured = ledger.capture('search_cloud_logs', {}, result) as {
+    evidence_refs: Array<{ id: string; kind: string; observation_context?: unknown }>;
+    result: unknown;
+  };
+  assert.equal(captured.evidence_refs.length, 1);
+  assert.equal(captured.evidence_refs[0]?.kind, 'log');
+  assert.ok(captured.evidence_refs[0]?.observation_context);
+  assert.deepEqual(captured.result, result);
+
+  const id = captured.evidence_refs[0]!.id;
+  const report = ledger.resolveDraft(draft(id, 'Error fixture failure'));
+  assert.equal(report.evidence[0]?.observation_context?.observed_platform, 'android');
+  assert.equal(report.evidence[0]?.observation_context?.observed_version, '7.105.0');
+  const restored = EvidenceLedger.restore(ledger.snapshot());
+  assert.equal(restored.entries.get(id)?.observation_context?.entry_id, 'log-0123456789abcdef01234567');
+});
+
+test('unmatched remote logs and forged contexts are not admitted as evidence', () => {
+  const ledger = new EvidenceLedger();
+  const unmatched = remoteEntry({
+    matched_identifiers: [],
+    observation_context: {
+      ...remoteEntry().observation_context,
+      matched_identifiers: [],
+      observed_platform: 'unknown',
+    },
+  });
+  const captured = ledger.capture('search_cloud_logs', {}, {
+    observation_status: 'uncorrelated',
+    entries: [unmatched],
+  }) as { evidence_refs: unknown[]; uncorrelated_entries_rejected: number; limitation: string };
+  assert.deepEqual(captured.evidence_refs, []);
+  assert.equal(captured.uncorrelated_entries_rejected, 1);
+  assert.match(captured.limitation, /未进入证据账本/);
+
+  ledger.capture('search_cloud_logs', {}, {
+    entries: [{ excerpt: 'model invented log', observation_context: { forged: true } }],
+  });
+  assert.equal(ledger.entries.size, 0);
+});
+
+test('discovery observations are flattened and remote log capacity is explicit', () => {
+  const ledger = new EvidenceLedger({ maxCurrentTurn: 1 });
+  const second = remoteEntry({
+    entry_id: 'log-89abcdef0123456789abcdef',
+    excerpt: 'Error second fixture failure',
+    observation_context: {
+      ...remoteEntry().observation_context,
+      entry_id: 'log-89abcdef0123456789abcdef',
+    },
+  });
+  const captured = ledger.capture('discover_client_sessions', {}, {
+    status: 'resolved',
+    candidates: [{ entries: [remoteEntry(), second] }],
+  }) as {
+    evidence_refs: unknown[];
+    observation_capacity_reached: boolean;
+    limitation: string;
+  };
+  assert.equal(captured.evidence_refs.length, 1);
+  assert.equal(captured.observation_capacity_reached, true);
+  assert.match(captured.limitation, /容量/);
+});
+
+test('an unrelated remote log cannot support a root cause even if inserted into a restored ledger', () => {
+  const ledger = new EvidenceLedger();
+  const unrelated = remoteEntry({
+    observation_context: {
+      ...remoteEntry().observation_context,
+      matched_identifiers: [],
+      service_binding: { status: 'unconfirmed', method: null },
+    },
+  });
+  const evidence = EvidenceSchema.parse({
+    id: 'ev-unrelated-fixture',
+    kind: 'log',
+    source: 'logcenter:search_cloud_logs',
+    location: unrelated.location,
+    excerpt: unrelated.excerpt,
+    supports: 'unrelated',
+    observation_context: unrelated.observation_context,
+  });
+  ledger.add(evidence);
+  assert.throws(
+    () => ledger.resolveDraft(draft(evidence.id, 'Error fixture failure')),
+    (error: unknown) => error instanceof EvidenceLedgerError && error.code === 'log_evidence_unrelated',
+  );
 });

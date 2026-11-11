@@ -2,6 +2,7 @@ import { appendFile, chmod, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import type { ConversationRecord } from '../domain/schemas.js';
+import { redactRecord } from '../security/redaction.js';
 
 function prettyJson(value: unknown): string {
   return JSON.stringify(value, null, 2) + '\n';
@@ -15,6 +16,7 @@ export async function archiveDiagnosisCase(
   directory: string,
   conversation: ConversationRecord,
   messageId: string,
+  redact: (text: string) => string = (text) => text,
 ): Promise<string> {
   const message = conversation.messages.find((item) => item.id === messageId);
   if (!message || message.role !== 'assistant' || message.status === 'streaming') {
@@ -24,7 +26,7 @@ export async function archiveDiagnosisCase(
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await chmod(dirname(path), 0o700);
   try {
-    await writeFile(path, prettyJson({
+    await writeFile(path, prettyJson(redactRecord({
       id: `${conversation.id}-${message.id}`,
       conversation_id: conversation.id,
       message_id: message.id,
@@ -36,7 +38,7 @@ export async function archiveDiagnosisCase(
       evidence_state: conversation.evidence_state,
       review: null,
       knowledge_entry: null,
-    }), { flag: 'wx', encoding: 'utf8', mode: 0o600 });
+    }, redact)), { flag: 'wx', encoding: 'utf8', mode: 0o600 });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }

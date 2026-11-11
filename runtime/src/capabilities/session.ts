@@ -1,5 +1,6 @@
 import type { ToolsetsInput } from '@mastra/core/agent';
 
+import type { LogToolCorrelation } from './log-center.js';
 import type { CapabilityMcp } from './mcp.js';
 
 export interface CapabilityContext {
@@ -7,6 +8,7 @@ export interface CapabilityContext {
   readonly messageId: string;
   readonly runId: string;
   readonly workspacePath: string | null;
+  readonly logCorrelation?: LogToolCorrelation;
   readonly abortSignal?: AbortSignal;
 }
 
@@ -116,8 +118,8 @@ export function createRoundCapabilitySession(provider: CapabilityMcp, context: C
   registrations.push({
     id: 'log_catalog',
     optional: true,
-    create: async ({ abortSignal }) => {
-      const session = await provider.createLogCatalogTools?.({ abortSignal });
+    create: async ({ abortSignal, logCorrelation }) => {
+      const session = await provider.createLogCatalogTools?.({ abortSignal, correlation: logCorrelation });
       return session ? { toolsets: { log_catalog: session.tools } } : null;
     },
   });

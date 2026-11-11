@@ -136,13 +136,39 @@ test('round factory keeps unconfigured logs absent and does not expose configure
     try {
       assert.deepEqual(Object.keys(session.toolsets), configured ? ['log_catalog'] : []);
       if (configured) {
-        assert.deepEqual(Object.keys(session.toolsets.log_catalog!), ['resolve_log_target', 'count_cloud_logs', 'search_cloud_logs']);
+        assert.deepEqual(Object.keys(session.toolsets.log_catalog!), [
+          'resolve_log_target', 'count_cloud_logs', 'search_cloud_logs', 'discover_client_sessions',
+        ]);
       } else {
         assert.deepEqual(session.unavailable, ['knowledge', 'log_catalog']);
       }
     } finally {
       await session.close();
     }
+  }
+});
+
+test('日志关联上下文只通过私有 capability 参数透传', async () => {
+  const provider = new CapabilityMcp(loadRuntimeConfig({}));
+  provider.createKnowledgeSession = async () => null;
+  let received: unknown;
+  provider.createLogCatalogTools = async (options) => {
+    received = options;
+    return null;
+  };
+  const correlation = {
+    identifiers: { learner_id: 'student-fixture-001' },
+    sourceText: '学员编号: student-fixture-001',
+  };
+  const session = await createRoundCapabilitySession(provider, {
+    conversationId: 'conv-1', messageId: 'msg-1', runId: 'run-1', workspacePath: null,
+    logCorrelation: correlation,
+  });
+  try {
+    assert.deepEqual(received, { abortSignal: session.context.abortSignal, correlation });
+    assert.equal(JSON.stringify(session.toolsets).includes('student-fixture-001'), false);
+  } finally {
+    await session.close();
   }
 });
 

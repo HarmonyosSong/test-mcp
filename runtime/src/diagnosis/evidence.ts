@@ -8,6 +8,7 @@ import {
   type DiagnosisReportDraft,
   type Evidence,
 } from '../domain/schemas.js';
+import type { ClientLogPrivacy } from '../security/log-privacy.js';
 
 export type EvidenceSnapshot = {
   entries: Evidence[];
@@ -25,7 +26,8 @@ export class EvidenceLedgerError extends Error {
       | 'unknown_evidence_id'
       | 'evidence_expired'
       | 'excerpt_mismatch'
-      | 'positive_without_observed_source',
+      | 'positive_without_observed_source'
+      | 'log_evidence_unrelated',
     message: string,
   ) {
     super(`${code}: ${message}`);
@@ -113,8 +115,10 @@ export class EvidenceLedger {
     maxEntries?: number;
     maxCurrentTurn?: number;
     maxCurrentTurnBytes?: number;
+    privacy?: ClientLogPrivacy;
   } = {}) {
     this.inputTexts = [...(options.inputTexts ?? [])];
+    this.privacy = options.privacy;
     this.maxEntries = positiveInteger(options.maxEntries, DEFAULTS.maxEntries);
     this.maxCurrentTurn = positiveInteger(options.maxCurrentTurn, DEFAULTS.maxCurrentTurn);
     this.maxCurrentTurnBytes = positiveInteger(
@@ -126,6 +130,7 @@ export class EvidenceLedger {
   readonly maxEntries: number;
   readonly maxCurrentTurn: number;
   readonly maxCurrentTurnBytes: number;
+  private readonly privacy?: ClientLogPrivacy;
 
   registerUserTexts(): Array<{ id: string; preview: string }> {
     return this.inputTexts.map((text) => {
@@ -185,10 +190,11 @@ export class EvidenceLedger {
     };
   }
 
-  static restore(state: unknown, inputTexts: string[] = []): EvidenceLedger {
+  static restore(state: unknown, inputTexts: string[] = [], privacy?: ClientLogPrivacy): EvidenceLedger {
     const snapshot = isRecord(state) ? state : {};
     const ledger = new EvidenceLedger({
       inputTexts,
+      privacy,
       maxEntries: positiveInteger(snapshot.max_entries, DEFAULTS.maxEntries),
       maxCurrentTurn: positiveInteger(snapshot.max_current_turn, DEFAULTS.maxCurrentTurn),
       maxCurrentTurnBytes: positiveInteger(
@@ -220,6 +226,9 @@ export class EvidenceLedger {
   }
 
   capture(name: string, arguments_: Record<string, unknown>, result: unknown): unknown {
+    if (name === 'search_cloud_logs' || name === 'discover_client_sessions') {
+      return this.captureRemoteLogs(name, result);
+    }
     const observedTools = new Set(['read_project_file', 'search_project_text', 'parse_hilog']);
     if (!observedTools.has(name)) return result;
 
@@ -250,8 +259,11 @@ export class EvidenceLedger {
     let capacityReached = false;
     for (const row of rows) {
       if (!isRecord(row)) continue;
-      const text = row.content ?? row.excerpt ?? '';
-      if (typeof text !== 'string' || !text.trim()) continue;
+      const rawText = row.content ?? row.excerpt ?? '';
+      if (typeof rawText !== 'string' || !rawText.trim()) continue;
+      const text = name === 'parse_hilog' && this.privacy
+        ? String(this.privacy.sanitize(rawText).value)
+        : rawText;
       const path = row.path ?? 'pasted-hilog';
       const line = row.line ?? row.start_line ?? 1;
       const location = `${String(path)}:${String(line)}`;
@@ -283,6 +295,103 @@ export class EvidenceLedger {
     return { evidence_refs: evidenceRefs, result };
   }
 
+  private captureRemoteLogs(name: string, result: unknown): unknown {
+    if (!isRecord(result)) return { evidence_refs: [], result };
+    const rows = name === 'search_cloud_logs'
+      ? result.entries
+      : Array.isArray(result.candidates)
+        ? result.candidates.flatMap((candidate) => isRecord(candidate) && Array.isArray(candidate.entries)
+          ? candidate.entries
+          : [])
+        : [];
+    if (!Array.isArray(rows)) return { evidence_refs: [], result };
+
+    const evidenceRefs: Array<Omit<Evidence, 'excerpt' | 'supports'>> = [];
+    let rejected = 0;
+    let capacityReached = false;
+    for (const row of rows) {
+      if (!isRecord(row) || !isRecord(row.observation_context)) {
+        rejected += 1;
+        continue;
+      }
+      const context = row.observation_context;
+      const correlated = context.service_binding !== undefined
+        && isRecord(context.service_binding)
+        && context.service_binding.status === 'confirmed'
+        && Array.isArray(context.matched_identifiers)
+        && context.matched_identifiers.length > 0;
+      const text = row.excerpt;
+      if (!correlated || typeof text !== 'string' || !text.trim()) {
+        rejected += 1;
+        continue;
+      }
+      const location = typeof row.location === 'string' ? row.location : null;
+      // 不用模型工具参数生成 ID，避免原始学员标识进入证据快照。
+      const idPayload = pythonJson([
+        name,
+        {
+          entry_id: context.entry_id,
+          store_id: context.store_id,
+          appid: context.appid,
+          start: context.start,
+          end: context.end,
+          page: context.page,
+        },
+        location,
+        text,
+      ]);
+      try {
+        const evidence = EvidenceSchema.parse({
+          id: `ev-${sha256(idPayload).slice(0, 16)}`,
+          kind: 'log',
+          source: `logcenter:${name}`,
+          location,
+          excerpt: codepointSlice(text, 2_000),
+          supports: '已绑定目标并匹配当前用户标识的脱敏远程日志；因果关系仍需判断',
+          observation_context: context,
+        });
+        if (!this.add(evidence, text)) {
+          capacityReached = true;
+          break;
+        }
+        const { excerpt: _excerpt, supports: _supports, ...reference } = evidence;
+        evidenceRefs.push(reference);
+      } catch {
+        rejected += 1;
+      }
+    }
+    return {
+      evidence_refs: evidenceRefs,
+      result,
+      ...(rejected > 0 ? { uncorrelated_entries_rejected: rejected } : {}),
+      ...(capacityReached ? {
+        observation_capacity_reached: true,
+        limitation: '本轮观测容量已达上限；未接纳的日志没有可引用 ID。请用已有观测收尾。',
+      } : evidenceRefs.length === 0 && rows.length > 0 ? {
+        limitation: '日志未完成当前学员身份匹配或目标绑定，未进入证据账本；不能据此确认平台或根因。',
+      } : {}),
+    };
+  }
+
+  private validateVerifiedClaims(report: DiagnosisReport): void {
+    report.joint_assessment?.verified_claims.forEach((claim, claimIndex) => {
+      for (const id of claim.evidence_ids) {
+        if (this.entries.has(id) || this.userRefs.has(id)) continue;
+        if (this.evicted.has(id)) {
+          this.expiredCount += 1;
+          throw new EvidenceLedgerError(
+            'evidence_expired',
+            `joint_assessment.verified_claims[${claimIndex}] 引用的 ${id} 已被淘汰；请重新观测后再提交。`,
+          );
+        }
+        throw new EvidenceLedgerError(
+          'unknown_evidence_id',
+          `joint_assessment.verified_claims[${claimIndex}] 引用的 ${id} 不在本地证据账本中；consultation、task 和其他外部 ID 不能作为已验证主张的证据。`,
+        );
+      }
+    });
+  }
+
   resolveDraft(rawDraft: DiagnosisReportDraft | unknown): DiagnosisReport {
     const draft = DiagnosisReportDraftSchema.parse(rawDraft);
     const resolved: Evidence[] = [];
@@ -299,8 +408,8 @@ export class EvidenceLedger {
           id: citation.id,
           kind: 'user',
           source: 'user-message',
-          location: `${codepointSlice(userText, 30)}${Array.from(userText).length > 30 ? '…' : ''}`,
-          excerpt: citation.excerpt,
+          location: `${codepointSlice(this.privacy ? String(this.privacy.sanitize(userText).value) : userText, 30)}${Array.from(userText).length > 30 ? '…' : ''}`,
+          excerpt: this.privacy ? String(this.privacy.sanitize(citation.excerpt).value) : citation.excerpt,
           supports: citation.supports,
         }));
         continue;
@@ -338,12 +447,26 @@ export class EvidenceLedger {
         location: observed.location,
         excerpt: citation.excerpt,
         supports: citation.supports,
+        observation_context: observed.observation_context,
       }));
     }
 
     const report = DiagnosisReportSchema.parse({ ...draft, evidence: resolved });
     const byId = new Map(report.evidence.map((item) => [item.id, item]));
     for (const candidate of report.root_cause_candidates) {
+      for (const id of candidate.evidence_ids) {
+        const item = byId.get(id);
+        const context = item?.observation_context;
+        if (item?.kind === 'log' && context && !(
+          context.service_binding.status === 'confirmed'
+          && context.matched_identifiers.length > 0
+        )) {
+          throw new EvidenceLedgerError(
+            'log_evidence_unrelated',
+            '远程日志未完成目标绑定和当前学员身份匹配，不能支持根因候选；请补充关联日志或移除该候选。',
+          );
+        }
+      }
       if (!candidate.evidence_ids.some((id) => {
         const item = byId.get(id);
         return item?.kind === 'source' || item?.kind === 'log';
@@ -354,6 +477,7 @@ export class EvidenceLedger {
         );
       }
     }
+    this.validateVerifiedClaims(report);
     return report;
   }
 }
