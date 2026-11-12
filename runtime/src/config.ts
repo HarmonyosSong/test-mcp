@@ -120,6 +120,9 @@ export const runtimeConfigSchema = z.object({
   logcenterAppSecret: z.string().default(''),
   logcenterBaseUrl: z.string().default('https://logcenter-api.tal.com/api'),
   logcenterTimeoutMs: z.coerce.number().int().min(100).max(120_000).default(15_000),
+  /** 空 = 不启用学员编号→uid；生产内网默认见 .env.example。 */
+  ucenterBaseUrl: z.string().default(''),
+  ucenterTimeoutMs: z.coerce.number().int().min(100).max(60_000).default(10_000),
 });
 
 export type RuntimeConfig = Omit<
@@ -216,6 +219,8 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     logcenterAppSecret: env.HARMONY_AGENT_LOGCENTER_APP_SECRET,
     logcenterBaseUrl: env.HARMONY_AGENT_LOGCENTER_BASE_URL,
     logcenterTimeoutMs: env.HARMONY_AGENT_LOGCENTER_TIMEOUT_MS,
+    ucenterBaseUrl: env.HARMONY_AGENT_UCENTER_BASE_URL,
+    ucenterTimeoutMs: env.HARMONY_AGENT_UCENTER_TIMEOUT_MS,
   });
   const projectRoot = resolve(repositoryRoot, config.projectRoot);
   const fromRoot = (path: string) => resolve(projectRoot, path);
@@ -288,6 +293,8 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     logcenterAppId: config.logcenterAppId.trim(),
     logcenterAppSecret: config.logcenterAppSecret.trim(),
     logcenterBaseUrl: (config.logcenterBaseUrl.trim() || 'https://logcenter-api.tal.com/api').replace(/\/+$/, ''),
+    ucenterBaseUrl: config.ucenterBaseUrl.trim().replace(/\/+$/, ''),
+    ucenterTimeoutMs: config.ucenterTimeoutMs,
   };
 }
 

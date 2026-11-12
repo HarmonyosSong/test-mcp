@@ -9,6 +9,11 @@ import { z } from 'zod';
 import type { RuntimeConfig } from '../config.js';
 import { integrationError, integrationInfo, integrationWarn } from '../observability/integration-log.js';
 import type { LogIdentifiers } from '../security/log-privacy.js';
+import {
+  applyResolvedUidQuery,
+  createUcenterClient,
+  resolveLearnerUid,
+} from './ucenter.js';
 
 export const LOGCENTER_DEFAULT_BASE_URL = 'https://logcenter-api.tal.com/api';
 export const LOG_CATALOG_DEFAULT_RELATIVE = 'runtime/contracts/log-catalog/catalog.yaml';
@@ -103,6 +108,8 @@ export type LogKind = z.infer<typeof LogKindSchema>;
 export type LogToolCorrelation = {
   identifiers: LogIdentifiers;
   sourceText: string;
+  /** 学员编号来源；card 需在挂载工具前转为 uid，禁止直接当 uid 查日志。 */
+  learnerIdSource?: 'card' | 'uid';
 };
 
 export type LogTargetCandidate = {
@@ -419,15 +426,18 @@ export class LogCenterClient {
     topic: string;
     start: number;
     end: number;
+    query?: string;
   }): Promise<{ total: number; elapsed_ms: number }> {
-    const body = await this.request(`skill/cloud/${input.vendor}/count`, {
+    const params: Record<string, string | number | boolean> = {
       region: input.region,
       account_ak_id: input.account,
       collection_id: input.collection,
       topic_id: input.topic,
       start: input.start,
       end: input.end,
-    });
+    };
+    if (input.query?.trim()) params.query = input.query.trim();
+    const body = await this.request(`skill/cloud/${input.vendor}/count`, params);
     const data = (body.data ?? {}) as { total?: number; elapsed_millisecond?: number };
     return {
       total: Number(data.total ?? 0),
@@ -566,6 +576,7 @@ export async function createLogCatalogTools(
     catalog?: LogCatalog;
     abortSignal?: AbortSignal;
     correlation?: LogToolCorrelation;
+    fetchImpl?: typeof fetch;
   },
 ): Promise<LogCatalogToolset | null> {
   if (!isLogCenterConfigured(config)) {
@@ -601,6 +612,32 @@ export async function createLogCatalogTools(
     { abortSignal: options?.abortSignal, timeoutMs: config.logcenterTimeoutMs },
   );
 
+  const correlation = options?.correlation
+    ? {
+        ...options.correlation,
+        identifiers: { ...options.correlation.identifiers },
+      }
+    : undefined;
+  if (correlation?.identifiers.learner_id) {
+    const resolved = await resolveLearnerUid(
+      {
+        learnerId: correlation.identifiers.learner_id,
+        learnerIdSource: correlation.learnerIdSource ?? 'card',
+      },
+      createUcenterClient(config, options?.fetchImpl),
+      options?.abortSignal,
+    );
+    if (resolved) {
+      correlation.identifiers.learner_id = resolved;
+      correlation.learnerIdSource = 'uid';
+    } else if ((correlation.learnerIdSource ?? 'card') === 'card') {
+      // 学员编号未换成 uid：禁止继续用编号当 uid 查日志。
+      delete correlation.identifiers.learner_id;
+      delete correlation.learnerIdSource;
+    }
+  }
+  const resolvedUid = correlation?.identifiers.learner_id;
+
   return {
     resolve_log_target: createTool({
       id: 'resolve_log_target',
@@ -621,10 +658,27 @@ export async function createLogCatalogTools(
     count_cloud_logs: createTool({
       id: 'count_cloud_logs',
       description:
-        'Count Aliyun SLS cloud logs for a resolved aliyun_sls target. Prefer after resolve_log_target when source=aliyun_sls.',
+        'Count Aliyun SLS cloud logs for a resolved aliyun_sls target. Prefer after resolve_log_target when source=aliyun_sls. Upstream cloud-count has NO query filter (topic total only). When query/uid is present, Runtime uses cloud-search total instead so filters actually apply. When the round has a resolved learner uid, Runtime always AND uid:"<id>" into the query.',
       inputSchema: z.object(SlsTargetFields),
       execute: async (input) => {
         const range = parseTimeRangeSeconds(input.time);
+        const query = applyResolvedUidQuery(input.query, resolvedUid);
+        // 官方 cloud-count 不接受 query；有过滤条件时改用 search.total，避免「全库量级」误导。
+        if (query && query !== '*') {
+          const searched = await client.searchCloudLogs({
+            vendor: input.vendor,
+            region: input.region,
+            account: input.account,
+            collection: input.collection,
+            topic: input.topic,
+            start: range.start,
+            end: range.end,
+            query,
+            size: 1,
+            from: 0,
+          });
+          return { total: searched.total, elapsed_ms: searched.elapsed_ms, filtered: true, query };
+        }
         return client.countCloudLogs({
           vendor: input.vendor,
           region: input.region,
@@ -639,7 +693,7 @@ export async function createLogCatalogTools(
     search_cloud_logs: createTool({
       id: 'search_cloud_logs',
       description:
-        'Search Aliyun SLS cloud logs for a resolved aliyun_sls target. Prefer catalog suggested_query. Truncated helpers, not ledger evidence.',
+        'Search Aliyun SLS cloud logs for a resolved aliyun_sls target. Prefer catalog suggested_query. When the round has a resolved learner uid, Runtime always AND uid:<id> into the query. Truncated helpers, not ledger evidence.',
       inputSchema: z.object({
         ...SlsTargetFields,
         size: z.number().int().min(1).max(200).default(50),
@@ -648,6 +702,7 @@ export async function createLogCatalogTools(
       execute: async (input) => {
         const range = parseTimeRangeSeconds(input.time);
         const size = Math.min(input.size ?? 50, 200);
+        const query = applyResolvedUidQuery(input.query?.trim() || '*', resolvedUid) || '*';
         return client.searchCloudLogs({
           vendor: input.vendor,
           region: input.region,
@@ -656,7 +711,7 @@ export async function createLogCatalogTools(
           topic: input.topic,
           start: range.start,
           end: range.end,
-          query: input.query?.trim() || '*',
+          query,
           size,
           from: input.from ?? 0,
         });
@@ -665,7 +720,7 @@ export async function createLogCatalogTools(
     count_logs: createTool({
       id: 'count_logs',
       description:
-        'Count 未来云日志中心 logs by service_id for a resolved logcenter/client_apm target. Prefer after resolve_log_target when source=logcenter.',
+        'Count 未来云日志中心 logs by service_id for a resolved logcenter/client_apm target. Prefer after resolve_log_target when source=logcenter. When the round has a resolved learner uid, Runtime always AND uid:<id> into the query.',
       inputSchema: z.object(ServiceTargetFields),
       execute: async (input) => {
         const range = parseTimeRangeSeconds(input.time);
@@ -673,14 +728,14 @@ export async function createLogCatalogTools(
           serviceId: input.service_id,
           start: range.start,
           end: range.end,
-          query: input.query,
+          query: applyResolvedUidQuery(input.query, resolvedUid),
         });
       },
     }),
     query_logs: createTool({
       id: 'query_logs',
       description:
-        'Query 未来云日志中心 logs by service_id (Lucene). page starts at 1 (not offset). Prefer catalog suggested_query. Truncated helpers, not ledger evidence.',
+        'Query 未来云日志中心 logs by service_id (Lucene). page starts at 1 (not offset). Prefer catalog suggested_query. When the round has a resolved learner uid, Runtime always AND uid:<id> into the query. Truncated helpers, not ledger evidence.',
       inputSchema: z.object({
         ...ServiceTargetFields,
         page: z.number().int().min(1).default(1),
@@ -693,7 +748,7 @@ export async function createLogCatalogTools(
           serviceId: input.service_id,
           start: range.start,
           end: range.end,
-          query: input.query,
+          query: applyResolvedUidQuery(input.query, resolvedUid),
           page: input.page ?? 1,
           size,
         });

@@ -23,6 +23,7 @@ import {
 } from '../orchestration/plan.js';
 import type { ServerSignals } from '../orchestration/server-signals.js';
 import { extractCorrelationContext } from '../orchestration/correlation.js';
+import { extractClientIdentityFromMessages } from '../orchestration/client-identity.js';
 import { clientIdentifiersFromMessages, redactClientText, createClientLogPrivacy } from '../security/client-context.js';
 import { createStreamRedactor } from '../security/stream-redaction.js';
 import { decideLocalContinuation } from '../orchestration/loop.js';
@@ -73,9 +74,11 @@ export function buildRoundLogCorrelation(
     .map((message) => message.content)
     .slice(-20);
   if (userTexts.at(-1) !== content) userTexts.push(content);
+  const identity = extractClientIdentityFromMessages(userTexts);
   return {
     sourceText: userTexts.join('\n').slice(0, 100_000),
     identifiers: clientIdentifiersFromMessages(userTexts),
+    ...(identity.learnerIdSource ? { learnerIdSource: identity.learnerIdSource } : {}),
   };
 }
 
