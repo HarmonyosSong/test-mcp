@@ -9,6 +9,16 @@ const booleanFromEnv = z
   .optional()
   .transform((value) => value === 'true');
 
+/** Unset/empty defaults to true; only explicit false/0 disables. */
+const booleanFromEnvDefaultTrue = z
+  .string()
+  .optional()
+  .transform((value) => {
+    if (value === undefined || value.trim() === '') return true;
+    const normalized = value.trim().toLowerCase();
+    return normalized !== 'false' && normalized !== '0' && normalized !== 'off' && normalized !== 'no';
+  });
+
 function findRepositoryRoot(): string {
   let directory = resolve(fileURLToPath(new URL('.', import.meta.url)));
   while (true) {
@@ -55,6 +65,7 @@ export const runtimeConfigSchema = z.object({
   modelConfigFile: z.string().optional(),
   knowledgeQueryLog: z.string().optional(),
   caseArchiveDir: z.string().optional(),
+  mastraObservabilityDir: z.string().optional(),
   projectRoot: z.string().default(repositoryRoot),
   knowledgeRoot: z.string().default('knowledge'),
   knowledgeRetrievalMode: z.string().optional(),
@@ -92,6 +103,9 @@ export const runtimeConfigSchema = z.object({
   a2aWaitSeconds: z.coerce.number().int().min(1).max(3_600).default(A2A_CONFIG_DEFAULTS.waitSeconds),
   a2aMaxOutputChars: z.coerce.number().int().min(1_000).max(200_000).default(12_000),
   a2aDebugEnabled: booleanFromEnv,
+  mastraObservabilityConsole: booleanFromEnvDefaultTrue,
+  /** 0 = keep full observability text; positive = max chars per text field. */
+  mastraObservabilityPreviewChars: z.coerce.number().int().min(0).max(2_000_000).default(0),
   yachEnabled: booleanFromEnv,
   yachAppKey: z.string().default(''),
   yachAppSecret: z.string().default(''),
@@ -114,6 +128,7 @@ export type RuntimeConfig = Omit<
   | 'modelConfigFile'
   | 'knowledgeQueryLog'
   | 'caseArchiveDir'
+  | 'mastraObservabilityDir'
   | 'gitMirrorDir'
   | 'snapshotDir'
 > & {
@@ -125,6 +140,7 @@ export type RuntimeConfig = Omit<
   modelConfigFile: string;
   knowledgeQueryLog: string;
   caseArchiveDir: string;
+  mastraObservabilityDir: string;
   gitMirrorDir: string;
   snapshotDir: string;
 };
@@ -149,6 +165,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     modelConfigFile: optionalEnvPath(env.HARMONY_AGENT_MODEL_CONFIG_FILE),
     knowledgeQueryLog: optionalEnvPath(env.HARMONY_AGENT_KNOWLEDGE_QUERY_LOG),
     caseArchiveDir: optionalEnvPath(env.HARMONY_AGENT_KNOWLEDGE_CASES_DIR),
+    mastraObservabilityDir: optionalEnvPath(env.HARMONY_AGENT_MASTRA_OBSERVABILITY_DIR),
     projectRoot: env.HARMONY_MASTRA_PROJECT_ROOT,
     knowledgeRoot: env.HARMONY_AGENT_KNOWLEDGE_ROOT,
     knowledgeRetrievalMode: env.HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE,
@@ -179,6 +196,8 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     a2aWaitSeconds: env.HARMONY_AGENT_A2A_WAIT_SECONDS,
     a2aMaxOutputChars: env.HARMONY_AGENT_A2A_MAX_OUTPUT_CHARS,
     a2aDebugEnabled: env.HARMONY_AGENT_A2A_DEBUG_ENABLED,
+    mastraObservabilityConsole: env.HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE,
+    mastraObservabilityPreviewChars: env.HARMONY_AGENT_MASTRA_OBSERVABILITY_PREVIEW_CHARS,
     yachEnabled: env.HARMONY_AGENT_YACH_ENABLED,
     yachAppKey: env.HARMONY_AGENT_YACH_APP_KEY ?? env.YACH_APP_KEY,
     yachAppSecret: env.HARMONY_AGENT_YACH_APP_SECRET ?? env.YACH_APP_SECRET,
@@ -224,6 +243,9 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     modelConfigFile: underDataRoot(config.modelConfigFile, 'model-config.json'),
     knowledgeQueryLog: underDataRoot(config.knowledgeQueryLog, 'knowledge-queries.jsonl'),
     caseArchiveDir: underDataRoot(config.caseArchiveDir, 'knowledge-cases'),
+    mastraObservabilityDir: config.mastraObservabilityDir
+      ? fromRoot(config.mastraObservabilityDir)
+      : resolve(dataDir, 'observability'),
     knowledgeRoot: fromRoot(config.knowledgeRoot),
     allowedRoots: config.allowedRoots.map(fromRoot),
     skillsDir: fromRoot(config.skillsDir),
@@ -243,6 +265,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     a2aClientId: config.a2aClientId.trim() || A2A_CONFIG_DEFAULTS.clientId,
     a2aToken: config.a2aToken.trim(),
     a2aDebugEnabled: Boolean(config.a2aDebugEnabled),
+    mastraObservabilityConsole: Boolean(config.mastraObservabilityConsole),
     yachEnabled: Boolean(config.yachEnabled),
     yachAppKey: config.yachAppKey.trim(),
     yachAppSecret: config.yachAppSecret.trim(),

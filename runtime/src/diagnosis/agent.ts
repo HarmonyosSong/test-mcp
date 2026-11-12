@@ -510,6 +510,8 @@ export interface DiagnosisRunInput {
   clientSteps?: ClientInvestigationStep[];
   localReport?: DiagnosisReport | null;
   externalFindings?: RemoteConclusion[];
+  /** Assistant message id for per-conversation observability files. */
+  messageId?: string;
 }
 
 function truncate(value: unknown, limit = 500): string {
@@ -779,6 +781,13 @@ export class DiagnosisAgent {
         toolsets: budgetToolsets(input.toolsets, ledger, budget, locators, input.clientSteps),
         abortSignal: input.abortSignal,
         maxSteps: 32,
+        tracingOptions: {
+          metadata: {
+            conversation_id: input.conversation.id,
+            message_id: input.messageId ?? null,
+            phase: input.phase ?? 'local',
+          },
+        },
       },
     );
     const usage = output.usage.catch(() => null);

@@ -28,6 +28,8 @@ export function testRuntimeEnv(
     HARMONY_AGENT_SSO_APP_ID: 'test-app',
     HARMONY_AGENT_SSO_APP_KEY: 'test-key',
     HARMONY_AGENT_CORS_ORIGINS: PUBLIC_BASE_URL,
+    // Keep automated tests quiet; production/default remains console-on.
+    HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE: 'false',
     ...overrides,
   };
 }

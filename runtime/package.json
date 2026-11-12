@@ -23,6 +23,7 @@
     "@mastra/core": "1.81.0",
     "@mastra/libsql": "1.28.0",
     "@mastra/mcp": "2.7.0",
+    "@mastra/observability": "1.23.1",
     "ajv": "8.20.0",
     "hono": "4.13.16",
     "yaml": "^2.8.1",

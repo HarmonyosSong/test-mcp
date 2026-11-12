@@ -175,6 +175,15 @@ test('loads and validates the global run concurrency limit', () => {
   assert.throws(() => loadRuntimeConfig({ HARMONY_AGENT_MAX_CONCURRENT_RUNS: '0' }));
 });
 
+test('Mastra console observability defaults on and can be disabled', () => {
+  assert.equal(loadRuntimeConfig({}).mastraObservabilityConsole, true);
+  assert.equal(loadRuntimeConfig({}).mastraObservabilityPreviewChars, 0);
+  assert.equal(loadRuntimeConfig({ HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE: 'false' }).mastraObservabilityConsole, false);
+  assert.equal(loadRuntimeConfig({ HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE: 'off' }).mastraObservabilityConsole, false);
+  assert.equal(loadRuntimeConfig({ HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE: 'true' }).mastraObservabilityConsole, true);
+  assert.equal(loadRuntimeConfig({ HARMONY_AGENT_MASTRA_OBSERVABILITY_PREVIEW_CHARS: '8000' }).mastraObservabilityPreviewChars, 8000);
+});
+
 test('A2A 调试提供端默认关闭，只允许本地模式且必须配置本地测试令牌', () => {
   assert.equal(loadRuntimeConfig({}).a2aDebugEnabled, false);
   const enabled = loadRuntimeConfig({

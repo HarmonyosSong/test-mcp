@@ -18,6 +18,7 @@ test('defaults data paths under projectRoot/.data when DATA_ROOT is unset', () =
   assert.equal(config.modelConfigFile, resolve(dataRoot, 'model-config.json'));
   assert.equal(config.knowledgeQueryLog, resolve(dataRoot, 'knowledge-queries.jsonl'));
   assert.equal(config.caseArchiveDir, resolve(dataRoot, 'knowledge-cases'));
+  assert.equal(config.mastraObservabilityDir, resolve(dataRoot, 'mastra', 'observability'));
   assert.equal(config.legacyConversationsFile, resolve(dataRoot, 'conversations.json'));
   assert.equal(config.legacyRepositoriesFile, resolve(dataRoot, 'repositories.json'));
   assert.equal(config.databaseUrl, `file:${resolve(dataRoot, 'mastra', 'runtime.db')}`);

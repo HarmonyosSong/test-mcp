@@ -340,6 +340,7 @@ async function runLegacyDiagnosisRound(
       content,
       toolsets: capabilitySession.toolsets,
       abortSignal,
+      messageId: assistantMessage.id,
     })) {
       if (event.type === 'text') {
         const delta = streamRedactor.push(event.delta);
@@ -598,6 +599,7 @@ async function runOrchestratedDiagnosisRound(
       clientSteps: phase === 'local' ? clientSteps : [],
       localReport: phase === 'joint' ? state?.localReport ?? null : undefined,
       externalFindings: phase === 'joint' ? conversation.external_findings : undefined,
+      messageId: assistantMessage.id,
     })) {
       if (event.type === 'text') {
         const delta = streamRedactor.push(event.delta);

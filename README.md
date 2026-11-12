@@ -175,6 +175,9 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_A2A_WAIT_SECONDS` | `180` | A2A 单次等待上限，范围 1–3600 秒 |
 | `HARMONY_AGENT_A2A_MAX_OUTPUT_CHARS` | `12000` | 服务端结论最大字符数 |
 | `HARMONY_AGENT_A2A_DEBUG_ENABLED` | `false` | 仅 `local` 模式启用本地 A2A 调试对端 |
+| `HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE` | `true` | Mastra 观测开关；默认按会话写入精简 JSON（见下），终端不刷 span。设 `false` 关闭 |
+| `HARMONY_AGENT_MASTRA_OBSERVABILITY_DIR` | `<data-dir>/observability` | 观测文件根目录；按 `conversations/<会话ID>/` 存放 |
+| `HARMONY_AGENT_MASTRA_OBSERVABILITY_PREVIEW_CHARS` | `0` | 观测正文最大字符数；`0` 表示尽量全文（硬顶约 2MB/字段）；需要截断时再设正整数 |
 | `HARMONY_AGENT_LOG_CATALOG` | `runtime/contracts/log-catalog/catalog.yaml` | 日志业务目录路径 |
 | `HARMONY_AGENT_LOGCENTER_APP_ID` | 空 | LogCenter 应用 ID；与 Secret 同时配置才挂载工具 |
 | `HARMONY_AGENT_LOGCENTER_APP_SECRET` | 空 | LogCenter 应用密钥，只在本地配置 |
@@ -185,7 +188,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_YACH_CLI_PATH` | `yach-cli` | `yach-cli` 可执行文件路径 |
 | `HARMONY_AGENT_YACH_ROBOT_ID` | 空 | 机器人备注配置，当前不参与路由 |
 
-网页设置写入 `<data-root>/model-config.json`（默认 `.data/model-config.json`），文件权限为 `0600`。容器部署见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)：只设 `HARMONY_AGENT_DATA_ROOT=/data/troubleshoot-odyssey`，由平台挂卷，勿再写相对 `.data/...` 单项。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key；Mastra 内部日志已关闭，应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证，不能据此保证所有日志都不含敏感内容。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
+网页设置写入 `<data-root>/model-config.json`（默认 `.data/model-config.json`），文件权限为 `0600`。容器部署见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)：只设 `HARMONY_AGENT_DATA_ROOT=/data/troubleshoot-odyssey`，由平台挂卷，勿再写相对 `.data/...` 单项。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key。默认开启官方 Mastra Observability（`Observability` + `SensitiveDataFilter`），并由按会话落盘的 exporter 写入可读 JSON：`.data/mastra/observability/conversations/<会话ID>/traces/*.json`（另有 `manifest.jsonl` 索引）。文件按「用户输入 → steps[]（每轮模型话术 + 工具入出参）→ 最终回答」组织；`processor_run` / `mapping` / `model_chunk` 视为噪音丢弃。终端默认安静（`logger: false`）。不改 knowledge JSONL/cases。需要关闭时设 `HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE=false`。应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
 
 知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续。仓库 MCP 按会话工作区启动：Git 仓库会绑定 detached Commit 快照，本地目录则读取授权根目录中的实时文件，诊断过程中工作区变化可能影响后续读取。知识检索和仓库代码检查需要 Python/uv 已安装，并已通过 `make setup` 安装 `mcp_server/` 依赖。
 
