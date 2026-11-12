@@ -43,6 +43,11 @@ import {
 import { CompassSlotAdapter } from './capabilities/compass-slot.js';
 import { createCompassA2ADebugRoutes } from './capabilities/compass-a2a-debug.js';
 import { loadServerSignals } from './orchestration/server-signals.js';
+import { VersionRegistry } from './capabilities/version-registry.js';
+import { GitLabArchiveClient, GitLabArchiveError } from './capabilities/gitlab-archive.js';
+import { ArchiveSnapshotError } from './capabilities/archive-snapshot.js';
+import { RepositoryGitError } from './capabilities/repository.js';
+import { VersionRegistryError } from './capabilities/version-registry.js';
 
 export interface RuntimeApp {
   app: Hono<{ Variables: AuthVariables }>;
@@ -50,6 +55,7 @@ export interface RuntimeApp {
   store: ProductStore;
   modelConfiguration: ModelConfiguration;
   repositories: RepositoryCapability;
+  versionRegistry: VersionRegistry;
   capabilities: CapabilityMcp;
   skills: SkillRegistry;
   diagnosisAgent: DiagnosisAgent;
@@ -79,6 +85,15 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       timeoutMs: config.gitTimeoutMs,
       initialRecords: await store.listRepositories(),
     });
+    const versionRegistry = new VersionRegistry(config.versionRegistryRoot);
+    await versionRegistry.load();
+    const gitlabArchiveClient = config.gitlabToken
+      ? new GitLabArchiveClient({
+        baseUrl: config.gitlabBaseUrl,
+        token: config.gitlabToken,
+        timeoutMs: config.gitlabTimeoutMs,
+      })
+      : null;
     const capabilities = new CapabilityMcp(config);
     const skills = new SkillRegistry(config.skillsDir);
     await skills.load();
@@ -160,7 +175,64 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         maxSeconds: config.investigationMaxSeconds,
         maxRemoteCalls: config.investigationMaxRemoteCalls,
       },
-      createConversationSource: async ({ repositoryId, branch, workspacePath }) => {
+      createConversationSource: async ({
+        repositoryId,
+        branch,
+        workspacePath,
+        platform,
+        productLine,
+        formFactor,
+        version,
+        build,
+        signal,
+      }) => {
+        if (platform || productLine || formFactor || version || build) {
+          try {
+            const selection = versionRegistry.select({
+              platform: platform!,
+              productLine: productLine!,
+              formFactor: formFactor ?? undefined,
+              version: version!,
+              build,
+            });
+            if (selection.repositories.length !== 1 || selection.repositories[0]?.role !== 'shell') {
+              throw new RepositoryGitError('当前版本包含多个仓库，组件快照挂载尚未接入；请先登记唯一 shell 仓库');
+            }
+            const registryRepository = selection.repositories[0]!;
+            const repository = await repositories.findByRemoteRepositoryId(registryRepository.repository_id);
+            const snapshot = gitlabArchiveClient
+              ? await gitlabArchiveClient.downloadArchive(registryRepository.repository_id, registryRepository.expected_commit, signal)
+                .then(({ archive }) => repositories.prepareArchiveSnapshot(
+                  repository.id,
+                  registryRepository.ref,
+                  registryRepository.expected_commit,
+                  archive,
+                ))
+              : await repositories.getPreparedSnapshot(
+                repository.id,
+                registryRepository.ref,
+                registryRepository.expected_commit,
+              );
+            await store.saveSnapshot(snapshot);
+            return {
+              workspace_path: snapshot.workspace_path,
+              repository_id: repository.id,
+              repository_name: repository.name,
+              requested_ref: snapshot.requested_ref,
+              resolved_commit: snapshot.resolved_commit,
+              platform,
+              product_line: productLine,
+              form_factor: formFactor,
+              version,
+              build,
+            };
+          } catch (error) {
+            if (error instanceof VersionRegistryError || error instanceof GitLabArchiveError || error instanceof ArchiveSnapshotError) {
+              throw new RepositoryGitError(error.message, { cause: error });
+            }
+            throw error;
+          }
+        }
         if (repositoryId && branch) {
           const snapshot = await repositories.prepareSnapshot(repositoryId, branch);
           await store.saveSnapshot(snapshot);
@@ -221,6 +293,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       store,
       modelConfiguration,
       repositories,
+      versionRegistry,
       capabilities,
       skills,
       diagnosisAgent,

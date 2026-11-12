@@ -39,7 +39,13 @@ interface ConversationRouteOptions {
     repositoryId: string | null;
     branch: string | null;
     workspacePath: string | null;
-  }) => Promise<Partial<Pick<ConversationRecord, 'workspace_path' | 'repository_id' | 'repository_name' | 'requested_ref' | 'resolved_commit'>>>;
+    platform: ConversationRecord['platform'];
+    productLine: ConversationRecord['product_line'];
+    formFactor: ConversationRecord['form_factor'];
+    version: ConversationRecord['version'];
+    build: ConversationRecord['build'];
+    signal?: AbortSignal;
+  }) => Promise<Partial<Pick<ConversationRecord, 'workspace_path' | 'repository_id' | 'repository_name' | 'requested_ref' | 'resolved_commit' | 'platform' | 'product_line' | 'form_factor' | 'version' | 'build'>>>;
 }
 
 function publicConversation(value: ReturnType<typeof ConversationRecordSchema.parse>) {
@@ -234,6 +240,12 @@ export function createConversationRoutes(
         repositoryId: parsed.data.repository_id,
         branch: parsed.data.branch,
         workspacePath: parsed.data.workspace_path,
+        platform: parsed.data.platform,
+        productLine: parsed.data.product_line,
+        formFactor: parsed.data.form_factor,
+        version: parsed.data.version,
+        build: parsed.data.build,
+        signal: context.req.raw.signal,
       });
       const conversation = await store.createConversation({
         title: parsed.data.title ?? '新会话',

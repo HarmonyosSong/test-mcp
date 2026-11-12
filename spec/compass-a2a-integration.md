@@ -24,6 +24,7 @@ Web / IM
 - 模型不能直接调用 Compass 叶子客户端，也没有可绕过 Supervisor 的 `ask_compass` 自由文本工具。
 - Compass 返回是外部 Agent 结论，保存为 `RemoteConclusion` / `external_findings`，永不进入本地 `evidence_refs`。
 - `responsibility` 只表示当前证据支持的责任判断；`next_action.target=external` 才表示请求统一外部全栈 Agent，两者不能互相替代。
+- 调查计划的 `externalScope=frontend_backend` 是产品路由语义，表示远端覆盖本项目前端、H5 和服务端；持久化计划中的 `server` 分支名仅为兼容旧记录。
 
 ## 2. 传输与配置
 

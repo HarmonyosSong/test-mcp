@@ -10,6 +10,7 @@
 | [orchestration-layer-design.md](orchestration-layer-design.md) | 已实现的调查计划、客户端观察门禁、Agent Slot、审批恢复、并发和联合报告细则 |
 | [multi-capability-expansion-plan.md](multi-capability-expansion-plan.md) | 尚未完成的能力及实施顺序；不是现有功能清单 |
 | [business-knowledge-and-code-search-research.md](business-knowledge-and-code-search-research.md) | 业务知识与代码索引分层、三端开源检索方案比较，以及 Repository MCP 内部 CBM 适配边界 |
+| [multi-platform-version-snapshot-design.md](multi-platform-version-snapshot-design.md) | 三端版本登记、commit 校验、GitLab archive 快照和会话源码选择 |
 | [../spec/compass-a2a-integration.md](../spec/compass-a2a-integration.md) | Compass A2A 传输、槽位、审批与真实联调边界 |
 | [../spec/log-catalog-query-capability.md](../spec/log-catalog-query-capability.md) | 当前 Catalog/SLS 四工具、私有身份、脱敏入账契约及真实验证边界 |
 | [../spec/sso-login-design.md](../spec/sso-login-design.md) | 知音楼网页 SSO、local/server 模式和安全边界 |

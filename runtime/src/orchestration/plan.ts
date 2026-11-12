@@ -5,6 +5,7 @@ export type InvestigationMode = 'local' | 'server' | 'parallel';
 export type InvestigationBranch = 'client' | 'server';
 export type ClientInvestigationStep = 'observe' | 'source';
 export type RequestedInvestigationScope = 'client' | 'server';
+export type ExternalAgentScope = 'frontend_backend';
 
 export type CorrelationContext = {
   traceId?: string;
@@ -22,6 +23,8 @@ export type InvestigationPlan = {
   mode: InvestigationMode;
   branches: InvestigationBranch[];
   remoteSlots: string[];
+  /** Product-level scope; `server` remains a persisted branch compatibility name. */
+  externalScope?: ExternalAgentScope;
   clientSteps: ClientInvestigationStep[];
   reason: string;
   correlationReady: boolean;
@@ -86,6 +89,7 @@ export function createInvestigationPlan(
       mode: 'parallel',
       branches: ['client', 'server'],
       remoteSlots: ['compass'],
+      externalScope: 'frontend_backend',
       reason: `已有本地日志观测，且命中服务端特征（${signal.labels.join('、')}）并具备请求关联标识`,
     };
   }
@@ -108,7 +112,15 @@ function localPlan(base: PlanBase, reason: string): InvestigationPlan {
 }
 
 function serverPlan(base: PlanBase, reason: string): InvestigationPlan {
-  return { ...base, mode: 'server', branches: ['server'], remoteSlots: ['compass'], clientSteps: [], reason };
+  return {
+    ...base,
+    mode: 'server',
+    branches: ['server'],
+    remoteSlots: ['compass'],
+    externalScope: 'frontend_backend',
+    clientSteps: [],
+    reason,
+  };
 }
 
 function assertValidBudget(budget: InvestigationBudget): void {

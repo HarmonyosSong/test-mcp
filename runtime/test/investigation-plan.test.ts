@@ -81,6 +81,7 @@ test('服务端特征和关联标识不能绕过现场观察，已有日志观�
   assert.equal(parallel.mode, 'parallel');
   assert.deepEqual(parallel.branches, ['client', 'server']);
   assert.deepEqual(parallel.remoteSlots, ['compass']);
+  assert.equal(parallel.externalScope, 'frontend_backend');
   assert.equal(parallel.correlationReady, true);
 
   const requestId = createInvestigationPlan(input({

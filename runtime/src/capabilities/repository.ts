@@ -23,6 +23,7 @@ import {
   type ClientPlatform,
   type RepositoryVersionMapping,
 } from '../domain/schemas.js';
+import { materializeArchiveSnapshot, validateArchiveSnapshot } from './archive-snapshot.js';
 
 const execFile = promisify(execFileCallback);
 const COMMIT_PATTERN = /^[0-9a-f]{40,64}$/;
@@ -137,6 +138,20 @@ function parseRepositoryRequest(request: RegisterRepositoryRequest): {
   return { name, url: normalizedUrl, defaultBranch };
 }
 
+function normalizeRemoteRepositoryId(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const scp = SCP_URL_PATTERN.exec(trimmed);
+  if (scp) return trimmed.slice(trimmed.indexOf(':') + 1).replace(/\.git$/, '');
+  try {
+    const parsed = new URL(trimmed);
+    if (!['http:', 'https:', 'ssh:'].includes(parsed.protocol)) return '';
+    return decodeURIComponent(parsed.pathname).replace(/^\/+/, '').replace(/\.git$/, '');
+  } catch {
+    return trimmed.replace(/^\/+/, '').replace(/\.git$/, '');
+  }
+}
+
 /**
  * Validate URL syntax before any network or Git operation is attempted.
  * This intentionally follows the product's supported HTTP(S), SSH, file and
@@ -190,7 +205,7 @@ export class SnapshotNotReadyError extends RepositoryGitError {
 
 export class SourceSelectionError extends Error {
   constructor(
-    readonly code: 'platform_unconfirmed' | 'version_required' | 'version_mapping_missing' | 'version_mapping_ambiguous',
+    readonly code: 'platform_unconfirmed' | 'version_required' | 'build_required' | 'version_mapping_missing' | 'version_mapping_unverified' | 'version_mapping_ambiguous',
     message: string,
   ) {
     super(`${code}: ${message}`);
@@ -198,26 +213,51 @@ export class SourceSelectionError extends Error {
   }
 }
 
+/** Remove a marketing-version prefix and hotfix segment before registry lookup. */
+export function normalizeClientVersion(value: string): string {
+  const trimmed = value.trim().replace(/^v/i, '');
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:\.\d+)?$/.exec(trimmed);
+  return match ? `${match[1]}.${match[2]}.${match[3]}` : trimmed;
+}
+
+function hasHotfixSegment(value: string): boolean {
+  return /^v?\d+\.\d+\.\d+\.\d+$/i.test(value.trim());
+}
+
 /** 只能使用现场已确认平台和精确版本；不允许回退默认分支、最新分支或跨平台仓库。 */
 export function selectRepositoryVersion(
   records: readonly RepositoryRecord[],
   observedPlatform: string | null | undefined,
   observedVersion: string | null | undefined,
+  observedBuild: string | null | undefined = null,
 ): { repository: RepositoryRecord; mapping: RepositoryVersionMapping } {
   if (!observedPlatform || !['harmony', 'android', 'ios'].includes(observedPlatform)) {
     throw new SourceSelectionError('platform_unconfirmed', '实际平台尚未由关联日志确认');
   }
   const version = observedVersion?.trim();
   if (!version) throw new SourceSelectionError('version_required', '关联日志没有提供精确客户端版本');
-  const matches = records.flatMap((repository) => {
+  const build = observedBuild?.trim() || null;
+  if (hasHotfixSegment(version) && !build) {
+    throw new SourceSelectionError('build_required', '四段客户端版本必须同时提供构建号或渠道信息');
+  }
+  const normalizedVersion = normalizeClientVersion(version);
+  const versionMatches = records.flatMap((repository) => {
     if (repository.platform !== observedPlatform) return [];
-    const mapping = Object.hasOwn(repository.version_map, version)
-      ? repository.version_map[version]
-      : undefined;
-    return mapping ? [{ repository: cloneRecord(repository), mapping }] : [];
+    return Object.entries(repository.version_map)
+      .filter(([registeredVersion]) => normalizeClientVersion(registeredVersion) === normalizedVersion)
+      .map(([, mapping]) => ({ repository: cloneRecord(repository), mapping }));
   });
-  if (matches.length === 0) {
+  if (versionMatches.length === 0) {
     throw new SourceSelectionError('version_mapping_missing', `没有 ${observedPlatform} ${version} 的精确仓库映射`);
+  }
+  const matches = versionMatches
+    .filter(({ mapping }) => mapping.verified !== false)
+    .filter(({ mapping }) => !build || mapping.build === build);
+  if (matches.length === 0) {
+    if (build) {
+      throw new SourceSelectionError('version_mapping_missing', `没有 ${observedPlatform} ${version} 构建 ${build} 的精确仓库映射`);
+    }
+    throw new SourceSelectionError('version_mapping_unverified', `${observedPlatform} ${version} 只有未核验的仓库映射`);
   }
   if (matches.length !== 1) {
     throw new SourceSelectionError('version_mapping_ambiguous', `多个仓库同时声明 ${observedPlatform} ${version}，无法唯一选择`);
@@ -258,6 +298,18 @@ export class RepositoryCapability {
     const record = this.records.get(repositoryId);
     if (!record) throw new RepositoryNotFoundError(repositoryId);
     return cloneRecord(record);
+  }
+
+  /** Resolve the registry's GitLab path to the locally registered repository record. */
+  async findByRemoteRepositoryId(remoteRepositoryId: string): Promise<RepositoryRecord> {
+    const identifier = normalizeRemoteRepositoryId(remoteRepositoryId);
+    if (!identifier) throw new RepositoryGitError('registry repository identifier is invalid');
+    const matches = [...this.records.values()].filter((record) =>
+      record.id === remoteRepositoryId || normalizeRemoteRepositoryId(record.url) === identifier,
+    );
+    if (matches.length === 0) throw new RepositoryNotFoundError(remoteRepositoryId);
+    if (matches.length !== 1) throw new RepositoryGitError(`多个已登记仓库匹配 ${remoteRepositoryId}`);
+    return cloneRecord(matches[0]!);
   }
 
   async validateWorkspacePath(path: string): Promise<string> {
@@ -434,11 +486,29 @@ export class RepositoryCapability {
     });
   }
 
+  async prepareArchiveSnapshot(
+    repositoryId: string,
+    requestedRef: string,
+    expectedCommit: string,
+    archive: Uint8Array,
+  ): Promise<RepositorySnapshot> {
+    const record = await this.get(repositoryId);
+    return this.withRepositoryLock(repositoryId, () => materializeArchiveSnapshot({
+      snapshotRoot: this.snapshotDir,
+      repositoryId: record.id,
+      repositoryName: record.name,
+      requestedRef,
+      expectedCommit,
+      archive,
+    }));
+  }
+
   async selectPreparedSnapshot(
     observedPlatform: string | null | undefined,
     observedVersion: string | null | undefined,
+    observedBuild: string | null | undefined = null,
   ): Promise<{ repository: RepositoryRecord; snapshot: RepositorySnapshot }> {
-    const selected = selectRepositoryVersion(await this.list(), observedPlatform, observedVersion);
+    const selected = selectRepositoryVersion(await this.list(), observedPlatform, observedVersion, observedBuild);
     const snapshot = await this.getPreparedSnapshot(
       selected.repository.id,
       selected.mapping.branch,
@@ -482,6 +552,9 @@ export class RepositoryCapability {
     const commit = parsed.resolved_commit;
     if (!COMMIT_PATTERN.test(commit)) {
       throw new RepositoryGitError('snapshot has an invalid commit identifier');
+    }
+    if (parsed.source === 'gitlab-api-archive') {
+      return validateArchiveSnapshot(parsed, this.snapshotDir) as Promise<RepositorySnapshot>;
     }
     const mirror = await this.ensureMirror(record);
     const workspace = resolve(this.snapshotDir, record.id, commit);

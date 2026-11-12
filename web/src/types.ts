@@ -129,6 +129,7 @@ export interface InvestigationPlan {
   branches: Array<'client' | 'server'>;
   reason: string;
   remoteSlots?: string[];
+  externalScope?: 'frontend_backend';
   clientSteps?: Array<'observe' | 'source'>;
   correlationReady?: boolean;
   budget?: { maxSeconds: number; maxRemoteCalls: number };
@@ -155,6 +156,11 @@ export interface ChatConversation {
   repository_name?: string | null;
   requested_ref?: string | null;
   resolved_commit?: string | null;
+  platform?: 'harmony' | 'android' | 'ios' | null;
+  product_line?: 'xueersi' | 'xuejiayun' | null;
+  form_factor?: 'phone' | 'pad' | 'universal' | null;
+  version?: string | null;
+  build?: string | null;
   model_override?: string | null;
   run_state?: RunState;
   consult_compass?: boolean;
@@ -179,6 +185,11 @@ export interface CreateConversationInput {
   workspace_path?: string;
   repository_id?: string;
   branch?: string;
+  platform?: 'harmony' | 'android' | 'ios';
+  product_line?: 'xueersi' | 'xuejiayun';
+  form_factor?: 'phone' | 'pad' | 'universal';
+  version?: string;
+  build?: string;
 }
 
 export interface HealthResponse {
@@ -208,6 +219,10 @@ export interface MetaResponse {
 export interface RepositoryVersionMapping {
   branch: string;
   expected_commit: string;
+  tag?: string | null;
+  build?: string | null;
+  source?: 'tag-scan' | 'manual';
+  verified?: boolean;
 }
 
 export interface RepositoryRecord {
@@ -240,6 +255,7 @@ export interface RepositorySnapshot {
   requested_ref: string;
   resolved_commit: string;
   workspace_path: string;
+  source?: 'git' | 'gitlab-api-archive';
   created_at: string;
 }
 

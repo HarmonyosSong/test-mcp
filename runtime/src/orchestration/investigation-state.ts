@@ -94,6 +94,9 @@ function readPlan(value: unknown): InvestigationPlan {
   if (!Array.isArray(value.remoteSlots) || value.remoteSlots.some((item) => typeof item !== 'string')) {
     throw new Error('调查计划远端槽位无效');
   }
+  if (value.externalScope !== undefined && value.externalScope !== 'frontend_backend') {
+    throw new Error('调查计划外部 Agent 范围无效');
+  }
   const clientSteps = value.clientSteps === undefined
     ? (value.branches.includes('client') ? ['observe', 'source'] : [])
     : value.clientSteps;

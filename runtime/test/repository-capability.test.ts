@@ -277,6 +277,48 @@ test('平台与精确版本映射只选择唯一记录，不回退默认分支�
   }
 });
 
+test('版本选择器归一化 v 前缀和热修段，并拒绝未核验映射', async () => {
+  const state = await fixture();
+  try {
+    const record = await state.repositories.register({
+      name: 'xesapp',
+      url: `file://${state.remote}`,
+      platform: 'harmony',
+      version_map: {
+        '7.106.5': {
+          branch: 'main',
+          expected_commit: state.commit,
+          tag: '7.106.5',
+          build: '1',
+          source: 'tag-scan',
+          verified: true,
+        },
+      },
+    });
+    assert.throws(
+      () => selectRepositoryVersion([record], 'harmony', 'V7.106.5.1'),
+      (error: unknown) => error instanceof SourceSelectionError && error.code === 'build_required',
+    );
+    assert.equal(selectRepositoryVersion([record], 'harmony', 'V7.106.5.1', '1').mapping.tag, '7.106.5');
+
+    const unverified = {
+      ...record,
+      id: 'repo-unverified',
+      name: 'unverified',
+      platform: 'android' as const,
+      version_map: {
+        '7.106.5': { branch: 'main', expected_commit: state.commit, verified: false },
+      },
+    };
+    assert.throws(
+      () => selectRepositoryVersion([unverified], 'android', '7.106.5'),
+      (error: unknown) => error instanceof SourceSelectionError && error.code === 'version_mapping_unverified',
+    );
+  } finally {
+    await rm(state.root, { recursive: true, force: true });
+  }
+});
+
 test('精确快照复用已准备的固定 commit，远端不可用时不 fetch 也不回退', async () => {
   const state = await fixture();
   try {

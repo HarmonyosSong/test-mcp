@@ -11,6 +11,12 @@ const defaultEvidenceId = () => `ev-${randomUUID().replaceAll('-', '').slice(0, 
 const defaultToolId = () => `tool-${randomUUID().replaceAll('-', '').slice(0, 8)}`;
 const defaultMessageId = () => `msg-${randomUUID().replaceAll('-', '').slice(0, 10)}`;
 const defaultConversationId = () => `conv-${randomUUID().replaceAll('-', '').slice(0, 10)}`;
+const optionalTrimmedText = (max: number) =>
+  z.string().trim().max(max).nullable().default(null).transform((value) => value || null);
+
+export const ClientPlatformSchema = z.enum(['harmony', 'android', 'ios']);
+export const ClientProductLineSchema = z.enum(['xueersi', 'xuejiayun']);
+export const ClientFormFactorSchema = z.enum(['phone', 'pad', 'universal']);
 
 export const VerdictSchema = z.enum([
   'located',
@@ -274,6 +280,11 @@ export const ConversationRecordSchema = z.object({
   repository_name: nullableText.optional().default(null),
   requested_ref: nullableText.optional().default(null),
   resolved_commit: nullableText.optional().default(null),
+  platform: ClientPlatformSchema.nullable().optional().default(null),
+  product_line: ClientProductLineSchema.nullable().optional().default(null),
+  form_factor: ClientFormFactorSchema.nullable().optional().default(null),
+  version: nullableText.optional().default(null),
+  build: nullableText.optional().default(null),
   model_override: z.string().max(250).nullable().optional().default(null),
   run_state: RunStateSchema.default('idle'),
   consult_compass: z.boolean().default(false),
@@ -302,12 +313,24 @@ export const CreateConversationRequestSchema = z.object({
   workspace_path: z.string().trim().max(2_000).nullable().default(null).transform((value) => value || null),
   repository_id: z.string().trim().max(100).nullable().default(null).transform((value) => value || null),
   branch: z.string().trim().max(500).nullable().default(null).transform((value) => value || null),
+  platform: ClientPlatformSchema.nullable().default(null),
+  product_line: ClientProductLineSchema.nullable().default(null),
+  form_factor: ClientFormFactorSchema.nullable().default(null),
+  version: optionalTrimmedText(100),
+  build: optionalTrimmedText(100),
 }).superRefine((value, ctx) => {
   if (Boolean(value.repository_id) !== Boolean(value.branch)) {
     ctx.addIssue({ code: 'custom', message: 'repository_id and branch must be provided together' });
   }
   if (value.workspace_path && value.repository_id) {
     ctx.addIssue({ code: 'custom', message: 'workspace_path and repository_id are mutually exclusive' });
+  }
+  const hasVersionContext = Boolean(value.platform || value.product_line || value.form_factor || value.version || value.build);
+  if (hasVersionContext && (!value.platform || !value.product_line || !value.version)) {
+    ctx.addIssue({ code: 'custom', path: ['version'], message: '精确版本源码需要同时提供 platform、product_line 和 version' });
+  }
+  if (hasVersionContext && (value.workspace_path || value.repository_id || value.branch)) {
+    ctx.addIssue({ code: 'custom', message: '精确版本源码不能与 workspace_path、repository_id 或 branch 同时提供' });
   }
 });
 
@@ -406,10 +429,15 @@ export const ModelConnectionResultSchema = z.object({
   response_preview: z.string(),
 });
 
-export const ClientPlatformSchema = z.enum(['harmony', 'android', 'ios']);
 export const RepositoryVersionMappingSchema = z.strictObject({
   branch: z.string().trim().min(1).max(500),
   expected_commit: z.string().regex(/^[0-9a-f]{40,64}$/),
+  // These fields make the mapping auditable without changing the existing branch/commit contract.
+  tag: z.string().trim().min(1).max(500).nullable().optional(),
+  build: z.string().trim().min(1).max(100).nullable().optional(),
+  source: z.enum(['tag-scan', 'manual']).optional(),
+  // Legacy mappings omit this field and remain trusted for compatibility.
+  verified: z.boolean().optional(),
 });
 export const RepositoryVersionMapSchema = z.record(
   z.string().trim().min(1).max(100),
@@ -474,6 +502,7 @@ export const RepositorySnapshotSchema = z.object({
   requested_ref: z.string(),
   resolved_commit: z.string(),
   workspace_path: z.string(),
+  source: z.enum(['git', 'gitlab-api-archive']).optional(),
   created_at: isoDateTime.default(nowIsoDateTime),
 });
 

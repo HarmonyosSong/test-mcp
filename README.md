@@ -149,6 +149,10 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_MASTRA_SKILLS_DIR` | `skills` | Skill Markdown 目录 |
 | `HARMONY_MASTRA_GIT_MIRROR_DIR` | `<data-root>/git-mirrors` | Git mirror 目录；设置后优先于数据根 |
 | `HARMONY_MASTRA_SNAPSHOT_DIR` | `<data-root>/workspaces` | detached snapshot 目录；设置后优先于数据根 |
+| `HARMONY_AGENT_VERSION_REGISTRY_ROOT` | `version-registry` | 多端版本登记表根目录；只加载 `verified: true` 的精确 commit 映射 |
+| `HARMONY_AGENT_GITLAB_BASE_URL` | `https://git.100tal.com` | 版本快照 GitLab API 地址 |
+| `HARMONY_AGENT_GITLAB_TOKEN` | 空 | GitLab API 只读 token；为空时只复用已有精确快照，禁止提交到仓库 |
+| `HARMONY_AGENT_GITLAB_TIMEOUT_MS` | `30000` | GitLab commit/archive 请求超时 |
 | `HARMONY_MASTRA_GIT_TIMEOUT_MS` | `120000` | Git 操作超时 |
 | `HARMONY_AGENT_KNOWLEDGE_ROOT` | `knowledge` | 知识 MCP 根目录 |
 | `HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE` | `legacy` | 知识召回模式：`legacy` 或实验性的 `v2`；`shadow` 尚未支持 |
@@ -192,7 +196,7 @@ Git 仓库流程是：
 
 会话创建请求携带 `repository_id` 和 `branch` 时，runtime 会自动保存快照的仓库、分支、Commit 和工作区路径。后续远端分支变化不会改变已经绑定的会话。直接绑定本地目录不创建快照，读取的是当前工作区内容。
 
-仓库记录还支持 `platform` 和 `version_map: version → {branch, expected_commit}`；保存映射前验证分支存在。Runtime 可按已确认平台和精确版本唯一选择本地已准备的固定快照，缺映射、多映射、commit 不符或快照未准备均失败关闭，不回退默认分支。观察后的轮内自动换绑尚未接入，已有会话和旧证据仍保持原 commit。
+仓库记录还支持 `platform` 和 `version_map: version → {branch, expected_commit}`；保存映射前验证分支存在。多端登记表使用 `version-registry/<platform>/<product-line>.yaml`，Runtime 启动时加载并只接受已核验的 commit；缺映射、多映射、构建号不明、commit 不符或快照未准备均失败关闭，不回退默认分支。GitLab archive 快照会先校验 commit，再以 `repository_id + commit` 物化到固定目录。观察后的轮内自动换绑尚未接入，已有会话和旧证据仍保持原 commit。详细设计见 [`docs/multi-platform-version-snapshot-design.md`](docs/multi-platform-version-snapshot-design.md)。
 
 ## 数据迁移
 

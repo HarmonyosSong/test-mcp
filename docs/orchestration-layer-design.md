@@ -192,6 +192,7 @@ Compass 等远端 Agent 返回的任何文本都不能经任何路径写入账�
 {
   "responsibility": "server",
   "task_type": "incident",
+  "externalScope": "frontend_backend",
   "next_action": {
     "target": "external",
     "question": "请统一外部全栈 Agent 核查该 requestId 对应请求的服务端失败原因"

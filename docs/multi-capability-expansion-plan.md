@@ -97,6 +97,7 @@ version_map: Record<string, {
 - 会话端上下文、Skill 适用端和知识排序仍需与真实 Android/iOS 仓库完成端到端验收。
 - 端只影响排序和适配，不作为知识库硬过滤条件；保留跨域候选与全局回退。
 - 未完成平台和版本证据链前，不开放“根据老师描述自动选端”。
+- 版本 → 代码快照解析的详细技术方案（真实仓库清单、tag 约定、版本登记表、多仓快照布局与里程碑）见 [多端版本快照解析设计](multi-platform-version-snapshot-design.md)。
 
 ### 3.2 Repository MCP 内部代码导航
 
