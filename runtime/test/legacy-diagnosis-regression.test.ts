@@ -464,7 +464,7 @@ test('navigation stays behind observation gate and a failed trace can fall back 
 
 test('skills requiring unavailable tools are omitted and cannot be loaded', async () => {
   const { diagnosis } = await setup([
-    { tool: 'load_skill', args: { name: 'bind-harmony-workspace' } },
+    { tool: 'load_skill', args: { name: 'removed-manual-repository-binding' } },
     { text: '当前没有仓库绑定工具，因此我不能声称已经绑定。' },
   ]);
   const events = await run(diagnosis, '请检查代码');

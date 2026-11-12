@@ -266,7 +266,7 @@ export class EvidenceLedger {
   }
 
   capture(name: string, arguments_: Record<string, unknown>, result: unknown): unknown {
-    if (name === 'search_cloud_logs' || name === 'discover_client_sessions') {
+    if (name === 'search_cloud_logs' || name === 'query_logs' || name === 'discover_client_sessions') {
       return this.captureRemoteLogs(name, result);
     }
     const observedTools = new Set(['read_project_file', 'search_project_text', 'parse_hilog']);
@@ -370,7 +370,7 @@ export class EvidenceLedger {
 
   private captureRemoteLogs(name: string, result: unknown): unknown {
     if (!isRecord(result)) return { evidence_refs: [], result };
-    const rows = name === 'search_cloud_logs'
+    const rows = name === 'search_cloud_logs' || name === 'query_logs'
       ? result.entries
       : Array.isArray(result.candidates)
         ? result.candidates.flatMap((candidate) => isRecord(candidate) && Array.isArray(candidate.entries)

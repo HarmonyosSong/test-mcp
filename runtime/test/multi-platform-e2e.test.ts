@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -39,7 +38,7 @@ async function createRemote(root: string, name: string, fileName: string, conten
   };
 }
 
-test('HarmonyOS、Android、iOS 都能绑定多仓固定版本并形成组件源码路径', async () => {
+test('HarmonyOS、Android、iOS 都能从登记表解析固定版本，空会话不预绑定源码', async () => {
   const root = await mkdtemp(join(tmpdir(), 'multi-platform-e2e-'));
   const previousFetch = globalThis.fetch;
   try {
@@ -68,18 +67,10 @@ test('HarmonyOS、Android、iOS 都能绑定多仓固定版本并形成组件源
     });
     const runtime = await createRuntimeApp(config);
     try {
-      const shellRecord = await runtime.repositories.register({
-        name: 'fixture-shell',
-        url: pathToFileURL(shell.remote).href,
-        default_branch: 'main',
-      });
-      const componentRecord = await runtime.repositories.register({
-        name: 'fixture-component',
-        url: pathToFileURL(component.remote).href,
-        default_branch: 'main',
-      });
-      await runtime.store.saveRepository(shellRecord);
-      await runtime.store.saveRepository(componentRecord);
+      // Registry paths are enough. Runtime creates its internal repository
+      // records on demand; users never need to pre-register these sources.
+      const shellRepositoryId = 'fixture/shell';
+      const componentRepositoryId = 'fixture/component';
 
       for (const platform of ['harmony', 'android', 'ios'] as const) {
         await mkdir(join(registryRoot, platform), { recursive: true });
@@ -91,11 +82,11 @@ test('HarmonyOS、Android、iOS 都能绑定多仓固定版本并形成组件源
       source: manual
       verified: true
       repos:
-        - repository_id: ${shellRecord.id}
+        - repository_id: ${shellRepositoryId}
           role: shell
           ref: release-7.106.5
           expected_commit: ${shell.commit}
-        - repository_id: ${componentRecord.id}
+        - repository_id: ${componentRepositoryId}
           role: component
           mount_path: components/feature
           ref: release-7.106.5
@@ -108,39 +99,28 @@ test('HarmonyOS、Android、iOS 都能绑定多仓固定版本并形成组件源
         const response = await runtime.app.request(`${config.appPrefix}/api/conversations`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', origin: 'http://testserver' },
-          body: JSON.stringify({ platform, product_line: 'xueersi', version: '7.106.5' }),
+          body: JSON.stringify({ title: `${platform} 动态会话` }),
         });
         if (response.status !== 201) assert.fail(`${platform}: ${await response.text()}`);
         const conversation = await response.json() as {
-          platform: string;
-          source_repositories: Array<{ repository_id: string; role: string; mount_path: string; resolved_commit: string }>;
-          workspace_path: string;
+          platform: string | null;
+          source_repositories: unknown[];
+          workspace_path: string | null;
         };
-        assert.equal(conversation.platform, platform);
-        assert.equal(conversation.source_repositories.length, 2);
-        assert.equal(conversation.source_repositories.find((item) => item.role === 'shell')?.resolved_commit, shell.commit);
-        assert.equal(conversation.source_repositories.find((item) => item.role === 'component')?.mount_path, 'components/feature');
-        assert.equal(await readFile(join(conversation.workspace_path, 'components/feature/Page.ets'), 'utf8'), 'export const source = "component";\n');
+        assert.equal(conversation.platform, null);
+        assert.deepEqual(conversation.source_repositories, []);
+        assert.equal(conversation.workspace_path, null);
+        const selected = runtime.versionRegistry.select({ platform, productLine: 'xueersi', version: '7.106.5' });
+        assert.equal(selected.repositories.length, 2);
+        assert.equal(selected.repositories.find((item) => item.role === 'shell')?.expected_commit, shell.commit);
       }
 
-      const latestResponse = await runtime.app.request(`${config.appPrefix}/api/conversations`, {
+      const rejectedPreselection = await runtime.app.request(`${config.appPrefix}/api/conversations`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', origin: 'http://testserver' },
-        body: JSON.stringify({ platform: 'android', product_line: 'xueersi' }),
+        body: JSON.stringify({ platform: 'android', product_line: 'xueersi', version: '7.106.5' }),
       });
-      if (latestResponse.status !== 201) assert.fail(await latestResponse.text());
-      // Scope metadata alone does not preselect a source. The first prompt may
-      // still provide an explicit version before the runtime binds a snapshot.
-      const latest = await latestResponse.json() as {
-        platform: string;
-        product_line: string;
-        version: string | null;
-        workspace_path: string | null;
-      };
-      assert.equal(latest.platform, 'android');
-      assert.equal(latest.product_line, 'xueersi');
-      assert.equal(latest.version, null);
-      assert.equal(latest.workspace_path, null);
+      assert.equal(rejectedPreselection.status, 422);
 
       await mkdir(join(registryRoot, 'android'), { recursive: true });
       await writeFile(join(registryRoot, 'android', 'xuejiayun.yaml'), `
@@ -150,7 +130,7 @@ test('HarmonyOS、Android、iOS 都能绑定多仓固定版本并形成组件源
       source: manual
       verified: true
       repos:
-        - repository_id: ${shellRecord.id}
+        - repository_id: ${shellRepositoryId}
           role: shell
           ref: release-7.106.5
           expected_commit: ${shell.commit}
@@ -161,10 +141,9 @@ test('HarmonyOS、Android、iOS 都能绑定多仓固定版本并形成组件源
         headers: { 'content-type': 'application/json', origin: 'http://testserver' },
         body: JSON.stringify({ platform: 'android', product_line: 'xuejiayun', version: '7.106.6' }),
       });
-      if (partialResponse.status !== 201) assert.fail(await partialResponse.text());
-      const partial = await partialResponse.json() as { source_completeness: string; source_limitations: string[] };
-      assert.equal(partial.source_completeness, 'partial');
-      assert.match(partial.source_limitations[0] ?? '', /组件源码未挂载/);
+      assert.equal(partialResponse.status, 422);
+      const partial = runtime.versionRegistry.select({ platform: 'android', productLine: 'xuejiayun', version: '7.106.6' });
+      assert.equal(partial.repositories.length, 1);
     } finally {
       await runtime.mastra.getStorage()?.close();
       await runtime.store.close();

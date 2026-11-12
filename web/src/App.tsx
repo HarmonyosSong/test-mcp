@@ -6,17 +6,14 @@ import { ChatPanel } from './components/chat/ChatPanel';
 import { NewConversationDialog } from './components/chat/NewConversationDialog';
 import { ChatThread } from './components/chat/ChatThread';
 import { ModelSettingsDialog } from './components/ModelSettingsDialog';
-import { RepositorySettingsDialog } from './components/RepositorySettingsDialog';
 import { Sidebar } from './components/Sidebar';
 import { Typewriter } from './components/Typewriter';
 import { useChatSessions } from './hooks/useChatSessions';
-import { upsertRepository } from './repositories';
 import type {
   ConnectionState,
   MetaResponse,
   ModelProviderPreset,
   ModelStatus,
-  RepositoryRecord,
 } from './types';
 
 const EMPTY_META: MetaResponse = {
@@ -46,18 +43,12 @@ function App() {
   const [connection, setConnection] = useState<ConnectionState>('checking');
   const [meta, setMeta] = useState<MetaResponse>(EMPTY_META);
   const [showModelSettings, setShowModelSettings] = useState(false);
-  const [showRepositorySettings, setShowRepositorySettings] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
-  const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
   const [modelProviders, setModelProviders] = useState<ModelProviderPreset[]>([]);
   const [modelStatus, setModelStatus] = useState<ModelStatus>(OFFLINE_MODEL_STATUS);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const initialized = useRef(false);
-
-  const handleRepositoryRegistered = useCallback((repository: RepositoryRecord) => {
-    setRepositories((current) => upsertRepository(current, repository));
-  }, []);
 
   const chat = useChatSessions({
     connection,
@@ -69,16 +60,14 @@ function App() {
     if (!manual) setConnection('checking');
     try {
       await api.health();
-      const [nextMeta, nextProviders, nextModelStatus, nextRepositories] = await Promise.all([
+      const [nextMeta, nextProviders, nextModelStatus] = await Promise.all([
         api.meta(),
         api.modelProviders(),
         api.modelStatus(),
-        api.repositories(),
       ]);
       setMeta(nextMeta);
       setModelProviders(nextProviders);
       setModelStatus(nextModelStatus);
-      setRepositories(nextRepositories);
       setConnection('connected');
       if (manual) setNotice({ kind: 'info', message: '诊断服务数据已刷新。' });
       return true;
@@ -87,7 +76,6 @@ function App() {
       setMeta(EMPTY_META);
       setModelProviders([]);
       setModelStatus(OFFLINE_MODEL_STATUS);
-      setRepositories([]);
       if (manual) {
         setNotice({ kind: 'error', message: '诊断服务仍未连接，请稍后重试。' });
       }
@@ -131,14 +119,6 @@ function App() {
     setShowModelSettings(true);
   }, [connection]);
 
-  const openRepositorySettings = useCallback(() => {
-    if (connection !== 'connected') {
-      setNotice({ kind: 'error', message: '连接诊断服务后才能管理业务仓库。' });
-      return;
-    }
-    setShowRepositorySettings(true);
-  }, [connection]);
-
   const handleModelChanged = useCallback(
     (nextStatus: ModelStatus, message: string) => {
       setModelStatus(nextStatus);
@@ -168,7 +148,6 @@ function App() {
           identityLabel={session?.identity.displayName || session?.identity.subject}
           onRefresh={() => void refreshWorkspace()}
           onModelSettings={openModelSettings}
-          onRepositorySettings={openRepositorySettings}
           onLogout={session?.authMode === 'sso' ? handleLogout : undefined}
         >
           <ChatPanel
@@ -198,7 +177,7 @@ function App() {
               <h2>
                 <Typewriter text="聊天需要连接诊断服务" />
               </h2>
-              <p>连接服务并配置模型后，即可通过多轮对话排查 HarmonyOS 问题。</p>
+              <p>连接服务并配置模型后，即可通过多轮对话排查 Android、iOS 和 HarmonyOS 问题。</p>
               <button
                 type="button"
                 className="secondary-button"
@@ -279,17 +258,8 @@ function App() {
 
       {showNewConversation && (
         <NewConversationDialog
-          repositories={repositories}
           onClose={() => setShowNewConversation(false)}
           onCreate={chat.createNew}
-        />
-      )}
-
-      {showRepositorySettings && (
-        <RepositorySettingsDialog
-          repositories={repositories}
-          onClose={() => setShowRepositorySettings(false)}
-          onRegistered={handleRepositoryRegistered}
         />
       )}
     </div>

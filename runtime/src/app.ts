@@ -13,7 +13,6 @@ import { createAuthRoutes } from './http/auth.js';
 import { ProductStore } from './product/store.js';
 import { ModelConfiguration } from './model/configuration.js';
 import { createModelRoutes } from './http/models.js';
-import { createRepositoryRoutes } from './http/repositories.js';
 import { RepositoryCapability } from './capabilities/repository.js';
 import { CapabilityMcp } from './capabilities/mcp.js';
 import { SkillRegistry } from './diagnosis/skills.js';
@@ -180,9 +179,6 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         maxRemoteCalls: config.investigationMaxRemoteCalls,
       },
       createConversationSource: async ({
-        repositoryId,
-        branch,
-        workspacePath,
         platform,
         productLine,
         formFactor,
@@ -190,91 +186,91 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         build,
         signal,
       }) => {
-        if (platform || productLine || formFactor || version || build) {
-          try {
-            const selection = versionRegistry.select({
-              platform: platform!,
-              productLine: productLine!,
-              formFactor: formFactor ?? undefined,
-              version,
-              build,
-            });
-            const snapshots = await Promise.all(selection.repositories.map(async (registryRepository) => {
-              const repository = await repositories.findByRemoteRepositoryId(registryRepository.repository_id);
-              const snapshot = gitlabArchiveClient
-                ? await gitlabArchiveClient.downloadArchive(registryRepository.repository_id, registryRepository.expected_commit, signal)
-                  .then(({ archive }) => repositories.prepareArchiveSnapshot(
-                    repository.id,
-                    registryRepository.ref,
-                    registryRepository.expected_commit,
-                    archive,
-                  ))
-                : await repositories.getPreparedSnapshot(
+        try {
+          if (!platform || !productLine) {
+            throw new RepositoryGitError('源码绑定需要已确认的平台和产品线');
+          }
+          const selection = versionRegistry.select({
+            platform,
+            productLine,
+            formFactor: formFactor ?? undefined,
+            version,
+            build,
+          });
+          const snapshots = await Promise.all(selection.repositories.map(async (registryRepository) => {
+            const repository = await repositories.ensureRegistryRepository(
+              registryRepository.repository_id,
+              {
+                baseUrl: config.gitlabBaseUrl,
+                ref: registryRepository.ref,
+                persist: (record) => store.saveRepository(record),
+              },
+            );
+            const snapshot = gitlabArchiveClient
+              ? await gitlabArchiveClient.downloadArchive(registryRepository.repository_id, registryRepository.expected_commit, signal)
+                .then(({ archive }) => repositories.prepareArchiveSnapshot(
                   repository.id,
                   registryRepository.ref,
                   registryRepository.expected_commit,
-                );
-              await store.saveSnapshot(snapshot);
-              return { registryRepository, repository, snapshot };
-            }));
-            const shell = snapshots.find((item) => item.registryRepository.role === 'shell');
-            if (!shell) throw new RepositoryGitError('当前版本没有 shell 仓库');
-            const sourceRepositories = snapshots.map(({ registryRepository, repository, snapshot }) => ({
-              repository_id: repository.id,
-              repository_name: repository.name,
-              requested_ref: snapshot.requested_ref,
-              resolved_commit: snapshot.resolved_commit,
-              role: registryRepository.role,
-              mount_path: registryRepository.mount_path ?? '',
-            }));
-            const workspacePath = snapshots.length === 1
-              ? shell.snapshot.workspace_path
-              : (await materializeMultiRepositorySnapshot({
-                snapshotRoot: config.snapshotDir,
-                repositories: snapshots.map(({ registryRepository, snapshot }) => ({
-                  snapshot,
-                  role: registryRepository.role,
-                  mountPath: registryRepository.mount_path ?? '',
-                })),
-              })).workspace_path;
-            const sourceCompleteness = platform === 'harmony' || snapshots.some((item) => item.registryRepository.role !== 'shell')
-              ? 'complete' as const
-              : 'partial' as const;
-            return {
-              workspace_path: workspacePath,
-              repository_id: shell.repository.id,
-              repository_name: shell.repository.name,
-              requested_ref: shell.snapshot.requested_ref,
-              resolved_commit: shell.snapshot.resolved_commit,
-              source_repositories: sourceRepositories,
-              source_completeness: sourceCompleteness,
-              source_limitations: sourceCompleteness === 'partial'
-                ? ['当前登记只包含 shell 仓库，组件源码未挂载。']
-                : [],
-              platform,
-              product_line: productLine,
-              form_factor: formFactor,
-              version: selection.entry.version,
-              build: selection.build.build ?? null,
-            };
-          } catch (error) {
-            if (error instanceof VersionRegistryError || error instanceof GitLabArchiveError || error instanceof ArchiveSnapshotError || error instanceof MultiRepositorySnapshotError) {
-              throw new RepositoryGitError(error.message, { cause: error });
-            }
-            throw error;
+                  archive,
+                ))
+              : await repositories.getPreparedSnapshot(
+                repository.id,
+                registryRepository.ref,
+                registryRepository.expected_commit,
+              );
+            await store.saveSnapshot(snapshot);
+            return { registryRepository, repository, snapshot };
+          }));
+          const shell = snapshots.find((item) => item.registryRepository.role === 'shell');
+          if (!shell) throw new RepositoryGitError('当前版本没有 shell 仓库');
+          const sourceRepositories = snapshots.map(({ registryRepository, repository, snapshot }) => ({
+            repository_id: repository.id,
+            repository_name: repository.name,
+            requested_ref: snapshot.requested_ref,
+            resolved_commit: snapshot.resolved_commit,
+            role: registryRepository.role,
+            mount_path: registryRepository.mount_path ?? '',
+          }));
+          const workspacePath = snapshots.length === 1
+            ? shell.snapshot.workspace_path
+            : (await materializeMultiRepositorySnapshot({
+              snapshotRoot: config.snapshotDir,
+              repositories: snapshots.map(({ registryRepository, snapshot }) => ({
+                snapshot,
+                role: registryRepository.role,
+                mountPath: registryRepository.mount_path ?? '',
+              })),
+            })).workspace_path;
+          const sourceCompleteness = snapshots.some((item) => item.registryRepository.role !== 'shell')
+            ? 'complete' as const
+            : 'partial' as const;
+          return {
+            workspace_path: workspacePath,
+            repository_id: shell.repository.id,
+            repository_name: shell.repository.name,
+            requested_ref: shell.snapshot.requested_ref,
+            resolved_commit: shell.snapshot.resolved_commit,
+            source_repositories: sourceRepositories,
+            source_completeness: sourceCompleteness,
+            source_limitations: sourceCompleteness === 'partial'
+              ? ['当前登记只包含 shell 仓库，组件源码未挂载。']
+              : [],
+            platform,
+            product_line: productLine,
+            form_factor: formFactor,
+            version: selection.entry.version,
+            build: selection.build.build ?? null,
+          };
+        } catch (error) {
+          if (error instanceof VersionRegistryError || error instanceof GitLabArchiveError || error instanceof ArchiveSnapshotError || error instanceof MultiRepositorySnapshotError) {
+            throw new RepositoryGitError(error.message, { cause: error });
           }
+          throw error;
         }
-        if (repositoryId && branch) {
-          const snapshot = await repositories.prepareSnapshot(repositoryId, branch);
-          await store.saveSnapshot(snapshot);
-          return snapshot;
-        }
-        if (workspacePath) return { workspace_path: await repositories.validateWorkspacePath(workspacePath) };
-        return {};
       },
     }));
     app.route('/api', createModelRoutes(modelConfiguration));
-    app.route('/api', createRepositoryRoutes(repositories, store));
 
     if (config.serveWeb) {
       const webRoot = resolve(config.projectRoot, config.webDist);

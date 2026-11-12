@@ -31,9 +31,29 @@ test('创建精确版本会话时选择登记 commit、下载 GitLab archive 并
   const archive = new Uint8Array(await readFile(archivePath));
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
-    const url = String(input);
+    const url = input instanceof Request ? input.url : String(input);
     if (url.includes('/commits/')) {
       return new Response(JSON.stringify({ id: commit, short_id: commit.slice(0, 8) }), { status: 200 });
+    }
+    if (url.includes('/chat/completions')) {
+      const chunk = JSON.stringify({
+        id: 'fixture-completion',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'fixture',
+        choices: [{ index: 0, delta: { role: 'assistant', content: '已完成源码绑定验收。' }, finish_reason: null }],
+      });
+      const end = JSON.stringify({
+        id: 'fixture-completion',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'fixture',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      });
+      return new Response(`data: ${chunk}\n\ndata: ${end}\n\ndata: [DONE]\n\n`, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
     }
     return new Response(archive, { status: 200 });
   };
@@ -46,7 +66,15 @@ test('创建精确版本会话时选择登记 commit、下载 GitLab archive 并
     HARMONY_AGENT_VERSION_REGISTRY_ROOT: registry,
     HARMONY_AGENT_GITLAB_BASE_URL: 'https://git.example.test',
     HARMONY_AGENT_GITLAB_TOKEN: 'test-token',
+    HARMONY_AGENT_MODEL_CONFIG_FILE: join(root, 'model-config.json'),
   });
+  await writeFile(config.modelConfigFile, JSON.stringify({
+    provider: 'custom',
+    model_name: 'fixture',
+    base_url: 'https://model.example.test/v1',
+    api_key: 'fixture-key',
+    compatibility_mode: 'standard',
+  }));
   const runtime = await createRuntimeApp(config);
   try {
     const repository = await runtime.repositories.register({
@@ -75,16 +103,18 @@ test('创建精确版本会话时选择登记 commit、下载 GitLab archive 并
     const response = await runtime.app.request(`${config.appPrefix}/api/conversations`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: 'http://testserver' },
-      body: JSON.stringify({
-        platform: 'android',
-        product_line: 'xueersi',
-        form_factor: 'phone',
-        version: '7.106.5',
-        build: '55364',
-      }),
+      body: JSON.stringify({ title: '动态源码绑定' }),
     });
     if (response.status !== 201) assert.fail(await response.text());
-    const conversation = await response.json() as {
+    const created = await response.json() as { id: string };
+    const messageResponse = await runtime.app.request(`${config.appPrefix}/api/conversations/${created.id}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://testserver' },
+      body: JSON.stringify({ content: '请查询 Android 学而思 7.106.5 build 55364 的客户端逻辑' }),
+    });
+    if (messageResponse.status !== 200) assert.fail(await messageResponse.text());
+    await messageResponse.text();
+    const conversation = await (await runtime.app.request(`${config.appPrefix}/api/conversations/${created.id}`)).json() as {
       repository_id: string;
       resolved_commit: string;
       platform: string;

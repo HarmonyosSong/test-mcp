@@ -177,7 +177,7 @@ export function selectVersionRegistryEntry(
   const scopedEntries = entries.filter((entry) =>
     entry.platform === input.platform &&
     entry.product_line === input.productLine &&
-    (formFactor === undefined || entry.form_factor === formFactor),
+    (formFactor === undefined || entry.form_factor === formFactor || entry.form_factor === 'universal'),
   );
   const version = requestedVersion ? normalizeClientVersion(requestedVersion) : null;
   const candidates = version
@@ -191,11 +191,28 @@ export function selectVersionRegistryEntry(
         : `没有 ${input.platform}/${input.productLine} 的已核验版本`,
     );
   }
-  if (candidates.length !== 1) {
+  if (!formFactor && !requestedVersion) {
+    const formFactors = new Set(
+      scopedEntries
+        .filter((entry) => entry.form_factor !== 'universal')
+        .map((entry) => entry.form_factor),
+    );
+    if (formFactors.size > 1) {
+      throw new VersionRegistryError(
+        'version_ambiguous',
+        `${input.platform}/${input.productLine} 同时登记了多个端形态，请在提示词中说明手机或 HD/平板`,
+      );
+    }
+  }
+  const exactFormFactorCandidates = formFactor && formFactor !== 'universal'
+    ? candidates.filter((entry) => entry.form_factor === formFactor)
+    : candidates;
+  const narrowedCandidates = exactFormFactorCandidates.length > 0 ? exactFormFactorCandidates : candidates;
+  if (narrowedCandidates.length !== 1) {
     throw new VersionRegistryError('version_ambiguous', `版本 ${input.version} 命中多个端或形态登记`);
   }
 
-  const verifiedBuilds = candidates[0]!.builds.filter((build) => build.verified);
+  const verifiedBuilds = narrowedCandidates[0]!.builds.filter((build) => build.verified);
   if (verifiedBuilds.length === 0) {
     throw new VersionRegistryError('version_not_registered', `版本 ${input.version} 没有已核验构建`);
   }
@@ -213,7 +230,7 @@ export function selectVersionRegistryEntry(
     builds = [selectLatestBuild(builds)];
   }
   return {
-    entry: candidates[0]!,
+    entry: narrowedCandidates[0]!,
     build: builds[0]!,
     repositories: builds[0]!.repos,
   };

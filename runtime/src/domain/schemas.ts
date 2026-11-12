@@ -11,8 +11,6 @@ const defaultEvidenceId = () => `ev-${randomUUID().replaceAll('-', '').slice(0, 
 const defaultToolId = () => `tool-${randomUUID().replaceAll('-', '').slice(0, 8)}`;
 const defaultMessageId = () => `msg-${randomUUID().replaceAll('-', '').slice(0, 10)}`;
 const defaultConversationId = () => `conv-${randomUUID().replaceAll('-', '').slice(0, 10)}`;
-const optionalTrimmedText = (max: number) =>
-  z.string().trim().max(max).nullable().default(null).transform((value) => value || null);
 
 export const ClientPlatformSchema = z.enum(['harmony', 'android', 'ios']);
 export const ClientProductLineSchema = z.enum(['xueersi', 'xuejiayun']);
@@ -97,6 +95,9 @@ export const LogObservationContextSchema = z.strictObject({
     method: z.enum(['user_selected', 'observed_client_session']).nullable(),
   }),
   observed_platform: z.enum(['harmony', 'android', 'ios', 'unknown']),
+  // Older evidence snapshots omit the product line; LogCenter may supply it
+  // when the user's prompt only names a platform.
+  observed_product_line: ClientProductLineSchema.nullable().optional().default(null),
   observed_version: nullableText,
   device_ref: nullableText,
   session_ref: nullableText,
@@ -361,30 +362,12 @@ export const ConversationSummarySchema = z.object({
   updated_at: isoDateTime,
 });
 
-export const CreateConversationRequestSchema = z.object({
+// A conversation starts unbound. Platform, product line, version and source
+// identity are resolved from the user's messages and correlated observations.
+// Keeping this request strict prevents callers from reintroducing manual repo
+// or branch binding through the HTTP API.
+export const CreateConversationRequestSchema = z.strictObject({
   title: z.string().trim().max(120).nullable().default(null).transform((value) => value || null),
-  workspace_path: z.string().trim().max(2_000).nullable().default(null).transform((value) => value || null),
-  repository_id: z.string().trim().max(100).nullable().default(null).transform((value) => value || null),
-  branch: z.string().trim().max(500).nullable().default(null).transform((value) => value || null),
-  platform: ClientPlatformSchema.nullable().default(null),
-  product_line: ClientProductLineSchema.nullable().default(null),
-  form_factor: ClientFormFactorSchema.nullable().default(null),
-  version: optionalTrimmedText(100),
-  build: optionalTrimmedText(100),
-}).superRefine((value, ctx) => {
-  if (Boolean(value.repository_id) !== Boolean(value.branch)) {
-    ctx.addIssue({ code: 'custom', message: 'repository_id and branch must be provided together' });
-  }
-  if (value.workspace_path && value.repository_id) {
-    ctx.addIssue({ code: 'custom', message: 'workspace_path and repository_id are mutually exclusive' });
-  }
-  const hasVersionContext = Boolean(value.platform || value.product_line || value.form_factor || value.version || value.build);
-  if (hasVersionContext && (!value.platform || !value.product_line)) {
-    ctx.addIssue({ code: 'custom', path: ['platform'], message: '版本源码需要同时提供 platform 和 product_line；未填写 version 时将绑定该范围内最新版本' });
-  }
-  if (hasVersionContext && (value.workspace_path || value.repository_id || value.branch)) {
-    ctx.addIssue({ code: 'custom', message: '精确版本源码不能与 workspace_path、repository_id 或 branch 同时提供' });
-  }
 });
 
 export const SendMessageRequestSchema = z.object({

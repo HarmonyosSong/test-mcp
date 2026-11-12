@@ -78,6 +78,7 @@ test('提示词没有端和版本时使用已关联 LogCenter 事实补齐上下
           matched_error_features: [],
           service_binding: { status: 'confirmed', method: 'observed_client_session' },
           observed_platform: 'android',
+          observed_product_line: 'xueersi',
           observed_version: '7.106.5',
           device_ref: null,
           session_ref: 'session-1',
@@ -90,6 +91,23 @@ test('提示词没有端和版本时使用已关联 LogCenter 事实补齐上下
     productLine: 'xueersi',
     formFactor: null,
     version: '7.106.5',
+    build: null,
+  });
+});
+
+test('显式切换平台时不继承历史平台的版本和形态', () => {
+  assert.deepEqual(resolvePromptSourceContext('请查 Android 代码', {
+    platform: null,
+    product_line: 'xueersi',
+    form_factor: null,
+    version: null,
+    build: null,
+    promptHistory: ['请查 HarmonyOS HD 7.106.0 的问题'],
+  }), {
+    platform: 'android',
+    productLine: 'xueersi',
+    formFactor: null,
+    version: null,
     build: null,
   });
 });

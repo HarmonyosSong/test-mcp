@@ -10,15 +10,11 @@ import type {
   ModelConnectionResult,
   ModelProviderPreset,
   ModelStatus,
-  RegisterRepositoryInput,
-  RepositoryBranch,
-  RepositoryRecord,
-  RepositorySnapshot,
 } from './types';
 
 const REQUEST_TIMEOUT_MS = 5_000;
-// 绑定仓库需要 fetch 和固定 commit 快照，不能沿用普通 API 的 5 秒超时。
-const REPOSITORY_SNAPSHOT_TIMEOUT_MS = 300_000;
+// Runtime prepares a source snapshot after the first user prompt.
+const SOURCE_RESOLUTION_TIMEOUT_MS = 300_000;
 
 export class ApiError extends Error {
   constructor(
@@ -75,37 +71,6 @@ async function request<T>(
 export const api = {
   health: () => request<HealthResponse>('/health'),
   meta: () => request<MetaResponse>('/meta'),
-  repositories: () => request<RepositoryRecord[]>('/repositories'),
-  registerRepository: (input: RegisterRepositoryInput) =>
-    request<RepositoryRecord>(
-      '/repositories',
-      {
-        method: 'POST',
-        body: JSON.stringify(input),
-      },
-      60_000,
-    ),
-  updateRepository: (repositoryId: string, input: { default_branch: string }) =>
-    request<RepositoryRecord>(
-      `/repositories/${repositoryId}`,
-      { method: 'PATCH', body: JSON.stringify(input) },
-      60_000,
-    ),
-  repositoryBranches: (repositoryId: string, query = '') =>
-    request<RepositoryBranch[]>(
-      `/repositories/${repositoryId}/branches?query=${encodeURIComponent(query)}`,
-      undefined,
-      60_000,
-    ),
-  createRepositorySnapshot: (repositoryId: string, branch: string) =>
-    request<RepositorySnapshot>(
-      `/repositories/${repositoryId}/snapshots`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ branch }),
-      },
-      REPOSITORY_SNAPSHOT_TIMEOUT_MS,
-    ),
   modelProviders: () => request<ModelProviderPreset[]>('/model/providers'),
   availableModels: () => request<string[]>('/model/available-models'),
   probeModels: (input: {
@@ -143,7 +108,7 @@ export const api = {
     request<ChatConversation>('/conversations', {
       method: 'POST',
       body: JSON.stringify(input),
-    }, REPOSITORY_SNAPSHOT_TIMEOUT_MS),
+    }, SOURCE_RESOLUTION_TIMEOUT_MS),
   getConversation: (id: string) => request<ChatConversation>(`/conversations/${id}`),
   updateConversation: (
     id: string,

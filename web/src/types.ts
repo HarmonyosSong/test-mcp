@@ -226,49 +226,6 @@ export interface MetaResponse {
   model_prices: Record<string, { input: number; output: number }>;
 }
 
-export interface RepositoryVersionMapping {
-  branch: string;
-  expected_commit: string;
-  tag?: string | null;
-  build?: string | null;
-  source?: 'tag-scan' | 'manual';
-  verified?: boolean;
-}
-
-export interface RepositoryRecord {
-  id: string;
-  name: string;
-  url: string;
-  default_branch: string;
-  platform: 'harmony' | 'android' | 'ios' | null;
-  version_map: Record<string, RepositoryVersionMapping>;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface RepositoryBranch {
-  name: string;
-  commit: string;
-}
-
-export interface RegisterRepositoryInput {
-  name: string;
-  url: string;
-  default_branch?: string;
-  platform?: 'harmony' | 'android' | 'ios' | null;
-  version_map?: Record<string, RepositoryVersionMapping>;
-}
-
-export interface RepositorySnapshot {
-  repository_id: string;
-  repository_name: string;
-  requested_ref: string;
-  resolved_commit: string;
-  workspace_path: string;
-  source?: 'git' | 'gitlab-api-archive';
-  created_at: string;
-}
-
 export interface ModelProviderPreset {
   id: string;
   name: string;

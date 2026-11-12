@@ -32,7 +32,7 @@ FIFO 挤掉、复用响应不含证据 ID、模型编 ID 提交报告三连失�
 `_cache: 签名 → CachedCall(call_index, snapshot_generation, evidence_refs)`,替代旧的两张表:
 
 - 签名先补工具默认参数再规范化(默认值表与工具定义同步维护),省略默认与显式同值归一。
-- `bind_repository` 按返回文本里的 commit 判快照:**同 commit 重绑幂等不清缓存**;
+- 动态源码绑定按登记表返回的固定 commit 判快照：同 commit 的后续轮次复用快照，不清理证据账本；commit 变化时才创建新的源码上下文。
   换 commit 或提取不到 commit 时才失效缓存与进度状态。
 - 复用前核对缓存的证据引用仍在账本;已被淘汰则缓存失效,允许一次真实重读,
   恢复成功计 `evidence_restored` 且不计入无进展——不能既阻止重读又要求引用失效 ID。

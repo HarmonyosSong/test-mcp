@@ -1,0 +1,24 @@
+- version: 7.106.5
+  form_factor: phone
+  builds:
+    - build: "55373"
+      tag: V7.106.5-55373-TEST
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_XesApp/xesApp_Android
+          role: shell
+          ref: V7.106.5-55373-TEST
+          expected_commit: 5349a5eba887af2979f01ff07398fcf6a82b3a94
+- version: 5.106.5
+  form_factor: pad
+  builds:
+    - build: "2225"
+      tag: V5.106.5-2225-TEST
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_XesApp/xesApp_Pad_Android
+          role: shell
+          ref: V5.106.5-2225-TEST
+          expected_commit: 94886e03406a595632d595fbea88494f2c07fc56

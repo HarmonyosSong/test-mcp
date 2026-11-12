@@ -60,7 +60,7 @@ export class ClientObservationGate {
             if (status === 'not_found') this.status = 'degraded';
           } else if (name === 'parse_hilog' && this.status === 'pending') {
             this.status = 'completed';
-          } else if (name === 'search_cloud_logs' && this.status === 'pending') {
+          } else if ((name === 'search_cloud_logs' || name === 'query_logs') && this.status === 'pending') {
             const correlated = typeof result === 'object' && result !== null
               && 'observation_status' in result && result.observation_status === 'correlated';
             this.status = correlated ? 'completed' : 'degraded';
@@ -74,7 +74,7 @@ export class ClientObservationGate {
           }
           return result;
         } catch (error) {
-          if (['resolve_log_target', 'search_cloud_logs', 'discover_client_sessions', 'parse_hilog'].includes(name)
+          if (['resolve_log_target', 'search_cloud_logs', 'query_logs', 'discover_client_sessions', 'parse_hilog'].includes(name)
               && this.status === 'pending') {
             this.status = 'degraded';
           }

@@ -95,6 +95,32 @@ test('没有版本时按平台、产品线和形态选择最新版本', () => {
   assert.equal(selected.repositories[0]?.repository_id, 'new');
 });
 
+test('未说明形态且同一产品线有手机和平板版本时拒绝猜测', () => {
+  const entries = [
+    {
+      platform: 'android' as const,
+      product_line: 'xueersi' as const,
+      version: '7.106.5',
+      form_factor: 'phone' as const,
+      builds: [{ build: '1', tag: 'phone', source: 'manual' as const, verified: true, repos: [{ repository_id: 'phone', role: 'shell' as const, ref: 'phone', expected_commit: COMMIT }] }],
+    },
+    {
+      platform: 'android' as const,
+      product_line: 'xueersi' as const,
+      version: '5.106.5',
+      form_factor: 'pad' as const,
+      builds: [{ build: '1', tag: 'pad', source: 'manual' as const, verified: true, repos: [{ repository_id: 'pad', role: 'shell' as const, ref: 'pad', expected_commit: COMMIT }] }],
+    },
+  ];
+  assert.throws(
+    () => selectVersionRegistryEntry(entries, { platform: 'android', productLine: 'xueersi' }),
+    (error: unknown) => error instanceof VersionRegistryError && error.code === 'version_ambiguous',
+  );
+  assert.equal(selectVersionRegistryEntry(entries, {
+    platform: 'android', productLine: 'xueersi', formFactor: 'phone',
+  }).entry.form_factor, 'phone');
+});
+
 test('多仓登记要求唯一 shell、安全挂载路径和不重复挂载点', async () => {
   const root = await mkdtemp(join(tmpdir(), 'version-registry-multi-'));
   try {

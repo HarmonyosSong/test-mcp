@@ -43,7 +43,7 @@ function detectProductLine(content: string): ClientProductLine | null {
 }
 
 function detectFormFactor(content: string): ClientFormFactor | null {
-  if (/平板|iPad|pad/i.test(content)) return 'pad';
+  if (/平板|iPad|pad|(?:学而思|学家云)\s*HD\b|(?:^|[\s_-])HD(?:$|[\s_-])/i.test(content)) return 'pad';
   if (/手机|phone/i.test(content)) return 'phone';
   return null;
 }
@@ -70,14 +70,34 @@ function uniqueOrThrow<T extends string>(values: readonly T[], label: string): T
 export function resolvePromptSourceContext(
   content: string,
   conversation: Pick<ConversationRecord, 'platform' | 'product_line' | 'form_factor' | 'version' | 'build'>
-    & Partial<Pick<ConversationRecord, 'evidence_state'>>,
+    & Partial<Pick<ConversationRecord, 'evidence_state'>>
+    & { promptHistory?: readonly string[] },
 ): PromptSourceContext | null {
   const observed = observedLogContext(conversation.evidence_state ?? {});
-  const platform = observed.platform ?? detectPlatform(content) ?? conversation.platform;
-  const productLine = detectProductLine(content) ?? conversation.product_line;
-  const formFactor = detectFormFactor(content) ?? conversation.form_factor;
-  const version = detectVersion(content) ?? observed.version ?? conversation.version;
-  const build = detectBuild(content, version) ?? conversation.build;
+  const currentPlatform = detectPlatform(content);
+  const currentProductLine = detectProductLine(content);
+  const currentFormFactor = detectFormFactor(content);
+  const currentVersion = detectVersion(content);
+  const previousMessages = [...(conversation.promptHistory ?? [])].reverse();
+  const historyPlatform = firstDetected(previousMessages, detectPlatform);
+  const historyProductLine = firstDetected(previousMessages, detectProductLine);
+  const historyFormFactor = currentPlatform && historyPlatform && currentPlatform !== historyPlatform
+    ? null
+    : firstDetected(previousMessages, detectFormFactor);
+  const historyVersion = currentPlatform && historyPlatform && currentPlatform !== historyPlatform
+    ? null
+    : firstDetected(previousMessages, detectVersion);
+  const platform = currentPlatform ?? observed.platform ?? historyPlatform ?? conversation.platform;
+  const productLine = currentProductLine ?? observed.productLine ?? historyProductLine ?? conversation.product_line;
+  const formFactor = currentFormFactor ?? historyFormFactor ?? conversation.form_factor;
+  // Do not carry a Harmony/iOS log version into an explicit Android request
+  // (or the reverse); the registry will choose the latest verified build.
+  const observedVersion = observed.platform && platform && observed.platform !== platform
+    ? null
+    : observed.version;
+  const version = currentVersion ?? observedVersion ?? historyVersion ?? conversation.version;
+  const build = detectBuild(content, version)
+    ?? (currentPlatform && historyPlatform && currentPlatform !== historyPlatform ? null : conversation.build);
 
   if (conversation.platform && detectPlatform(content) && conversation.platform !== platform) {
     throw new PromptVersionContextError(`提示词平台与会话平台不一致：${conversation.platform} / ${platform}`);
@@ -89,12 +109,21 @@ export function resolvePromptSourceContext(
   return { platform, productLine, formFactor, version, build };
 }
 
+function firstDetected<T>(messages: readonly string[], detector: (content: string) => T | null): T | null {
+  for (const message of messages) {
+    const value = detector(message);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
 function observedLogContext(value: ConversationRecord['evidence_state']): {
   platform: ClientPlatform | null;
+  productLine: ClientProductLine | null;
   version: string | null;
 } {
   const rawEntries = value.entries;
-  if (!Array.isArray(rawEntries)) return { platform: null, version: null };
+  if (!Array.isArray(rawEntries)) return { platform: null, productLine: null, version: null };
   const contexts = rawEntries.flatMap((entry) => {
     if (!entry || typeof entry !== 'object' || !('observation_context' in entry)) return [];
     const parsed = LogObservationContextSchema.safeParse(entry.observation_context);
@@ -113,6 +142,12 @@ function observedLogContext(value: ConversationRecord['evidence_state']): {
   if (platforms.length > 1) {
     throw new PromptVersionContextError(`LogCenter 关联日志的平台存在歧义：${platforms.join('、')}`);
   }
+  const productLines = [...new Set(contexts
+    .map((context) => context.observed_product_line)
+    .filter((productLine): productLine is ClientProductLine => Boolean(productLine)))];
+  if (productLines.length > 1) {
+    throw new PromptVersionContextError(`LogCenter 关联日志的产品线存在歧义：${productLines.join('、')}`);
+  }
   const versions = [...new Set(contexts
     .map((context) => context.observed_version?.trim() || null)
     .filter((version): version is string => Boolean(version)))];
@@ -121,6 +156,7 @@ function observedLogContext(value: ConversationRecord['evidence_state']): {
   }
   return {
     platform: platforms[0] ?? null,
+    productLine: productLines[0] ?? null,
     version: versions[0] ?? null,
   };
 }

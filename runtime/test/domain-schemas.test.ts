@@ -301,17 +301,7 @@ test('conversation orchestration fields preserve plans, consultations, findings,
 
 test('request schemas normalize text and expose Python None defaults as null', async () => {
   const { CreateConversationRequestSchema, SendMessageRequestSchema, UpdateConversationRequestSchema } = await import('../src/domain/schemas.js');
-  assert.deepEqual(CreateConversationRequestSchema.parse({}), {
-    title: null,
-    workspace_path: null,
-    repository_id: null,
-    branch: null,
-    platform: null,
-    product_line: null,
-    form_factor: null,
-    version: null,
-    build: null,
-  });
+  assert.deepEqual(CreateConversationRequestSchema.parse({}), { title: null });
   assert.deepEqual(SendMessageRequestSchema.parse({ content: '  hello  ' }), { content: 'hello' });
   assert.deepEqual(UpdateConversationRequestSchema.parse({}), {});
 });

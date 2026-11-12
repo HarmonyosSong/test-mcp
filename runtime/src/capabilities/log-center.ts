@@ -7,13 +7,32 @@ import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 
 import type { RuntimeConfig } from '../config.js';
+import { ClientProductLineSchema, LogObservationContextSchema } from '../domain/schemas.js';
 import { integrationError, integrationInfo, integrationWarn } from '../observability/integration-log.js';
-import type { LogIdentifiers } from '../security/log-privacy.js';
+import {
+  CLIENT_LOG_REDACTION_VERSION,
+  ClientLogPrivacy,
+  type LogIdentifiers,
+  type MatchedIdentifier,
+} from '../security/log-privacy.js';
 
 export const LOGCENTER_DEFAULT_BASE_URL = 'https://logcenter-api.tal.com/api';
 export const LOG_CATALOG_DEFAULT_RELATIVE = 'runtime/contracts/log-catalog/catalog.yaml';
 
 const MatchSchema = z.record(z.string(), z.string()).default({});
+const IdentityFieldsSchema = z.strictObject({
+  learner_id: z.array(z.string().min(1)).default([]),
+  phone: z.array(z.string().min(1)).default([]),
+  trace_id: z.array(z.string().min(1)).default([]),
+  request_id: z.array(z.string().min(1)).default([]),
+});
+const ObservationFieldsSchema = z.strictObject({
+  platform: z.array(z.string().min(1)).default([]),
+  platform_values: z.record(z.string(), z.enum(['harmony', 'android', 'ios'])).default({}),
+  version: z.array(z.string().min(1)).default([]),
+  device: z.array(z.string().min(1)).default([]),
+  session: z.array(z.string().min(1)).default([]),
+});
 
 const BusinessSchema = z.object({
   name: z.string().min(1),
@@ -53,6 +72,9 @@ const TargetSchema = z.object({
   businesses: z.array(BusinessSchema).default([]),
   suggested_query: z.string().default(''),
   monitor_types: z.record(z.string(), z.string()).default({}),
+  product_line: ClientProductLineSchema.nullable().optional(),
+  identity_fields: IdentityFieldsSchema.optional(),
+  observation_fields: ObservationFieldsSchema.optional(),
   // aliyun_sls
   store_ref: z.string().min(1).optional(),
   // logcenter
@@ -98,6 +120,7 @@ export type LogStore = z.infer<typeof StoreSchema>;
 export type LogTarget = z.infer<typeof TargetSchema>;
 export type LogSource = z.infer<typeof SourceSchema>;
 export type LogKind = z.infer<typeof LogKindSchema>;
+type ObservationFields = z.infer<typeof ObservationFieldsSchema>;
 
 /** Runtime-only context used to correlate a log lookup with the current user report. */
 export type LogToolCorrelation = {
@@ -121,10 +144,21 @@ export type LogTargetCandidate = {
   business: string | null;
   service_id: number | null;
   app_clientid: string | null;
+  product_line: z.infer<typeof ClientProductLineSchema> | null;
   suggested_query: string;
   key_fields: string[];
   monitor_types: Record<string, string>;
   notes: string[];
+};
+
+type ClientLogObservation = {
+  entry_id: string;
+  timestamp: string | null;
+  excerpt: string;
+  fields: unknown;
+  location: string;
+  matched_identifiers: MatchedIdentifier[];
+  observation_context: z.infer<typeof LogObservationContextSchema>;
 };
 
 export type ResolveLogTargetResult = {
@@ -191,6 +225,7 @@ function toCandidate(catalog: LogCatalog, hit: AliasHit): LogTargetCandidate {
       business: business?.name ?? null,
       service_id: target.service_id ?? null,
       app_clientid: target.app_clientid ?? null,
+      product_line: target.product_line ?? null,
       suggested_query: target.suggested_query || '*',
       key_fields: target.key_fields,
       monitor_types: target.monitor_types,
@@ -214,6 +249,7 @@ function toCandidate(catalog: LogCatalog, hit: AliasHit): LogTargetCandidate {
     business: business?.name ?? null,
     service_id: null,
     app_clientid: null,
+    product_line: target.product_line ?? null,
     suggested_query: target.suggested_query || buildSlsSuggestedQuery(target.id, match),
     key_fields: target.key_fields,
     monitor_types: {},
@@ -324,6 +360,56 @@ function extractLogList(body: Record<string, unknown>): unknown[] {
   if (Array.isArray(body.list)) return body.list as unknown[];
   if (Array.isArray(body.logs)) return body.logs as unknown[];
   return [];
+}
+
+function fieldValues(entry: unknown, path: string): unknown[] {
+  let value = entry;
+  for (const segment of path.split('.')) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    value = (value as Record<string, unknown>)[segment];
+  }
+  return Array.isArray(value) ? value.slice(0, 10) : [value];
+}
+
+function textField(entry: unknown, paths: readonly string[] | undefined): string | null {
+  for (const path of paths ?? []) {
+    for (const value of fieldValues(entry, path)) {
+      if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 200);
+      if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    }
+  }
+  return null;
+}
+
+function parsePlatform(value: string, configured: Record<string, 'harmony' | 'android' | 'ios'>): 'harmony' | 'android' | 'ios' | null {
+  const exact = configured[value] ?? configured[value.trim().toLocaleLowerCase()];
+  if (exact) return exact;
+  const normalized = value.trim().toLocaleLowerCase();
+  if (/harmony\s*os|openharmony|\bohos\b|\bhmos\b/.test(normalized)) return 'harmony';
+  if (/\bandroid\b/.test(normalized)) return 'android';
+  if (/\bios\b|\biphone\b|\bipad\b/.test(normalized)) return 'ios';
+  return null;
+}
+
+function observationTimestamp(entry: unknown): string | null {
+  return textField(entry, ['@timestamp', 'timestamp', 'time', '__time__']);
+}
+
+function candidateForService(catalog: LogCatalog, serviceId: number): LogTargetCandidate | null {
+  const target = catalog.targets.find((item) => item.source === 'logcenter' && item.service_id === serviceId);
+  return target ? toCandidate(catalog, { target, business: null, score: 0 }) : null;
+}
+
+function candidateForSlsQuery(catalog: LogCatalog, input: {
+  collection: string;
+  topic: string;
+  query?: string;
+}): LogTargetCandidate | null {
+  const target = catalog.targets.find((item) => {
+    if (item.source !== 'aliyun_sls' || item.store_ref !== input.topic) return false;
+    return !input.query || input.query.includes(item.id);
+  });
+  return target ? toCandidate(catalog, { target, business: null, score: 0 }) : null;
 }
 
 export type LogCenterHttp = (input: {
@@ -600,6 +686,102 @@ export async function createLogCatalogTools(
     options?.http,
     { abortSignal: options?.abortSignal, timeoutMs: config.logcenterTimeoutMs },
   );
+  const privacy = new ClientLogPrivacy(options?.correlation?.identifiers ?? {});
+  const safeText = (value: unknown): string => String(privacy.sanitize(value).value);
+
+  const observe = (
+    candidate: LogTargetCandidate,
+    raw: unknown,
+    context: { query: string; start: number; end: number; page: number },
+  ): ClientLogObservation => {
+    const sanitized = privacy.sanitize(raw);
+    const matched = sanitized.matched_identifiers;
+    const target = catalog.targets.find((item) => item.id === candidate.target_id);
+    const fields: ObservationFields | undefined = target?.observation_fields;
+    const rawPlatforms = (fields?.platform ?? [])
+      .flatMap((path) => fieldValues(raw, path))
+      .filter((value): value is string | number => typeof value === 'string' || typeof value === 'number')
+      .map(String);
+    const parsedPlatforms = new Set(rawPlatforms
+      .map((value) => parsePlatform(value, fields?.platform_values ?? {}))
+      .filter((value): value is 'harmony' | 'android' | 'ios' => value !== null));
+    const platformConflict = parsedPlatforms.size > 1;
+    const observedPlatform = matched.length > 0 && parsedPlatforms.size === 1
+      ? [...parsedPlatforms][0]!
+      : 'unknown';
+    const timestamp = observationTimestamp(raw);
+    const entryId = privacy.entryId({
+      target: candidate.target_id,
+      timestamp,
+      entry: raw,
+    });
+    const version = matched.length > 0 ? textField(raw, fields?.version) : null;
+    const device = textField(raw, fields?.device);
+    const session = textField(raw, fields?.session);
+    const observationContext = LogObservationContextSchema.parse({
+      environment: target?.env ?? 'prod',
+      storage_alias: candidate.vendor ?? 'logcenter',
+      account: candidate.account ?? 'logcenter',
+      collection: candidate.collection ?? candidate.target_id,
+      store_id: candidate.store_id ?? candidate.target_id,
+      topic: candidate.topic || candidate.target_id,
+      appid: candidate.appid ?? candidate.app_clientid ?? candidate.target_id,
+      query: safeText(context.query),
+      start: context.start,
+      end: context.end,
+      page: context.page,
+      entry_id: entryId,
+      redaction_version: CLIENT_LOG_REDACTION_VERSION,
+      matched_identifiers: matched,
+      matched_error_features: [],
+      service_binding: {
+        status: matched.length > 0 ? 'confirmed' : 'unconfirmed',
+        method: matched.length > 0 ? 'observed_client_session' : null,
+      },
+      observed_platform: observedPlatform,
+      observed_product_line: matched.length > 0 ? candidate.product_line : null,
+      observed_version: version ? safeText(version) : null,
+      device_ref: device ? privacy.pseudonym('device_id', device) : null,
+      session_ref: session ? privacy.pseudonym('session_id', session) : null,
+      platform_conflict: matched.length > 0 && platformConflict,
+    });
+    const fieldsValue = sanitized.value;
+    const excerpt = typeof fieldsValue === 'string'
+      ? fieldsValue.slice(0, 2_000)
+      : JSON.stringify(fieldsValue)?.slice(0, 2_000) ?? 'null';
+    return {
+      entry_id: entryId,
+      timestamp: timestamp ? safeText(timestamp) : null,
+      excerpt,
+      fields: fieldsValue,
+      location: `logcenter://${observationContext.environment}/${candidate.store_id ?? candidate.target_id}/${candidate.appid ?? candidate.app_clientid ?? candidate.target_id}#${entryId}`,
+      matched_identifiers: matched,
+      observation_context: observationContext,
+    };
+  };
+
+  const observationResult = (
+    candidate: LogTargetCandidate,
+    rawLogs: unknown[],
+    context: { query: string; start: number; end: number; page: number },
+    base: Record<string, unknown>,
+  ) => {
+    const entries = rawLogs.map((raw) => observe(candidate, raw, context));
+    const correlated = entries.filter((entry) =>
+      entry.observation_context.service_binding.status === 'confirmed'
+      && entry.observation_context.matched_identifiers.length > 0,
+    );
+    return {
+      ...base,
+      entries,
+      observation_status: entries.length === 0 ? 'empty' : correlated.length > 0 ? 'correlated' : 'uncorrelated',
+      limitations: entries.length === 0
+        ? ['查询为空：只表示已尝试观察，不能确认平台或故障']
+        : correlated.length === 0
+          ? ['返回条目未匹配当前用户或请求标识，不能作为本次故障的关联观测']
+          : [],
+    };
+  };
 
   return {
     resolve_log_target: createTool({
@@ -648,7 +830,7 @@ export async function createLogCatalogTools(
       execute: async (input) => {
         const range = parseTimeRangeSeconds(input.time);
         const size = Math.min(input.size ?? 50, 200);
-        return client.searchCloudLogs({
+        const result = await client.searchCloudLogs({
           vendor: input.vendor,
           region: input.region,
           account: input.account,
@@ -660,6 +842,34 @@ export async function createLogCatalogTools(
           size,
           from: input.from ?? 0,
         });
+        const candidate = candidateForSlsQuery(catalog, input) ?? {
+          source: 'aliyun_sls',
+          log_kind: 'product_event',
+          platform: null,
+          client_form: null,
+          target_id: input.query?.trim() || `${input.collection}/${input.topic}`,
+          store_id: input.collection,
+          topic: input.topic,
+          vendor: input.vendor,
+          region: input.region,
+          account: input.account,
+          collection: input.collection,
+          appid: null,
+          business: null,
+          service_id: null,
+          app_clientid: null,
+          product_line: null,
+          suggested_query: input.query?.trim() || '*',
+          key_fields: [],
+          monitor_types: {},
+          notes: [],
+        } satisfies LogTargetCandidate;
+        return observationResult(candidate, result.logs, {
+          query: input.query?.trim() || '*',
+          start: range.start,
+          end: range.end,
+          page: input.from ?? 0,
+        }, result);
       },
     }),
     count_logs: createTool({
@@ -689,7 +899,7 @@ export async function createLogCatalogTools(
       execute: async (input) => {
         const range = parseTimeRangeSeconds(input.time);
         const size = Math.min(input.size ?? 40, 40);
-        return client.queryServiceLogs({
+        const result = await client.queryServiceLogs({
           serviceId: input.service_id,
           start: range.start,
           end: range.end,
@@ -697,6 +907,34 @@ export async function createLogCatalogTools(
           page: input.page ?? 1,
           size,
         });
+        const candidate = candidateForService(catalog, input.service_id) ?? {
+          source: 'logcenter' as const,
+          log_kind: 'client_apm' as const,
+          platform: null,
+          client_form: null,
+          target_id: String(input.service_id),
+          store_id: null,
+          topic: String(input.service_id),
+          vendor: null,
+          region: null,
+          account: null,
+          collection: null,
+          appid: null,
+          business: null,
+          service_id: input.service_id,
+          app_clientid: null,
+          product_line: null,
+          suggested_query: input.query?.trim() || '*',
+          key_fields: [],
+          monitor_types: {},
+          notes: [],
+        } satisfies LogTargetCandidate;
+        return observationResult(candidate, result.logs, {
+          query: input.query?.trim() || '*',
+          start: range.start,
+          end: range.end,
+          page: input.page ?? 1,
+        }, result);
       },
     }),
   };

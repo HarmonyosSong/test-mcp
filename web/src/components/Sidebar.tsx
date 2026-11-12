@@ -1,5 +1,4 @@
 import {
-  GitFork,
   LoaderCircle,
   LogOut,
   MessageSquare,
@@ -20,7 +19,6 @@ interface SidebarProps {
   identityLabel?: string;
   onRefresh: () => void;
   onModelSettings: () => void;
-  onRepositorySettings: () => void;
   onLogout?: () => void;
   children: ReactNode;
 }
@@ -31,7 +29,6 @@ export function Sidebar({
   identityLabel,
   onRefresh,
   onModelSettings,
-  onRepositorySettings,
   onLogout,
   children,
 }: SidebarProps) {
@@ -73,15 +70,6 @@ export function Sidebar({
         </span>
         <div className="sidebar-footer-actions">
           <ThemeToggle />
-          <button
-            className="sidebar-icon-button"
-            type="button"
-            onClick={onRepositorySettings}
-            title="业务仓库"
-            aria-label="打开业务仓库设置"
-          >
-            <GitFork size={16} />
-          </button>
           <button
             className="sidebar-icon-button"
             type="button"

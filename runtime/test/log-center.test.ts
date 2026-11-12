@@ -248,6 +248,61 @@ test('createLogCatalogTools signs and searches with mocked HTTP', async () => {
   assert.equal(requests[0]!.headers['X-Sign-Appid'], 'app-id');
 });
 
+test('LogCenter 返回带关联上下文的观测，供证据账本和版本绑定复用', async () => {
+  const config = loadRuntimeConfig({
+    HARMONY_AGENT_LOGCENTER_APP_ID: 'app-id',
+    HARMONY_AGENT_LOGCENTER_APP_SECRET: 'app-secret',
+    HARMONY_AGENT_LOGCENTER_BASE_URL: 'https://logcenter.example.test/api',
+  });
+  const catalog: LogCatalog = {
+    version: 3,
+    vendor: 'aliyun',
+    defaults: { region: 'cn-beijing', account: 'account', collection: 'collection', time: '1h' },
+    stores: [{ id: 'prod-android', topic: 'prod-android', env: 'prod', description: '', notes: [] }],
+    targets: [{
+      id: 'app-android',
+      source: 'aliyun_sls',
+      log_kind: 'product_event',
+      platform: 'android',
+      client_form: 'phone',
+      product_line: 'xueersi',
+      store_ref: 'prod-android',
+      aliases: ['安卓业务'],
+      description: '',
+      notes: [],
+      key_fields: ['uid', 'OS', 'version'],
+      businesses: [],
+      suggested_query: 'appid: "app-android"',
+      monitor_types: {},
+      observation_fields: {
+        platform: ['OS'],
+        platform_values: {},
+        version: ['version'],
+        device: [],
+        session: [],
+      },
+      identity_fields: { learner_id: ['uid'], phone: [], trace_id: [], request_id: [] },
+    }],
+  };
+  const tools = await createLogCatalogTools(config, {
+    catalog,
+    correlation: { identifiers: { learner_id: 'learner-1' }, sourceText: '安卓业务' },
+    http: async ({ url }) => url.includes('/search')
+      ? { status: 200, body: { code: 0, data: { total: 1, logs: [{ uid: 'learner-1', OS: 'Android', version: '7.106.5' }] } } }
+      : { status: 200, body: { code: 0, data: { total: 1 } } },
+  });
+  assert.ok(tools);
+  const result = await tools.search_cloud_logs.execute!({
+    vendor: 'aliyun', region: 'cn-beijing', account: 'account', collection: 'collection',
+    topic: 'prod-android', query: 'appid: "app-android"', time: '15m', size: 10, from: 0,
+  }, {} as never) as { observation_status: string; entries: Array<{ observation_context: { observed_platform: string; observed_product_line: string | null; observed_version: string | null; service_binding: { status: string }; } }> };
+  assert.equal(result.observation_status, 'correlated');
+  assert.equal(result.entries[0]?.observation_context.service_binding.status, 'confirmed');
+  assert.equal(result.entries[0]?.observation_context.observed_platform, 'android');
+  assert.equal(result.entries[0]?.observation_context.observed_product_line, 'xueersi');
+  assert.equal(result.entries[0]?.observation_context.observed_version, '7.106.5');
+});
+
 test('SLS 索引键未配置的上游报错被翻译为可纠正指引', async () => {
   const config = loadRuntimeConfig({
     HARMONY_AGENT_LOGCENTER_APP_ID: 'app-id',

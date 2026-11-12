@@ -17,7 +17,7 @@ import {
 } from '../diagnosis/run-round.js';
 import { CapabilityMcp } from '../capabilities/mcp.js';
 import type { ModelConfiguration } from '../model/configuration.js';
-import { RepositoryGitError, RepositoryNotFoundError } from '../capabilities/repository.js';
+import { RepositoryGitError } from '../capabilities/repository.js';
 import { invalidJsonError, requestValidationError } from './errors.js';
 import { redactRecord, redactRecordInPlace, redactSensitiveText } from '../security/redaction.js';
 import type { AuthVariables } from '../auth/index.js';
@@ -37,11 +37,8 @@ interface ConversationRouteOptions {
   compassAvailable?: boolean;
   investigationBudget?: InvestigationBudget;
   createConversationSource?: (input: {
-    repositoryId: string | null;
-    branch: string | null;
-    workspacePath: string | null;
-    platform: ConversationRecord['platform'];
-    productLine: ConversationRecord['product_line'];
+    platform: Exclude<ConversationRecord['platform'], null>;
+    productLine: Exclude<ConversationRecord['product_line'], null>;
     formFactor: ConversationRecord['form_factor'];
     version: ConversationRecord['version'];
     build: ConversationRecord['build'];
@@ -237,41 +234,13 @@ export function createConversationRoutes(
     const parsed = CreateConversationRequestSchema.safeParse(input);
     if (!parsed.success) return requestValidationError(parsed.error.issues);
     try {
-      // Keep a scope-only session unbound so the first user prompt can choose
-      // an explicit version before the latest-version fallback runs.
-      const shouldPrepareSource = Boolean(
-        parsed.data.repository_id ||
-        parsed.data.workspace_path ||
-        parsed.data.version ||
-        parsed.data.build,
-      );
-      const source = shouldPrepareSource
-        ? await options.createConversationSource?.({
-          repositoryId: parsed.data.repository_id,
-          branch: parsed.data.branch,
-          workspacePath: parsed.data.workspace_path,
-          platform: parsed.data.platform,
-          productLine: parsed.data.product_line,
-          formFactor: parsed.data.form_factor,
-          version: parsed.data.version,
-          build: parsed.data.build,
-          signal: context.req.raw.signal,
-        })
-        : undefined;
       const conversation = await store.createConversation({
         title: parsed.data.title ?? '新会话',
         owner_subject: context.get('identity')?.subject ?? null,
-        platform: parsed.data.platform,
-        product_line: parsed.data.product_line,
-        form_factor: parsed.data.form_factor,
-        version: parsed.data.version,
-        build: parsed.data.build,
-        ...source,
       });
       return context.json(publicView(redactRecord(conversation, redact)), 201);
     } catch (error) {
       if (error instanceof ProductNotFoundError) return jsonError('repository not found', 404);
-      if (error instanceof RepositoryNotFoundError) return jsonError('repository not found', 404);
       if (error instanceof RepositoryGitError) return jsonError(error.message, 422);
       throw error;
     }
@@ -372,7 +341,12 @@ export function createConversationRoutes(
         conversation.source_repositories.length > 0,
       );
       if (!hasBoundSource) {
-        const promptSource = resolvePromptSourceContext(parsedInput.data.content, conversation);
+        const promptSource = resolvePromptSourceContext(parsedInput.data.content, {
+          ...conversation,
+          promptHistory: conversation.messages
+            .filter((message) => message.role === 'user')
+            .map((message) => message.content),
+        });
         if (promptSource) {
           Object.assign(conversation, {
             ...(promptSource.platform ? { platform: promptSource.platform } : {}),
@@ -383,9 +357,6 @@ export function createConversationRoutes(
           });
           if (options.createConversationSource && promptSource.platform && promptSource.productLine) {
             const source = await options.createConversationSource({
-              repositoryId: null,
-              branch: null,
-              workspacePath: null,
               platform: promptSource.platform,
               productLine: promptSource.productLine,
               formFactor: promptSource.formFactor,

@@ -1,0 +1,12 @@
+- version: 7.106.0
+  form_factor: universal
+  builds:
+    - build: "1"
+      tag: XesApp_v7.106.0_1_20261105
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_XesApp/xesApp_iOS
+          role: shell
+          ref: XesApp_v7.106.0_1_20261105
+          expected_commit: 8d29ad670edb4d01c459e4fde4e03901d85f3ba5

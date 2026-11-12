@@ -34,6 +34,7 @@ targets:
     log_kind: product_event
     platform: android
     client_form: phone
+    product_line: xueersi
     store_ref: prod-android
     aliases: [语音测评, 口语测评SDK, TalVoiceEval, 测评SDK, 安卓语音测评, log-eagle-0005]
     description: Android 语音测评 SDK 埋点（appid=log-eagle-0005-prod，store=prod-android）。样本主事件：eventname=TalVoiceEvalManager；pageid 常见彼芯托管/学而思HD/学而思/云课堂；eventid 常见初始化/英语绘本/新口语岛。
@@ -55,6 +56,7 @@ targets:
     log_kind: product_event
     platform: android
     client_form: phone
+    product_line: xueersi
     store_ref: prod-android
     aliases: [安卓, 安卓AI, Android WS, 小思WS, Android WebSocket, 安卓埋点, log-fe-native-android-001]
     description: Android AI 链路埋点（appid=log-fe-native-android-001-prod，store=prod-android）。样本主事件：eventname=WS（WS_POINT_* 收发/断开）与 ASR（识别起止）；pageid 常见 AiFullScreenDialog。
@@ -75,6 +77,7 @@ targets:
     log_kind: product_event
     platform: h5
     client_form: h5
+    product_line: xueersi
     store_ref: prod-cloudlearn
     aliases: [口语岛, 新口语岛, log-eagle-0008]
     description: 新口语岛 H5 埋点（appid=log-eagle-0008-prod，store=prod-cloudlearn）。样本主事件：pageid=新口语岛；renderEngineModule / evaluationModule（clickid=oralIsLandRenderEngineReport / oralIsLandPractiseEvaluationResult）。
@@ -99,6 +102,7 @@ targets:
     log_kind: product_event
     platform: h5
     client_form: h5
+    product_line: xueersi
     store_ref: prod-cloudlearn
     aliases: [英语绘本, 绘本馆, 英语绘本馆, log-eagle-0009]
     description: 英语绘本馆 H5 埋点（appid=log-eagle-0009-prod，store=prod-cloudlearn）。样本主事件：pageid=英语绘本馆；evaluationModule 测评结果为主，另有 speakSubmitModule、studentLoginModule、invokeJsBridgeModule。
@@ -120,6 +124,7 @@ targets:
     log_kind: product_event
     platform: h5
     client_form: h5
+    product_line: xueersi
     store_ref: prod-cloudlearn
     aliases: [磨耳朵, log-eagle-0016]
     description: 磨耳朵 H5 播放埋点（appid=log-eagle-0016-prod，store=prod-cloudlearn）。样本主事件：pageid=磨耳朵，eventid=grindingearPlayAudioModule；clickid 为 Native↔H5 双向桥接。
@@ -136,6 +141,7 @@ targets:
     log_kind: product_event
     platform: ios
     client_form: phone
+    product_line: xueersi
     store_ref: prod-ios
     aliases: [iOS播放器, xes_player, 语音JSBridge, iOS埋点, ios原生, log-fe-native-iOS-001]
     description: iOS Native 播放器与语音评测 JSBridge 埋点（appid=log-fe-native-iOS-001-prod，store=prod-ios，OS=iOS）。样本主事件：xes_player/xes_player_buffer；另有 pageid=语音评测JSBridge 下 EnglishLibrary、EnglishSpeakIsland 录音链。
@@ -157,6 +163,7 @@ targets:
     log_kind: product_event
     platform: h5
     client_form: h5
+    product_line: xueersi
     store_ref: prod-ios
     aliases: [装扮商城, 换装, log-fe-virtually-mall]
     description: 装扮商城 WebView/H5 埋点（appid=log-fe-virtually-mall-prod，物理库 prod-ios）。样本 pageid=装扮商城；主事件 CHANGE_SKIN/SCENE_INIT/CLOSE_WINDOW 等；ua 以 Android Pad WebView 为主，也有 iPhone。
@@ -178,6 +185,7 @@ targets:
     log_kind: product_event
     platform: harmony
     client_form: phone
+    product_line: xueersi
     store_ref: prod-ios
     aliases: [鸿蒙, HarmonyOS, 学而思鸿蒙, 鸿蒙主端, 鸿蒙埋点, log-har-001, com.xes.harmonyapp]
     description: 学而思鸿蒙手机端埋点（appid=log-har-001-prod，store=prod-ios，bundle=com.xes.harmonyapp，ua=学而思）。样本主事件：app_lifecycle（前后台/冷启），另有 view、WS、sls_init；量大。
@@ -189,6 +197,7 @@ targets:
     log_kind: product_event
     platform: harmony
     client_form: pad
+    product_line: xueersi
     store_ref: prod-ios
     aliases: [学而思鸿蒙HD, 鸿蒙HD, harmonyHD, log-har-002, com.xes.harmonyHD]
     description: 学而思鸿蒙 HD 埋点（appid=log-har-002-prod，store=prod-ios，bundle=com.xes.harmonyHD，ua=学而思HD）。样本主事件：app_lifecycle、sls_login、sls_init（非语音评测链）。
@@ -200,6 +209,7 @@ targets:
     log_kind: product_event
     platform: harmony
     client_form: phone
+    product_line: xuejiayun
     store_ref: prod-ios
     aliases: [学家云鸿蒙, 学家云, xuejia鸿蒙, log-har-003, com.xes.xuejia.harmonyapp]
     description: 学家云鸿蒙手机端埋点（appid=log-har-003-prod，store=prod-ios，bundle=com.xes.xuejia.harmonyapp，ua=学家云）。样本主事件：app_lifecycle、sls_init；page 常见播放器/回放页。
@@ -211,6 +221,7 @@ targets:
     log_kind: product_event
     platform: harmony
     client_form: pad
+    product_line: xuejiayun
     store_ref: prod-ios
     aliases: [学家云鸿蒙HD, 学家云HD, xuejiaHD, log-har-004, com.xes.xuejia.harmonyHD]
     description: 学家云鸿蒙 HD 埋点（appid=log-har-004-prod，store=prod-ios，bundle=com.xes.xuejia.harmonyHD，ua=学家云HD）。样本主事件：app_lifecycle、sls_init；page 常见 Online/Playback、结课页。
@@ -223,6 +234,7 @@ targets:
     log_kind: client_apm
     platform: android
     client_form: pad
+    product_line: xueersi
     service_id: 1116
     app_clientid: XesPadPyAndroid
     topic: basiclog-monitor_26_1003041
@@ -255,6 +267,7 @@ targets:
     log_kind: client_apm
     platform: android
     client_form: phone
+    product_line: xueersi
     service_id: 846
     app_clientid: XesPyAndroid
     topic: basiclog-monitor_26_1002935
@@ -288,6 +301,7 @@ targets:
     log_kind: client_apm
     platform: ios
     client_form: pad
+    product_line: xueersi
     service_id: 1028
     app_clientid: XesPyIOSHD
     topic: basiclog-monitor_26_1002996
@@ -320,6 +334,7 @@ targets:
     log_kind: client_apm
     platform: ios
     client_form: phone
+    product_line: xueersi
     service_id: 847
     app_clientid: XesPyIOS
     topic: basiclog-monitor_26_1002936

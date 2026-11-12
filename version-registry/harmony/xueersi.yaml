@@ -1,0 +1,11 @@
+- version: 7.106.0
+  form_factor: universal
+  builds:
+    - tag: 7.106.0
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersi_harmony/xesapp
+          role: shell
+          ref: 7.106.0
+          expected_commit: 79b55e6452d15d458626c6b1eb7a192b6d36d85e

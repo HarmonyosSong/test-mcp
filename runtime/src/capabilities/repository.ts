@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { execFile as execFileCallback } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -59,6 +60,12 @@ export interface RepositoryCapabilityOptions {
   allowedRoots?: readonly string[];
   timeoutMs?: number;
   initialRecords?: readonly RepositoryRecord[];
+}
+
+export interface RegistryRepositoryOptions {
+  baseUrl: string;
+  ref: string;
+  persist?: (record: RepositoryRecord) => Promise<unknown>;
 }
 
 export class RepositoryNotFoundError extends Error {
@@ -150,6 +157,21 @@ function normalizeRemoteRepositoryId(value: string): string {
   } catch {
     return trimmed.replace(/^\/+/, '').replace(/\.git$/, '');
   }
+}
+
+function registryRecordId(remoteRepositoryId: string): string {
+  return `registry-${createHash('sha256').update(remoteRepositoryId).digest('hex').slice(0, 20)}`;
+}
+
+function registryRepositoryUrl(baseUrl: string, remoteRepositoryId: string): string {
+  const parsed = new URL(baseUrl);
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new RepositoryGitError('registry GitLab base URL must use HTTP(S)');
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== '/') {
+    throw new RepositoryGitError('registry GitLab base URL must be an origin without credentials');
+  }
+  return new URL(`${remoteRepositoryId.replace(/^\/+/, '').replace(/\/+$/, '')}.git`, parsed).toString();
 }
 
 /**
@@ -310,6 +332,41 @@ export class RepositoryCapability {
     if (matches.length === 0) throw new RepositoryNotFoundError(remoteRepositoryId);
     if (matches.length !== 1) throw new RepositoryGitError(`多个已登记仓库匹配 ${remoteRepositoryId}`);
     return cloneRecord(matches[0]!);
+  }
+
+  /**
+   * Resolve a registry path without requiring a user to pre-register a repo.
+   * The version registry owns the source mapping; this record only gives the
+   * immutable snapshot store a stable local identity and audit trail.
+   */
+  async ensureRegistryRepository(
+    remoteRepositoryId: string,
+    options: RegistryRepositoryOptions,
+  ): Promise<RepositoryRecord> {
+    const identifier = normalizeRemoteRepositoryId(remoteRepositoryId);
+    if (!identifier) throw new RepositoryGitError('registry repository identifier is invalid');
+    try {
+      return await this.findByRemoteRepositoryId(identifier);
+    } catch (error) {
+      if (!(error instanceof RepositoryNotFoundError)) throw error;
+    }
+
+    const record = RepositoryRecordSchema.parse({
+      id: registryRecordId(identifier),
+      name: identifier,
+      url: registryRepositoryUrl(options.baseUrl, identifier),
+      default_branch: options.ref.trim(),
+      platform: null,
+      version_map: {},
+    });
+    this.records.set(record.id, record);
+    try {
+      await options.persist?.(record);
+    } catch (error) {
+      this.records.delete(record.id);
+      throw error;
+    }
+    return cloneRecord(record);
   }
 
   async validateWorkspacePath(path: string): Promise<string> {

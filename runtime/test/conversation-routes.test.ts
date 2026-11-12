@@ -9,9 +9,8 @@ import { Hono } from 'hono';
 import type { AuthVariables } from '../src/auth/index.js';
 
 import { createConversationRoutes } from '../src/http/conversations.js';
-import { ProductNotFoundError, ProductStore } from '../src/product/store.js';
+import { ProductStore } from '../src/product/store.js';
 import type { DiagnosisAgent, DiagnosisRunInput } from '../src/diagnosis/agent.js';
-import { RepositoryGitError, RepositoryNotFoundError } from '../src/capabilities/repository.js';
 import type { CapabilityMcp } from '../src/capabilities/mcp.js';
 import type { ModelConfiguration } from '../src/model/configuration.js';
 import { redactSensitiveText } from '../src/security/redaction.js';
@@ -132,29 +131,11 @@ test('Web 新建会话绑定当前登录主体', async () => {
   }
 });
 
-test('创建会话透传精确端上下文并持久化源码绑定信息', async () => {
+test('创建会话拒绝通过 HTTP 预选端、版本或源码绑定', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'mastra-conversation-version-source-'));
   const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
-  let sourceInput: Record<string, unknown> | undefined;
-  const routes = createConversationRoutes(store, undefined, undefined, undefined, {
-    createConversationSource: async (input) => {
-      sourceInput = input as unknown as Record<string, unknown>;
-      return {
-        workspace_path: '/snapshots/android-7.106.5',
-        repository_id: 'repo-android',
-        repository_name: 'android-app',
-        requested_ref: 'V7.106.5-55364-CUSTOM',
-        resolved_commit: 'a'.repeat(40),
-        platform: input.platform,
-        product_line: input.productLine,
-        form_factor: input.formFactor,
-        version: input.version,
-        build: input.build,
-      };
-    },
-  });
   try {
-    const response = await routes.request('/conversations', {
+    const response = await createConversationRoutes(store).request('/conversations', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -166,14 +147,76 @@ test('创建会话透传精确端上下文并持久化源码绑定信息', async
         build: '55364',
       }),
     });
-    assert.equal(response.status, 201);
-    assert.equal(sourceInput?.platform, 'android');
-    assert.equal(sourceInput?.productLine, 'xueersi');
-    assert.equal(sourceInput?.version, '7.106.5');
-    const conversation = await response.json() as Record<string, unknown>;
-    assert.equal(conversation.resolved_commit, 'a'.repeat(40));
-    assert.equal(conversation.platform, 'android');
-    assert.equal(conversation.build, '55364');
+    assert.equal(response.status, 422);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('空会话的首条提示词会动态绑定对应平台、形态和版本源码', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mastra-conversation-dynamic-source-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  let sourceInput: Record<string, unknown> | undefined;
+  const routes = createConversationRoutes(
+    store,
+    { async *stream() { yield { type: 'completed', text: '已检查', report: null, evidence_state: {}, messages_state: [], tool_usage: {} }; } } as unknown as DiagnosisAgent,
+    { createKnowledgeSession: async () => null } as unknown as CapabilityMcp,
+    { enabled: true } as ModelConfiguration,
+    {
+      createConversationSource: async (input) => {
+        sourceInput = input as unknown as Record<string, unknown>;
+        return {
+          workspace_path: '/snapshots/android-pad',
+          repository_id: 'registry-pad',
+          repository_name: 'android-pad',
+          requested_ref: 'V5.106.5-2225-TEST',
+          resolved_commit: 'b'.repeat(40),
+          platform: input.platform,
+          product_line: input.productLine,
+          form_factor: input.formFactor,
+          version: input.version,
+          build: input.build,
+        };
+      },
+    },
+  );
+  try {
+    const created = await routes.request('/conversations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: '动态绑定' }),
+    });
+    assert.equal(created.status, 201);
+    const conversation = await created.json() as { id: string; workspace_path: string | null };
+    assert.equal(conversation.workspace_path, null);
+
+    const response = await routes.request(`/conversations/${conversation.id}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: '请查 Android 学而思 HD 5.106.5 build 2225 的绘本逻辑' }),
+    });
+    assert.equal(response.status, 200);
+    await response.text();
+    assert.equal(sourceInput?.signal instanceof AbortSignal, true);
+    assert.deepEqual({
+      platform: 'android',
+      productLine: 'xueersi',
+      formFactor: 'pad',
+      version: '5.106.5',
+      build: '2225',
+    }, {
+      platform: sourceInput?.platform,
+      productLine: sourceInput?.productLine,
+      formFactor: sourceInput?.formFactor,
+      version: sourceInput?.version,
+      build: sourceInput?.build,
+    });
+    const saved = await store.getConversation(conversation.id);
+    assert.equal(saved.repository_id, 'registry-pad');
+    assert.equal(saved.form_factor, 'pad');
+    assert.equal(saved.version, '5.106.5');
+    assert.equal(saved.build, '2225');
   } finally {
     await store.close();
     await rm(directory, { recursive: true, force: true });
@@ -461,40 +504,6 @@ test('conversation creation rejects incompatible workspace and repository bindin
     await store.close();
     await rm(directory, { recursive: true, force: true });
   }
-});
-
-test('conversation creation preserves repository-not-found and snapshot failures', async () => {
-  const base = { title: 'case', repository_id: 'repo-1', branch: 'missing' };
-  const missing = createConversationRoutes({
-    async createConversation() { throw new Error('not reached'); },
-  } as unknown as ProductStore, undefined, undefined, undefined, {
-    async createConversationSource() { throw new ProductNotFoundError('repo-1'); },
-  });
-  const missingResponse = await missing.request('/conversations', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(base),
-  });
-  assert.equal(missingResponse.status, 404);
-  assert.deepEqual(await missingResponse.json(), { detail: 'repository not found' });
-
-  const missingRepository = createConversationRoutes({
-    async createConversation() { throw new Error('not reached'); },
-  } as unknown as ProductStore, undefined, undefined, undefined, {
-    async createConversationSource() { throw new RepositoryNotFoundError('repo-1'); },
-  });
-  const missingRepositoryResponse = await missingRepository.request('/conversations', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(base),
-  });
-  assert.equal(missingRepositoryResponse.status, 404);
-  assert.deepEqual(await missingRepositoryResponse.json(), { detail: 'repository not found' });
-
-  const failedSnapshot = createConversationRoutes({} as ProductStore, undefined, undefined, undefined, {
-    async createConversationSource() { throw new RepositoryGitError('snapshot unavailable'); },
-  });
-  const failureResponse = await failedSnapshot.request('/conversations', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(base),
-  });
-  assert.equal(failureResponse.status, 422);
-  assert.deepEqual(await failureResponse.json(), { detail: 'snapshot unavailable' });
 });
 
 test('conversation request parsing returns stable validation errors without echoing submitted values', async () => {

@@ -1,0 +1,12 @@
+- version: 5.106.0
+  form_factor: universal
+  builds:
+    - build: "1"
+      tag: XesAppHD_v5.106.0_1_20261105
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_cloudlearning_iOS/CloudLearning_Main_iOS
+          role: shell
+          ref: XesAppHD_v5.106.0_1_20261105
+          expected_commit: 3e4b8ebccfb430981e92a8aead85c047973487b0

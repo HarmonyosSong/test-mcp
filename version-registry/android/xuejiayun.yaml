@@ -1,0 +1,24 @@
+- version: 7.106.5
+  form_factor: phone
+  builds:
+    - build: "1074"
+      tag: V7.106.5-1074-CUSTOM
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_XesApp/xuejiayunapp_android
+          role: shell
+          ref: V7.106.5-1074-CUSTOM
+          expected_commit: b5b950b03a24042b1ccdf84c569376387bb632c8
+- version: 5.107.0
+  form_factor: pad
+  builds:
+    - build: "1076"
+      tag: V5.107.0-1076-TEST
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_XesApp/xuejiayunapp_pad_android
+          role: shell
+          ref: V5.107.0-1076-TEST
+          expected_commit: 7d276763a66a4059207eb90d5d5e14a9d61682c5
