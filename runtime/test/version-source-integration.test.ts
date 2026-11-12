@@ -100,7 +100,7 @@ test('创建精确版本会话时选择登记 commit、下载 GitLab archive 并
     const messageResponse = await runtime.app.request(`${config.appPrefix}/api/conversations/${created.id}/messages`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: 'http://testserver' },
-      body: JSON.stringify({ content: '请查询 Android 学而思 7.106.5 build 55364 的客户端逻辑' }),
+      body: JSON.stringify({ content: '请查询 Android 7.106.5 build 55364 的客户端逻辑' }),
     });
     if (messageResponse.status !== 200) assert.fail(await messageResponse.text());
     await messageResponse.text();

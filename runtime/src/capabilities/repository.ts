@@ -3,9 +3,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
-  RepositoryRecordSchema,
   RepositorySnapshotSchema,
-  type RepositoryRecord,
   type RepositorySnapshot,
 } from '../domain/schemas.js';
 import { materializeArchiveSnapshot, validateArchiveSnapshot } from './archive-snapshot.js';
@@ -13,15 +11,20 @@ import { materializeArchiveSnapshot, validateArchiveSnapshot } from './archive-s
 const COMMIT_PATTERN = /^[0-9a-f]{40,64}$/;
 const SCP_URL_PATTERN = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[A-Za-z0-9._/-]+$/;
 
+type RegistryRepositoryRecord = {
+  id: string;
+  name: string;
+  url: string;
+  ref: string;
+};
+
 export interface RepositoryCapabilityOptions {
   snapshotDir: string;
-  initialRecords?: readonly RepositoryRecord[];
 }
 
 export interface RegistryRepositoryOptions {
   baseUrl: string;
   ref: string;
-  persist?: (record: RepositoryRecord) => Promise<unknown>;
 }
 
 export class RepositoryNotFoundError extends Error {
@@ -45,10 +48,6 @@ export class SnapshotNotReadyError extends RepositoryGitError {
     super(`snapshot_not_ready: ${message}`, options);
     this.name = 'SnapshotNotReadyError';
   }
-}
-
-function cloneRecord(record: RepositoryRecord): RepositoryRecord {
-  return RepositoryRecordSchema.parse({ ...record });
 }
 
 function normalizeRemoteRepositoryId(value: string): string {
@@ -91,21 +90,17 @@ function registryRepositoryUrl(baseUrl: string, remoteRepositoryId: string): str
  */
 export class RepositoryCapability {
   private readonly snapshotDir: string;
-  private readonly records = new Map<string, RepositoryRecord>();
+  private readonly records = new Map<string, RegistryRepositoryRecord>();
   private readonly repositoryLocks = new Map<string, Promise<void>>();
 
   constructor(options: RepositoryCapabilityOptions) {
     this.snapshotDir = resolve(options.snapshotDir);
-    for (const record of options.initialRecords ?? []) {
-      const parsed = RepositoryRecordSchema.parse(record);
-      this.records.set(parsed.id, cloneRecord(parsed));
-    }
   }
 
-  async get(repositoryId: string): Promise<RepositoryRecord> {
+  async get(repositoryId: string): Promise<RegistryRepositoryRecord> {
     const record = this.records.get(repositoryId);
     if (!record) throw new RepositoryNotFoundError(repositoryId);
-    return cloneRecord(record);
+    return { ...record };
   }
 
   /**
@@ -116,36 +111,24 @@ export class RepositoryCapability {
   async ensureRegistryRepository(
     remoteRepositoryId: string,
     options: RegistryRepositoryOptions,
-  ): Promise<RepositoryRecord> {
+  ): Promise<RegistryRepositoryRecord> {
     const identifier = normalizeRemoteRepositoryId(remoteRepositoryId);
     if (!identifier) throw new RepositoryGitError('registry repository identifier is invalid');
+    if (!options.ref.trim()) throw new RepositoryGitError('registry repository ref is empty');
     const id = registryRecordId(identifier);
     const url = registryRepositoryUrl(options.baseUrl, identifier);
     const previous = this.records.get(id);
-    const record = RepositoryRecordSchema.parse({
-      ...(previous ? { created_at: previous.created_at } : {}),
+    const record: RegistryRepositoryRecord = {
       id,
       name: identifier,
       url,
-      // Retained for storage compatibility; the registry ref is the only
-      // source-selection input used by the active runtime.
-      default_branch: options.ref.trim(),
-      ...(previous ? { updated_at: previous.updated_at } : {}),
-    });
-    const changed = !previous || previous.url !== record.url || previous.default_branch !== record.default_branch;
-    if (!changed) return cloneRecord(previous);
+      ref: options.ref.trim(),
+    };
+    const changed = !previous || previous.url !== record.url || previous.ref !== record.ref;
+    if (!changed) return { ...previous };
 
-    const persisted = previous
-      ? RepositoryRecordSchema.parse({ ...record, updated_at: new Date().toISOString() })
-      : record;
-    try {
-      await options.persist?.(persisted);
-    } catch (error) {
-      if (!previous) this.records.delete(id);
-      throw error;
-    }
-    this.records.set(id, persisted);
-    return cloneRecord(persisted);
+    this.records.set(id, record);
+    return { ...record };
   }
 
   async prepareArchiveSnapshot(

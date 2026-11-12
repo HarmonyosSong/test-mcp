@@ -99,7 +99,7 @@ export class VersionRegistryError extends Error {
 
 export type VersionSelectionInput = {
   platform: z.infer<typeof ClientPlatformSchema>;
-  productLine: ProductLine;
+  productLine?: ProductLine;
   formFactor?: FormFactor;
   version?: string | null;
   build?: string | null;
@@ -182,7 +182,7 @@ export function selectVersionRegistryEntry(
   const formFactor = input.formFactor;
   const scopedEntries = entries.filter((entry) =>
     entry.platform === input.platform &&
-    entry.product_line === input.productLine &&
+    (!input.productLine || entry.product_line === input.productLine) &&
     (formFactor === undefined || entry.form_factor === formFactor || entry.form_factor === 'universal'),
   );
   const version = requestedVersion ? normalizeClientVersion(requestedVersion) : null;
@@ -193,9 +193,18 @@ export function selectVersionRegistryEntry(
     throw new VersionRegistryError(
       'version_not_registered',
       requestedVersion
-        ? `没有登记 ${input.platform}/${input.productLine}/${requestedVersion}`
-        : `没有 ${input.platform}/${input.productLine} 的已核验版本`,
+        ? `没有登记 ${input.platform}/${input.productLine ?? '*'}/${requestedVersion}`
+        : `没有 ${input.platform}/${input.productLine ?? '*'} 的已核验版本`,
     );
+  }
+  if (!input.productLine) {
+    const productLines = new Set(candidates.map((entry) => entry.product_line));
+    if (productLines.size > 1) {
+      throw new VersionRegistryError(
+        'version_ambiguous',
+        `${input.platform}/${requestedVersion ?? 'latest'} 命中多个产品线，请在提示词中说明学而思或学家云`,
+      );
+    }
   }
   if (!formFactor && !requestedVersion) {
     const formFactors = new Set(
@@ -206,7 +215,7 @@ export function selectVersionRegistryEntry(
     if (formFactors.size > 1) {
       throw new VersionRegistryError(
         'version_ambiguous',
-        `${input.platform}/${input.productLine} 同时登记了多个端形态，请在提示词中说明手机或 HD/平板`,
+        `${input.platform}/${input.productLine ?? '*'} 同时登记了多个端形态，请在提示词中说明手机或 HD/平板`,
       );
     }
   }

@@ -95,6 +95,50 @@ test('没有版本时按平台、产品线和形态选择最新版本', () => {
   assert.equal(selected.repositories[0]?.repository_id, 'new');
 });
 
+test('产品线未写入提示词但平台和版本唯一时自动补齐产品线', () => {
+  const entries = [
+    {
+      platform: 'ios' as const,
+      product_line: 'xueersi' as const,
+      version: '7.106.5',
+      form_factor: 'universal' as const,
+      builds: [{ build: '1', tag: 'xueersi', source: 'manual' as const, verified: true, repos: [{ repository_id: 'xueersi-ios', role: 'shell' as const, ref: 'xueersi', expected_commit: COMMIT }] }],
+    },
+    {
+      platform: 'ios' as const,
+      product_line: 'xuejiayun' as const,
+      version: '5.106.5',
+      form_factor: 'universal' as const,
+      builds: [{ build: '1', tag: 'xuejiayun', source: 'manual' as const, verified: true, repos: [{ repository_id: 'xuejiayun-ios', role: 'shell' as const, ref: 'xuejiayun', expected_commit: COMMIT }] }],
+    },
+  ];
+  const selected = selectVersionRegistryEntry(entries, { platform: 'ios', version: '7.106.5' });
+  assert.equal(selected.entry.product_line, 'xueersi');
+});
+
+test('平台和版本命中多个产品线时拒绝猜测产品线', () => {
+  const entries = [
+    {
+      platform: 'android' as const,
+      product_line: 'xueersi' as const,
+      version: '7.106.5',
+      form_factor: 'phone' as const,
+      builds: [{ build: '1', tag: 'xueersi', source: 'manual' as const, verified: true, repos: [{ repository_id: 'xueersi-android', role: 'shell' as const, ref: 'xueersi', expected_commit: COMMIT }] }],
+    },
+    {
+      platform: 'android' as const,
+      product_line: 'xuejiayun' as const,
+      version: '7.106.5',
+      form_factor: 'phone' as const,
+      builds: [{ build: '1', tag: 'xuejiayun', source: 'manual' as const, verified: true, repos: [{ repository_id: 'xuejiayun-android', role: 'shell' as const, ref: 'xuejiayun', expected_commit: COMMIT }] }],
+    },
+  ];
+  assert.throws(
+    () => selectVersionRegistryEntry(entries, { platform: 'android', version: '7.106.5' }),
+    (error: unknown) => error instanceof VersionRegistryError && error.code === 'version_ambiguous',
+  );
+});
+
 test('先按明确形态筛选再选择最新版本，避免 HD 误绑定手机源码', () => {
   const entries = [
     {

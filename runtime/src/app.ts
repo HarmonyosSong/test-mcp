@@ -81,10 +81,9 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
     }
     const modelConfiguration = new ModelConfiguration({ filePath: config.modelConfigFile });
     await modelConfiguration.initialize();
-    const repositories = new RepositoryCapability({
-      snapshotDir: config.snapshotDir,
-      initialRecords: await store.listRepositories(),
-    });
+    // Repository metadata is reconstructed from the version registry per process;
+    // legacy user-registered rows must not become a source-selection input.
+    const repositories = new RepositoryCapability({ snapshotDir: config.snapshotDir });
     const versionRegistry = new VersionRegistry(config.versionRegistryRoot);
     await versionRegistry.load();
     const gitlabArchiveClient = config.gitlabToken
@@ -184,12 +183,12 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         signal,
       }) => {
         try {
-          if (!platform || !productLine) {
-            throw new RepositoryGitError('源码绑定需要已确认的平台和产品线');
+          if (!platform) {
+            throw new RepositoryGitError('源码绑定需要已确认的平台');
           }
           const selection = versionRegistry.select({
             platform,
-            productLine,
+            productLine: productLine ?? undefined,
             formFactor: formFactor ?? undefined,
             version,
             build,
@@ -200,7 +199,6 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
               {
                 baseUrl: config.gitlabBaseUrl,
                 ref: registryRepository.ref,
-                persist: (record) => store.saveRepository(record),
               },
             );
             const snapshot = gitlabArchiveClient
@@ -254,7 +252,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
               ? ['当前登记只包含 shell 仓库，组件源码未挂载。']
               : [],
             platform,
-            product_line: productLine,
+            product_line: selection.entry.product_line,
             form_factor: formFactor,
             version: selection.entry.version,
             build: selection.build.build ?? null,

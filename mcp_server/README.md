@@ -42,7 +42,7 @@ HARMONY_AGENT_KNOWLEDGE_ROOT=/absolute/path/to/knowledge \
   uv run --project mcp_server harmony-knowledge-mcp
 ```
 
-The standalone server reads the directory passed in `HARMONY_AGENT_MCP_WORKSPACE` directly; it does not create or verify a snapshot. Use a fixed copy if checks must be repeatable, because changes to that directory can affect later reads. The root [`mcp.json`](../mcp.json) contains a standalone repository-server client configuration. The Mastra runtime uses the same `uv run --project mcp_server ...` entry points and creates a repository client for each diagnosis turn. Git-backed sessions use an immutable detached snapshot; local-directory sessions read the authorized live workspace, whose contents may change during a diagnosis.
+The standalone server reads the directory passed in `HARMONY_AGENT_MCP_WORKSPACE` directly; it does not create or verify a snapshot. Use a fixed copy if checks must be repeatable, because changes to that directory can affect later reads. The root [`mcp.json`](../mcp.json) contains a standalone repository-server client configuration for development inspection. The Mastra product runtime uses the same `uv run --project mcp_server ...` entry point but only starts it against the immutable archive snapshot selected by the current conversation's version registry; it has no local-directory binding path.
 
 ## Tools
 

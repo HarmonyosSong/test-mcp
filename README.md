@@ -17,10 +17,10 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 - 本地 Markdown 知识库和声明式 `skills/*/SKILL.md`。
 - 客户端本地 Markdown 知识库通过 Knowledge MCP 提供检索；云学习知识能力由后续 A2A 对端 Agent 提供，不在客户端直连第二套知识 MCP。
 - 可选 LogCenter / Aliyun SLS 四工具：私有身份发现、用户原文目标绑定、超时取消和脱敏观察已接入共享能力会话；目标绑定且身份匹配的远程日志可携带 Runtime 观察上下文进入证据账本。上述链路已有合成 mock 测试，真实生产字段覆盖和真实学员联调尚未验收，Catalog 的 appid 查询兼容性仍需修正。
-- 动态源码绑定：按平台、产品线、形态、版本和构建号选择 `version-registry/` 中已核验的 ref/commit；缺少版本时选择该范围内最新已核验构建，缺少产品线或形态且无法唯一判断时追问。
+- 动态源码绑定：按平台、产品线、形态、版本和构建号选择 `version-registry/` 中已核验的 ref/commit；缺少版本时选择唯一范围内最新已核验构建，产品线或形态只有在无法唯一判断时才追问。
 - 可选的 codebase-memory-mcp 已封装在 Repository MCP 内部，提供符号搜索、文件 outline 和调用路径候选；未配置时继续使用文本搜索，任何图结果都必须回读源码后才能成为证据。
 - 正式支持 DeepSeek `deepseek-flash`；同时保留 OpenAI、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 配置入口作为实验/未验收选项。可配置不等于正式支持；评估入口和口径见 [`docs/triage-feedback-and-evaluation.md`](docs/triage-feedback-and-evaluation.md)。
-- 会话、仓库、快照和证据状态保存在 runtime 的 LibSQL；模型配置仍保存在 owner-only 的 `.data/model-config.json`，旧 `.data` JSON 可通过迁移命令导入。
+- 会话、动态快照和证据状态保存在 runtime 的 LibSQL；旧仓库登记表仅供一次性迁移读取，不参与当前源码选择。模型配置仍保存在 owner-only 的 `.data/model-config.json`，旧 `.data` JSON 可通过迁移命令导入。
 - 知音楼网页 SSO：未登录不可用业务 API；应用挂在 `/xesapp-agent` 前缀下。设计见 [`spec/sso-login-design.md`](spec/sso-login-design.md)。
 - 统一外部全栈 Agent（覆盖本项目前端、H5 和服务端）通过 Compass A2A Agent Slot 接入；Supervisor 已支持确定性调查计划、客户端 `observe → source` 门禁、固定脱敏摘要的自动协查、自动跨侧、并行调查、取消和联合报告，不要求 IT 老师理解或审批另一个 Agent。新工单没有本地 `kind=log` 观测时，即使带服务端关键词和 traceId 也先进行客户端观察。规则与实现查询在本地知识不足时可自动转外部协查，不要求本地观测或 traceId；故障诊断仍保留观测和请求关联门禁。远端结论独立保存为 `external_findings`，不进入本地证据。接入契约见 [`spec/compass-a2a-integration.md`](spec/compass-a2a-integration.md)，编排细则见 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)。
 - 客户端只有一个统一的 `ClientDiagnosisAgent`，HarmonyOS、iOS 和 Android 通过会话端上下文、Skill、知识排序和仓库适配处理差异；服务端或专项 Agent 通过 A2A Agent Slot 接入，Compass 是首个具体实例。
@@ -190,7 +190,7 @@ LogCenter 能力：Catalog 双 source（阿里云 SLS 产品埋点 + 未来云 A
 用户提示词/关联日志 -> 解析端与版本 -> version-registry 选择 ref/commit -> GitLab archive -> 固定快照 -> 只读 MCP 检查
 ```
 
-版本登记表使用 `version-registry/<platform>/<product-line>.yaml`，Runtime 启动时加载并只接受 `verified: true` 的 commit。Web 新建会话不要求预选端、仓库或版本：Runtime 先读取用户提示词中的显式平台、产品线、形态、版本和构建，再使用已关联 LogCenter 事实补齐上下文。未提供版本但范围已确定时，自动选择该范围内最新已核验版本/构建；上下文不足或冲突时不猜测。随后校验 GitLab commit，物化登记的 shell 与 component/config archive，生成只读组合工作区。缺映射、版本歧义、commit 不符或快照未准备均失败关闭；会话一旦绑定固定 commit，后续不会被远端分支变化影响。详细设计见 [`docs/multi-platform-version-snapshot-design.md`](docs/multi-platform-version-snapshot-design.md)。
+版本登记表使用 `version-registry/<platform>/<product-line>.yaml`，Runtime 启动时加载并只接受 `verified: true` 的 commit。Web 新建会话不要求预选端、仓库或版本：Runtime 先读取用户提示词中的显式平台、产品线、形态、版本和构建，再使用已关联 LogCenter 事实补齐上下文；如果产品线未写出但平台、版本和形态只命中一条登记范围，也会自动补齐。未提供版本时选择唯一范围内最新已核验版本/构建；上下文不足或冲突时不猜测。随后校验 GitLab commit，物化登记的 shell 与 component/config archive，生成只读组合工作区。缺映射、版本歧义、commit 不符或快照未准备均失败关闭；会话一旦绑定固定 commit，后续不会被远端分支变化影响。详细设计见 [`docs/multi-platform-version-snapshot-design.md`](docs/multi-platform-version-snapshot-design.md)。
 
 ## 数据迁移
 

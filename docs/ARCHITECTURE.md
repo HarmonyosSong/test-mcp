@@ -75,7 +75,7 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 ## 5. 动态版本快照与并发
 
 - Runtime 启动时加载 `version-registry/<platform>/<product-line>.yaml`，只接受 `verified: true` 的 ref/commit 映射。用户不登记仓库、不选择分支、不绑定本地目录。
-- 首条用户消息和已确认 LogCenter 事实共同解析平台、产品线、形态、版本和构建。明确版本按指定登记行绑定；缺少版本时选择该范围内最新已核验构建；多个产品线、形态或构建无法唯一确定时追问，不跨端或跨产品线猜测。
+- 首条用户消息和已确认 LogCenter 事实共同解析平台、产品线、形态、版本和构建。明确版本按指定登记行绑定；产品线未写出但登记表命中唯一产品线时自动补齐；缺少版本时选择唯一范围内最新已核验构建；多个产品线、形态或构建无法唯一确定时追问，不跨端或跨产品线猜测。
 - GitLab archive 物化前校验登记 commit，登记的 `repos` 可包含一个 shell 和多个 component/config，并通过安全的 `mount_path` 生成组合只读工作区。缺映射、版本歧义、commit 不符或快照未准备均失败关闭。
 - 源码证据的 `source_context` 由 Runtime 从会话绑定的仓库、commit 和挂载路径注入，稳定证据 ID 也包含该身份；如果后续会话需要另一版本，必须新建会话，旧源码证据不能改标到新 commit。
 - 单进程内不同会话可并行，各自拥有独立 run、能力会话、预算、账本和远端任务。历史 `waiting_confirmation` 暂停态释放全局运行槽位，恢复时重新准入；新的常规协查不再进入等待态。
@@ -85,7 +85,7 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 
 可选 CBM 索引是动态绑定快照的派生产物，缓存在 `.data/codebase-memory/`：`source-views/` 保存快照代码副本，`engine/` 保存上游索引，两者必须分开，避免 CBM 的缓存目录排除规则漏掉源码。身份绑定源码内容和引擎；每轮首次导航重新确认索引，快照身份变化时拒绝旧图查询。索引不进入证据账本，生产缓存复用和回收仍需部署验收。
 
-`product_conversations` 保存消息、证据、调查计划、分支状态、协查记录、外部结论和 Slot 审计；`product_repositories` 与 `product_snapshots` 保存仓库和固定快照。`.data/knowledge-queries.jsonl` 与 `.data/knowledge-cases/` 是可重建的观测产物，不是对话事实源。
+`product_conversations` 保存消息、证据、调查计划、分支状态、协查记录、外部结论和 Slot 审计；`product_snapshots` 保存动态版本登记产生的固定快照元数据。`product_repositories` 仅为旧数据迁移保留，不参与当前源码选择。`.data/knowledge-queries.jsonl` 与 `.data/knowledge-cases/` 是可重建的观测产物，不是对话事实源。
 
 模型配置保存在 owner-only `.data/model-config.json`，不进入产品数据库。通用凭证脱敏之外，Runtime 每轮从用户明确标签构造学员隐私上下文：原始学员编号/电话只在内存中用于授权日志匹配，工具结果、事件、证据和案例归档只保留脱敏文本或本轮伪名。Compass 及其模型链路均在内网，默认外发使用用户原文与 traceId/requestId 关联信息，学员标识不伪名化、也不参与 Compass `correlationReady`。
 

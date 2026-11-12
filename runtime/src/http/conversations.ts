@@ -39,7 +39,7 @@ interface ConversationRouteOptions {
   investigationBudget?: InvestigationBudget;
   createConversationSource?: (input: {
     platform: Exclude<ConversationRecord['platform'], null>;
-    productLine: Exclude<ConversationRecord['product_line'], null>;
+    productLine: ConversationRecord['product_line'];
     formFactor: ConversationRecord['form_factor'];
     version: ConversationRecord['version'];
     build: ConversationRecord['build'];
@@ -352,7 +352,7 @@ export function createConversationRoutes(
             ...(promptSource.version ? { version: promptSource.version } : {}),
             ...(promptSource.build ? { build: promptSource.build } : {}),
           });
-          if (options.createConversationSource && promptSource.platform && promptSource.productLine) {
+          if (options.createConversationSource && promptSource.platform) {
             const source = await options.createConversationSource({
               platform: promptSource.platform,
               productLine: promptSource.productLine,

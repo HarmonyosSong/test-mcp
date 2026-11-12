@@ -6,4 +6,4 @@
 
 示例结构见 `docs/multi-platform-version-snapshot-design.md` §4.2。登记目录由 `HARMONY_AGENT_VERSION_REGISTRY_ROOT` 配置，默认是仓库根目录下的 `version-registry/`。
 
-首条用户提示词明确包含版本时按指定版本绑定；未包含版本但平台和产品线已确定时，Runtime 选择该范围内最新的 `verified: true` 构建。多个形态无法唯一确定时必须补充形态，不跨端猜测。
+首条用户提示词明确包含版本时按指定版本绑定；未包含版本时，Runtime 在平台、产品线和形态能够唯一确定的范围内选择最新的 `verified: true` 构建。产品线可以由提示词或已确认的 LogCenter 事实补齐；如果平台/版本仍命中多个产品线或形态，必须补充信息，不跨端或跨产品线猜测。
