@@ -1,6 +1,6 @@
 # Troubleshoot Odyssey
 
-面向 HarmonyOS 开发问题的证据驱动诊断工作台。用户可以粘贴现象、hilog 或代码片段，也可以绑定本地工作区或 Git 仓库；系统通过只读 MCP 工具读取真实证据，并生成可复核的诊断报告。
+面向 HarmonyOS、iOS 和 Android 客户端问题的证据驱动诊断工作台。用户只需描述问题、版本和端信息；Runtime 会按提示词与已确认的日志事实动态绑定对应版本的只读源码快照，并生成可复核的诊断报告。
 
 ```text
 React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应商
@@ -8,7 +8,7 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
                                       +-> LibSQL 产品数据与证据状态
 ```
 
-诊断能力只读，不修改业务仓库，也不执行任意 Shell 命令、构建、设备操作或 DevEco CLI。登记 Git 仓库时，runtime 会通过 Git CLI 更新自己的 mirror 并创建 detached 快照；不会在用户工作树中切换分支或写入文件。
+诊断能力只读，不修改业务仓库，也不执行任意 Shell 命令、构建、设备操作或 DevEco CLI。源码来自版本登记表对应的 GitLab archive，Runtime 校验登记的 commit 后在自己的数据目录物化快照，不要求用户登记仓库、选择分支或提供本地工作区。
 
 ## 功能
 
@@ -17,7 +17,7 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 - 本地 Markdown 知识库和声明式 `skills/*/SKILL.md`。
 - 客户端本地 Markdown 知识库通过 Knowledge MCP 提供检索；云学习知识能力由后续 A2A 对端 Agent 提供，不在客户端直连第二套知识 MCP。
 - 可选 LogCenter / Aliyun SLS 四工具：私有身份发现、用户原文目标绑定、超时取消和脱敏观察已接入共享能力会话；目标绑定且身份匹配的远程日志可携带 Runtime 观察上下文进入证据账本。上述链路已有合成 mock 测试，真实生产字段覆盖和真实学员联调尚未验收，Catalog 的 appid 查询兼容性仍需修正。
-- 本地工作区只读检查，以及 Git 分支查询和 detached Commit 快照；本地目录绑定读取实时工作区，Git 会话读取固定 Commit 快照。
+- 动态源码绑定：按平台、产品线、形态、版本和构建号选择 `version-registry/` 中已核验的 ref/commit；缺少版本时选择该范围内最新已核验构建，缺少产品线或形态且无法唯一判断时追问。
 - 可选的 codebase-memory-mcp 已封装在 Repository MCP 内部，提供符号搜索、文件 outline 和调用路径候选；未配置时继续使用文本搜索，任何图结果都必须回读源码后才能成为证据。
 - 正式支持 DeepSeek `deepseek-flash`；同时保留 OpenAI、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 配置入口作为实验/未验收选项。可配置不等于正式支持；评估入口和口径见 [`docs/triage-feedback-and-evaluation.md`](docs/triage-feedback-and-evaluation.md)。
 - 会话、仓库、快照和证据状态保存在 runtime 的 LibSQL；模型配置仍保存在 owner-only 的 `.data/model-config.json`，旧 `.data` JSON 可通过迁移命令导入。
@@ -61,7 +61,6 @@ cp .env.example .env
 HARMONY_AGENT_MODE=model
 HARMONY_AGENT_MODEL=deepseek:deepseek-flash
 DEEPSEEK_API_KEY=your-api-key
-HARMONY_AGENT_ALLOWED_ROOTS=/absolute/path/to/your/HarmonyOS/project
 
 # 本地免登；线上改为 server
 HARMONY_AGENT_RUN_MODE=local
@@ -122,8 +121,8 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 1. 用企业账号完成知音楼 SSO 登录。
 2. 在模型设置中配置供应商、模型和 API Key，或在 `.env` 中配置环境变量。
-3. 新建会话后直接输入问题和已知 hilog/代码片段，无需预选平台、产品线或版本；Runtime 会结合首条提示词和已关联的 LogCenter 事实确定源码范围。
-4. 需要检查代码时，设置 `HARMONY_AGENT_ALLOWED_ROOTS`，再绑定本地目录；或先登记 Git 仓库并选择分支。
+3. 新建会话后直接输入问题和已知 hilog/代码片段，无需预选平台、产品线、仓库或版本；Runtime 会结合提示词和已关联的 LogCenter 事实确定源码范围。
+4. 需要检查代码时，Runtime 自动读取 `version-registry/`，按已确认范围绑定对应 ref 的固定 commit 快照；首次物化快照需要有效的 `HARMONY_AGENT_GITLAB_TOKEN`。
 5. 等待工具步骤完成。报告会显示结论、证据原文、来源位置、已排除项和缺少的信息。
 
 ## 配置
@@ -135,25 +134,22 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_MASTRA_SERVE_WEB` | `false` | 是否托管 `web/dist` |
 | `HARMONY_AGENT_CORS_ORIGINS` | 本地 Vite 的 5173/5174 地址 | 允许跨源访问的来源，逗号分隔 |
 | `VITE_API_PROXY_TARGET` | `http://127.0.0.1:8000` | Vite 开发服务器转发 `/api` 的 runtime 地址 |
-| `HARMONY_AGENT_DATA_ROOT` | `<项目根>/.data` | 统一数据根；派生 LibSQL、mirror、snapshot、模型配置与知识归档。容器设为 `/data/troubleshoot-odyssey` 并挂持久卷（见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)） |
+| `HARMONY_AGENT_DATA_ROOT` | `<项目根>/.data` | 统一数据根；派生 LibSQL、snapshot、模型配置与知识归档。容器设为 `/data/troubleshoot-odyssey` 并挂持久卷（见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)） |
 | `HARMONY_MASTRA_DATA_DIR` | `<data-root>/mastra` | LibSQL 数据目录；设置后优先于数据根 |
 | `HARMONY_MASTRA_DATABASE_URL` | `file:<data-dir>/runtime.db` | 自定义 LibSQL URL |
 | `HARMONY_MASTRA_WEB_DIST` | `web/dist` | 生产静态网页目录 |
 | `HARMONY_MASTRA_PROJECT_ROOT` | 仓库根目录 | MCP 项目根目录 |
-| `HARMONY_AGENT_ALLOWED_ROOTS` | 仓库根目录 | 允许读取的本地目录，逗号分隔 |
 | `HARMONY_MASTRA_MCP_COMMAND` | `uv` | 启动 Python MCP 的命令 |
 | `HARMONY_AGENT_CODE_INDEX_COMMAND` | 空 | 可选 codebase-memory-mcp 可执行文件路径；只由 Repository MCP 内部调用，不直接暴露给模型 |
 | `HARMONY_AGENT_CODE_INDEX_CACHE` | `.data/codebase-memory` | 代码索引缓存目录，按快照复用的派生产物 |
 | `HARMONY_AGENT_CODE_INDEX_MODE` | `fast` | 首版仅接受 `fast`，其他模式会明确报错 |
 | `HARMONY_AGENT_CODE_INDEX_TIMEOUT_SECONDS` | `90` | 单次索引或查询的超时，范围 5–600 秒；首次调用包含两个操作 |
 | `HARMONY_MASTRA_SKILLS_DIR` | `skills` | Skill Markdown 目录 |
-| `HARMONY_MASTRA_GIT_MIRROR_DIR` | `<data-root>/git-mirrors` | Git mirror 目录；设置后优先于数据根 |
-| `HARMONY_MASTRA_SNAPSHOT_DIR` | `<data-root>/workspaces` | detached snapshot 目录；设置后优先于数据根 |
+| `HARMONY_MASTRA_SNAPSHOT_DIR` | `<data-root>/workspaces` | 版本登记表选中的 GitLab archive 快照目录 |
 | `HARMONY_AGENT_VERSION_REGISTRY_ROOT` | `version-registry` | 多端版本登记表根目录；只加载 `verified: true` 的精确 commit 映射 |
 | `HARMONY_AGENT_GITLAB_BASE_URL` | `https://git.100tal.com` | 版本快照 GitLab API 地址 |
 | `HARMONY_AGENT_GITLAB_TOKEN` | 空 | GitLab API 只读 token；为空时只复用已有精确快照，禁止提交到仓库 |
 | `HARMONY_AGENT_GITLAB_TIMEOUT_MS` | `30000` | GitLab commit/archive 请求超时 |
-| `HARMONY_MASTRA_GIT_TIMEOUT_MS` | `120000` | Git 操作超时 |
 | `HARMONY_AGENT_KNOWLEDGE_ROOT` | `knowledge` | 知识 MCP 根目录 |
 | `HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE` | `legacy` | 知识召回模式：`legacy` 或实验性的 `v2`；`shadow` 尚未支持 |
 | `HARMONY_AGENT_KNOWLEDGE_PREVIEW_STRATEGY` | 随召回模式 | 知识正文预览策略：`legacy` 或 `ranked` |
@@ -178,25 +174,23 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 网页设置写入 `<data-root>/model-config.json`（默认 `.data/model-config.json`），文件权限为 `0600`。容器部署见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)：只设 `HARMONY_AGENT_DATA_ROOT=/data/troubleshoot-odyssey`，由平台挂卷，勿再写相对 `.data/...` 单项。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key。默认开启官方 Mastra Observability（`Observability` + `SensitiveDataFilter`），并由按会话落盘的 exporter 写入可读 JSON：`.data/mastra/observability/conversations/<会话ID>/traces/*.json`（另有 `manifest.jsonl` 索引）。文件按「用户输入 → steps[]（每轮模型话术 + 工具入出参）→ 最终回答」组织；`processor_run` / `mapping` / `model_chunk` 视为噪音丢弃。终端默认安静（`logger: false`）。不改 knowledge JSONL/cases。需要关闭时设 `HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE=false`。应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
 
-知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续。仓库 MCP 按会话工作区启动：Git 仓库会绑定 detached Commit 快照，本地目录则读取授权根目录中的实时文件，诊断过程中工作区变化可能影响后续读取。知识检索和仓库代码检查需要 Python/uv 已安装，并已通过 `make setup` 安装 `mcp_server/` 依赖。
+知识 MCP 是可选能力。它不可用时 runtime 仍可启动，聊天会在没有知识工具的情况下继续。源码 MCP 只按当前会话动态解析出的固定 archive 快照启动；知识检索和源码检查需要 Python/uv 已安装，并已通过 `make setup` 安装 `mcp_server/` 依赖。
 
 代码图索引是 Repository MCP 的可选内部后端。配置 `HARMONY_AGENT_CODE_INDEX_COMMAND` 后，仓库 MCP 会在当前快照中按需建立或复用 CBM 索引，并仅挂载 `search_code_symbols`、`get_code_outline`、`trace_code_path` 三个只读导航工具。模型不能创建、删除或指定索引；索引命中、outline 和调用边只能缩小源码范围，必须继续调用 `read_project_file`。命令未配置时不挂载扩展工具，命令不可用、索引失败或超时时会明确报错并保留文本搜索兜底。
 
-启用时在部署环境放置 **codebase-memory-mcp 0.12.1** 二进制，并在 `.env` 填写 `HARMONY_AGENT_CODE_INDEX_COMMAND=/absolute/path/to/codebase-memory-mcp`，重启 Runtime 后生效；不需要额外配置一个 MCP 服务。首版只索引授权工作区内的允许代码文件副本，排除已知依赖目录、符号链接和超大文件；查询前后核对源码内容指纹，轮内源码变化时拒绝旧图查询。`.data/codebase-memory` 下的 `source-views/` 和 `engine/` 分别保存源码副本与派生索引，Docker 部署应挂载持久卷；缓存可清理重建，不替代会话和证据数据的持久化。真实 HarmonyOS 工程已验证导航与源码回读，iOS/Android 的关系精度及真实诊断效果仍待验收。
+启用时在部署环境放置 **codebase-memory-mcp 0.12.1** 二进制，并在 `.env` 填写 `HARMONY_AGENT_CODE_INDEX_COMMAND=/absolute/path/to/codebase-memory-mcp`，重启 Runtime 后生效；不需要额外配置一个 MCP 服务。索引只处理当前动态绑定快照中的代码副本，排除已知依赖目录、符号链接和超大文件；查询前后核对源码内容指纹，快照变化时拒绝旧图查询。`.data/codebase-memory` 下的 `source-views/` 和 `engine/` 分别保存源码副本与派生索引，Docker 部署应挂载持久卷；缓存可清理重建，不替代会话和证据数据的持久化。真实 HarmonyOS 工程已验证导航与源码回读，iOS/Android 的关系精度及真实诊断效果仍待验收。
 
 LogCenter 能力：Catalog 双 source（阿里云 SLS 产品埋点 + 未来云 APM `service_id`）。AppID / AppSecret 留空即可使用其余功能；框架验收使用本机模拟 HTTP。工具为 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`count_logs`、`query_logs`。不等于动态服务发现或日志证据门禁，契约见 [`日志目录与查询规格`](spec/log-catalog-query-capability.md)。
 
-## 仓库与快照
+## 动态源码快照
 
-Git 仓库流程是：
+源码流程是：
 
 ```text
-登记仓库 -> 查询分支 -> fetch -> 解析 Commit -> 创建 detached 快照 -> 只读 MCP 检查
+用户提示词/关联日志 -> 解析端与版本 -> version-registry 选择 ref/commit -> GitLab archive -> 固定快照 -> 只读 MCP 检查
 ```
 
-会话创建请求携带 `repository_id` 和 `branch` 时，runtime 会自动保存快照的仓库、分支、Commit 和工作区路径。后续远端分支变化不会改变已经绑定的会话。直接绑定本地目录不创建快照，读取的是当前工作区内容。
-
-仓库记录还支持 `platform` 和 `version_map: version → {branch, expected_commit}`；保存映射前验证分支存在。多端登记表使用 `version-registry/<platform>/<product-line>.yaml`，Runtime 启动时加载并只接受已核验的 commit。Web 新建会话不要求预选端或版本：Runtime 先读取首条提示词中的显式平台、产品线、版本和构建，并结合 LogCenter 关联到的实际平台/版本事实；未提供版本但范围已确定时，自动选择该范围内最新的已核验版本/构建；上下文不足或冲突时不跨端猜测。若首轮日志才补齐上下文，Runtime 保存关联事实并在后续轮次开始前绑定固定源码，不在正在运行的轮次热切换。随后先校验 GitLab commit，再物化 archive 到固定目录；登记的 `repos` 可包含一个 shell 和多个 component/config，并通过安全的 `mount_path` 合成只读工作区。缺映射、版本歧义、commit 不符、仓库冲突或快照未准备均失败关闭；已有会话和旧证据仍保持原 commit。详细设计见 [`docs/multi-platform-version-snapshot-design.md`](docs/multi-platform-version-snapshot-design.md)。
+版本登记表使用 `version-registry/<platform>/<product-line>.yaml`，Runtime 启动时加载并只接受 `verified: true` 的 commit。Web 新建会话不要求预选端、仓库或版本：Runtime 先读取用户提示词中的显式平台、产品线、形态、版本和构建，再使用已关联 LogCenter 事实补齐上下文。未提供版本但范围已确定时，自动选择该范围内最新已核验版本/构建；上下文不足或冲突时不猜测。随后校验 GitLab commit，物化登记的 shell 与 component/config archive，生成只读组合工作区。缺映射、版本歧义、commit 不符或快照未准备均失败关闭；会话一旦绑定固定 commit，后续不会被远端分支变化影响。详细设计见 [`docs/multi-platform-version-snapshot-design.md`](docs/multi-platform-version-snapshot-design.md)。
 
 ## 数据迁移
 

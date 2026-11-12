@@ -186,7 +186,7 @@ sequenceDiagram
 | GET | `/api/meta` | 登录 | 元信息 |
 | * | `/api/conversations...` | 登录（写加 CSRF） | 含 SSE `POST .../messages` |
 | * | `/api/model...` | 登录（写加 CSRF） | 模型配置 |
-| * | `/api/repositories...` | 登录（写加 CSRF） | 仓库 |
+| * | `/api/conversations...` | 登录（写加 CSRF） | 会话、消息、动态源码快照状态和报告 |
 | GET | 静态前端资源 | 公开 | 业务内容由 SessionGate 拦住 |
 
 写请求定义：方法不是 `GET` / `HEAD` / `OPTIONS`。

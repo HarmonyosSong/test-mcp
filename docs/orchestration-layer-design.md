@@ -80,7 +80,7 @@ type InvestigationPlan = {
 生成规则（确定性，按序命中）：
 
 1. 用户明确指定「只查客户端/服务端」→ 遵守，`reason` 记录来源为用户指定；指定服务端且远端可用时由 Runtime 自动协查，不增加用户操作。
-2. 会话未绑定仓库且无本地证据 → `local + clientSteps=['observe']`（知识、日志或澄清路径）；绑定源码快照的客户端计划为 `['observe','source']`。
+2. 会话尚未绑定动态源码快照且无本地证据 → `local + clientSteps=['observe']`（知识、日志或澄清路径）；绑定固定源码快照的客户端计划为 `['observe','source']`。
 3. 新工单即使命中服务端特征并带关联标识，只要尚无本地日志观测，仍先进入 `local`，不得直接并行或外发。
 4. 已有本地日志观测，且问题文本命中服务端特征、关联标识齐全、Compass 可用 → `parallel`；关联标识缺失 → `local` 并在报告中列出缺口。
    - 「关联标识」首版指：traceId 或请求 ID、发生时间、报错接口/服务名。来源为提问上下文自带或用户在对话中补充；`correlationReady` 即「三者至少具备 traceId/请求 ID 之一」。
@@ -227,7 +227,7 @@ Compass 等远端 Agent 返回的任何文本都不能经任何路径写入账�
 
 - 每轮诊断拥有独立 `runId`、`CapabilitySession`、MCP client 进程、工具预算和证据账本；远端任务拥有独立 `taskId`。
 - 同一会话任意时刻最多一个活跃轮次（Web 409 / IM 排队一条，行为不变）。
-- 只读共享：知识库文件、Git mirror；可追加共享：`.data/knowledge-queries.jsonl`（append-only，逐行自包含）。
+- 只读共享：知识库文件、版本登记表和按 `repository_id + commit` 缓存的源码快照；可追加共享：`.data/knowledge-queries.jsonl`（append-only，逐行自包含）。
 
 ### 7.2 全局并发闸门
 

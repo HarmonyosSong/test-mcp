@@ -55,26 +55,34 @@
 
 ### 2.4 按确认平台和精确版本选择源码
 
-目标：观察确认平台和版本后，读取同一份发布代码，而不是继续解释会话最初绑定的任意分支。
+目标：根据用户提示词与已确认日志事实动态解析端和版本，读取同一份发布代码；会话创建时不绑定仓库，模型也不能选择仓库或分支。
 
-仓库记录 additive 增加：
+版本登记表是唯一源码选择入口：
 
-```ts
-platform: 'harmony' | 'android' | 'ios';
-version_map: Record<string, {
-  branch: string;
-  expected_commit: string;
-}>;
+```yaml
+version-registry/<platform>/<product-line>.yaml
+- version: 7.106.5
+  form_factor: phone
+  builds:
+    - build: "55373"
+      tag: V7.106.5-55373-TEST
+      verified: true
+      source: tag-scan
+      repos:
+        - role: shell
+          repository_id: group/app
+          ref: V7.106.5-55373-TEST
+          expected_commit: "<40-64 hex chars>"
 ```
 
 硬约束：
 
-- 平台和版本必须精确、唯一命中；热修分支首版不参与自动消歧。
-- 用户提示词明确版本时禁止缺映射后回退默认分支、最新版本或当前会话原仓库；提示词未提供版本时，允许在已确认的平台/产品线范围内选择最新已核验登记构建，不能跨端猜测。
+- 平台、产品线、形态和版本必须精确、唯一命中；热修分支首版不参与自动消歧。
+- 用户提示词明确版本时禁止缺映射后回退默认分支、最新版本或其他会话仓库；提示词未提供版本时，允许在已确认的平台/产品线范围内选择最新已核验登记构建，不能跨端猜测。
 - 快照按 `repository_id + expected_commit` 获取并验证 commit；本地缺失、未物化或 commit 不符时明确返回 `snapshot_not_ready`，不能半绑定。
-- 已有会话和旧证据保持原 commit，不 retroactively 改绑。切换采用新会话还是显式 Runtime 换绑，在实现前固定状态与证据隔离契约。
+- 已绑定会话和旧证据保持原 commit，不 retroactively 改绑；需要另一版本时新建会话。
 - 一个版本对应多个组件仓库时，登记表显式提供 `role + mount_path + expected_commit`；Runtime 先完成全部仓库校验，再生成组合只读快照并原子绑定会话。当前仍不自动解析 iOS Podfile 或 Android `*_VERSION` 生成组件登记，生产登记表需要离线核对后提交。
-**选择器和上下文补齐已实现：**平台/精确版本唯一映射、禁止默认分支回退、本地固定 commit 快照校验、组合工作区、源码证据仓库归属，以及提示词/已保存 LogCenter 事实驱动的后续轮次绑定已有测试。会话会用 `source_completeness=partial` 明确标出 Android/iOS 仅挂载 shell 的缺口。正在运行轮次不热切换源码；真实组件版本登记和真实 LogCenter 字段验收仍需单独完成。
+**选择器和上下文补齐已实现：**平台/产品线/形态/精确版本唯一映射、无版本时最新已核验构建、禁止默认分支回退、GitLab archive 固定 commit 快照、组合工作区、源码证据仓库归属，以及提示词/已保存 LogCenter 事实驱动的绑定已有测试。真实组件版本登记和真实 LogCenter 字段验收仍需单独完成。
 
 ### 2.5 完整链验收
 
@@ -87,7 +95,7 @@ version_map: Record<string, {
 5. 不相关日志不能进入正向根因证据链；合法日志可跨轮恢复且模型不能伪造上下文。
 6. 精确版本映射命中后固定 expected commit；缺映射、缺快照和 commit 不符全部失败关闭。
 7. 后续需要外部协查时仍走 Supervisor、固定脱敏摘要、Compass Slot 和联合报告，由 Runtime 自动调用，不绕过现有链路。
-8. M4/M5 合成验收：三端会话均能绑定 shell + component 固定 commit；组合快照拒绝挂载路径穿越、符号链接和文件冲突；只挂载 shell 的 Android/iOS 会话明确标记源码不完整。
+8. M4/M5 合成验收：三端会话均能按动态登记绑定固定 commit；组合快照拒绝挂载路径穿越、符号链接和文件冲突；只挂载 shell 的 Android/iOS 会话明确标记源码不完整。
 
 真实学员联调需单独授权；mock 通过不等于生产字段和权限已经验收。
 
@@ -97,7 +105,7 @@ version_map: Record<string, {
 
 - 会话端上下文、Skill 适用端和知识排序仍需与真实 Android/iOS 仓库完成端到端验收。
 - 端只影响排序和适配，不作为知识库硬过滤条件；保留跨域候选与全局回退。
-- 未完成平台和版本证据链前，不开放“根据老师描述自动选端”。
+- Runtime 已开放根据用户提示词和已确认日志事实自动选择端与版本；真实生产字段和权限验收完成前，不把合成测试当成生产验收。
 - 版本 → 代码快照解析的详细技术方案（真实仓库清单、tag 约定、版本登记表、多仓快照布局与里程碑）见 [多端版本快照解析设计](multi-platform-version-snapshot-design.md)。
 
 ### 3.2 Repository MCP 内部代码导航

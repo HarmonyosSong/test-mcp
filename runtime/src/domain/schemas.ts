@@ -465,73 +465,16 @@ export const ModelConnectionResultSchema = z.object({
   response_preview: z.string(),
 });
 
-export const RepositoryVersionMappingSchema = z.strictObject({
-  branch: z.string().trim().min(1).max(500),
-  expected_commit: z.string().regex(/^[0-9a-f]{40,64}$/),
-  // These fields make the mapping auditable without changing the existing branch/commit contract.
-  tag: z.string().trim().min(1).max(500).nullable().optional(),
-  build: z.string().trim().min(1).max(100).nullable().optional(),
-  source: z.enum(['tag-scan', 'manual']).optional(),
-  // Legacy mappings omit this field and remain trusted for compatibility.
-  verified: z.boolean().optional(),
-});
-export const RepositoryVersionMapSchema = z.record(
-  z.string().trim().min(1).max(100),
-  RepositoryVersionMappingSchema,
-);
-
-export const RegisterRepositoryRequestSchema = z.object({
-  name: z.string().trim().min(2).max(80).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
-  url: z.string().trim().min(8).max(2_000),
-  default_branch: z.string().trim().max(500).nullable().default(null),
-  platform: ClientPlatformSchema.nullable().default(null),
-  version_map: RepositoryVersionMapSchema.default({}),
-}).superRefine((value, ctx) => {
-  const url = value.url.trim();
-  let parsed: URL | undefined;
-  try { parsed = new URL(url); } catch { /* SCP and file URLs are checked below. */ }
-  if (parsed?.protocol === 'file:') {
-    if (!parsed.pathname || parsed.hostname) {
-      ctx.addIssue({ code: 'custom', path: ['url'], message: 'local repository URL must contain an absolute local path' });
-    }
-    return;
-  }
-  if (parsed && ['http:', 'https:', 'ssh:'].includes(parsed.protocol)) {
-    if (
-      !parsed.hostname ||
-      parsed.password ||
-      (parsed.username && ['http:', 'https:'].includes(parsed.protocol)) ||
-      /[?#]/.test(url)
-    ) {
-      ctx.addIssue({ code: 'custom', path: ['url'], message: 'repository URL must include a host and must not contain credentials' });
-    }
-    return;
-  }
-  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[A-Za-z0-9._/-]+$/.test(url)) return;
-  ctx.addIssue({ code: 'custom', path: ['url'], message: 'repository URL must use HTTP(S), SSH, or SCP syntax' });
-});
-
-export const UpdateRepositoryRequestSchema = z.strictObject({
-  default_branch: z.string().trim().min(1).max(500).optional(),
-  platform: ClientPlatformSchema.nullable().optional(),
-  version_map: RepositoryVersionMapSchema.optional(),
-}).refine(
-  (value) => value.default_branch !== undefined || value.platform !== undefined || value.version_map !== undefined,
-  { message: 'at least one repository setting is required' },
-);
-
 export const RepositoryRecordSchema = z.object({
   id: z.string().default(() => `repo-${randomUUID().replaceAll('-', '').slice(0, 10)}`),
   name: z.string(),
   url: z.string(),
+  // Kept as the persisted ref field for database compatibility. Active source
+  // selection comes only from version-registry, never from this value.
   default_branch: z.string(),
-  platform: ClientPlatformSchema.nullable().default(null),
-  version_map: RepositoryVersionMapSchema.default({}),
   created_at: isoDateTime.default(nowIsoDateTime),
   updated_at: isoDateTime.default(nowIsoDateTime),
 });
-export const RepositoryBranchSchema = z.object({ name: z.string(), commit: z.string() });
-export const CreateSnapshotRequestSchema = z.object({ branch: z.string().trim().min(1).max(500) });
 export const RepositorySnapshotSchema = z.object({
   repository_id: z.string(),
   repository_name: z.string(),
@@ -586,8 +529,6 @@ export type RepositoryRecord = z.infer<typeof RepositoryRecordSchema>;
 export type ClientPlatform = z.infer<typeof ClientPlatformSchema>;
 export type ClientProductLine = z.infer<typeof ClientProductLineSchema>;
 export type ClientFormFactor = z.infer<typeof ClientFormFactorSchema>;
-export type RepositoryVersionMapping = z.infer<typeof RepositoryVersionMappingSchema>;
-export type RepositoryBranch = z.infer<typeof RepositoryBranchSchema>;
 export type RepositorySnapshot = z.infer<typeof RepositorySnapshotSchema>;
 export type SourceRepositoryBinding = z.infer<typeof SourceRepositoryBindingSchema>;
 export type SourceCompleteness = z.infer<typeof SourceCompletenessSchema>;

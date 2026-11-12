@@ -70,7 +70,6 @@ export const runtimeConfigSchema = z.object({
   knowledgeRoot: z.string().default('knowledge'),
   knowledgeRetrievalMode: z.string().optional(),
   knowledgePreviewStrategy: z.string().optional(),
-  allowedRoots: z.array(z.string()).default([repositoryRoot]),
   corsOrigins: z.array(z.string()).default([
     'http://localhost:5173',
     'http://127.0.0.1:5173',
@@ -85,13 +84,11 @@ export const runtimeConfigSchema = z.object({
   codeIndexMode: z.enum(['fast']).default('fast'),
   codeIndexTimeoutSeconds: z.coerce.number().int().min(5).max(600).default(90),
   skillsDir: z.string().default(resolve(repositoryRoot, 'skills')),
-  gitMirrorDir: z.string().optional(),
   snapshotDir: z.string().optional(),
   versionRegistryRoot: z.string().default('version-registry'),
   gitlabBaseUrl: z.string().default('https://git.100tal.com'),
   gitlabToken: z.string().default(''),
   gitlabTimeoutMs: z.coerce.number().int().min(100).max(600_000).default(30_000),
-  gitTimeoutMs: z.coerce.number().int().min(1_000).max(600_000).default(120_000),
   maxConcurrentRuns: z.coerce.number().int().min(1).max(100).default(4),
   investigationMaxSeconds: z.coerce.number().int().min(10).max(3_600).default(900),
   investigationMaxRemoteCalls: z.coerce.number().int().min(0).max(10).default(4),
@@ -133,7 +130,6 @@ export type RuntimeConfig = Omit<
   | 'knowledgeQueryLog'
   | 'caseArchiveDir'
   | 'mastraObservabilityDir'
-  | 'gitMirrorDir'
   | 'snapshotDir'
 > & {
   authMode: 'local' | 'sso';
@@ -145,7 +141,6 @@ export type RuntimeConfig = Omit<
   knowledgeQueryLog: string;
   caseArchiveDir: string;
   mastraObservabilityDir: string;
-  gitMirrorDir: string;
   snapshotDir: string;
 };
 
@@ -174,7 +169,6 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     knowledgeRoot: env.HARMONY_AGENT_KNOWLEDGE_ROOT,
     knowledgeRetrievalMode: env.HARMONY_AGENT_KNOWLEDGE_RETRIEVAL_MODE,
     knowledgePreviewStrategy: env.HARMONY_AGENT_KNOWLEDGE_PREVIEW_STRATEGY,
-    allowedRoots: env.HARMONY_AGENT_ALLOWED_ROOTS?.split(',').map((value) => value.trim()).filter(Boolean),
     corsOrigins: env.HARMONY_AGENT_CORS_ORIGINS?.split(',').map((value) => value.trim()).filter(Boolean),
     mcpCommand: env.HARMONY_MASTRA_MCP_COMMAND,
     codeIndexCommand: env.HARMONY_AGENT_CODE_INDEX_COMMAND,
@@ -182,13 +176,11 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     codeIndexMode: env.HARMONY_AGENT_CODE_INDEX_MODE,
     codeIndexTimeoutSeconds: env.HARMONY_AGENT_CODE_INDEX_TIMEOUT_SECONDS,
     skillsDir: env.HARMONY_MASTRA_SKILLS_DIR,
-    gitMirrorDir: optionalEnvPath(env.HARMONY_MASTRA_GIT_MIRROR_DIR),
     snapshotDir: optionalEnvPath(env.HARMONY_MASTRA_SNAPSHOT_DIR),
     versionRegistryRoot: env.HARMONY_AGENT_VERSION_REGISTRY_ROOT,
     gitlabBaseUrl: env.HARMONY_AGENT_GITLAB_BASE_URL,
     gitlabToken: env.HARMONY_AGENT_GITLAB_TOKEN ?? env.ANALYSIS_GIT_TOKEN,
     gitlabTimeoutMs: env.HARMONY_AGENT_GITLAB_TIMEOUT_MS,
-    gitTimeoutMs: env.HARMONY_MASTRA_GIT_TIMEOUT_MS,
     maxConcurrentRuns: env.HARMONY_AGENT_MAX_CONCURRENT_RUNS,
     investigationMaxSeconds: env.HARMONY_AGENT_INVESTIGATION_MAX_SECONDS,
     investigationMaxRemoteCalls: env.HARMONY_AGENT_INVESTIGATION_MAX_REMOTE_CALLS,
@@ -255,12 +247,10 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
       ? fromRoot(config.mastraObservabilityDir)
       : resolve(dataDir, 'observability'),
     knowledgeRoot: fromRoot(config.knowledgeRoot),
-    allowedRoots: config.allowedRoots.map(fromRoot),
     skillsDir: fromRoot(config.skillsDir),
     codeIndexCacheDir: config.codeIndexCacheDir === '.data/codebase-memory'
       ? resolve(dataRoot, 'codebase-memory')
       : fromRoot(config.codeIndexCacheDir),
-    gitMirrorDir: underDataRoot(config.gitMirrorDir, 'git-mirrors'),
     snapshotDir: underDataRoot(config.snapshotDir, 'workspaces'),
     versionRegistryRoot: fromRoot(config.versionRegistryRoot),
     gitlabBaseUrl: (config.gitlabBaseUrl.trim() || 'https://git.100tal.com').replace(/\/+$/, ''),

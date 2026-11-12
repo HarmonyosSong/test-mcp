@@ -8,7 +8,6 @@ import {
   DiagnosisReportSchema,
   EvidenceCitationSchema,
   ModelConfigRequestSchema,
-  RegisterRepositoryRequestSchema,
   ToolEventSchema,
 } from '../src/domain/schemas.js';
 
@@ -98,7 +97,6 @@ test('report schemas apply defaults and enforce strict evidence references', () 
     evidence: [positiveReport.evidence[0], { ...positiveReport.evidence[0], excerpt: ` ${positiveReport.evidence[0].excerpt} ` }],
   }).success, false);
 });
-
 test('orchestration reports accept runtime conclusions and structured next actions', () => {
   const parsed = DiagnosisReportSchema.parse({
     ...positiveReport,
@@ -325,32 +323,4 @@ test('model config validates credential-free HTTP URLs and key mode', () => {
   assert.equal(ModelConfigRequestSchema.safeParse({
     provider: 'openai', model_name: 'x', api_key: 'k'.repeat(4_097),
   }).success, false);
-});
-
-test('repository registration rejects embedded credentials while accepting SSH forms', () => {
-  assert.equal(RegisterRepositoryRequestSchema.safeParse({
-    name: 'repo', url: 'https://user:pass@example.com/repo.git',
-  }).success, false);
-  assert.equal(RegisterRepositoryRequestSchema.safeParse({
-    name: 'repo', url: 'git@example.com:team/repo.git',
-  }).success, true);
-  assert.equal(RegisterRepositoryRequestSchema.safeParse({
-    name: 'repo', url: 'file:///Users/tal/project.git',
-  }).success, true);
-  assert.equal(RegisterRepositoryRequestSchema.safeParse({
-    name: 'repo', url: 'file:/Users/tal/project.git',
-  }).success, true);
-  assert.equal(RegisterRepositoryRequestSchema.safeParse({
-    name: 'repo', url: 'file://remote-host/project.git',
-  }).success, false);
-
-  for (const url of [
-    'https://example.com/repo.git?token=secret',
-    'https://example.com/repo.git?',
-    'http://example.com/repo.git#branch',
-    'ssh://git@example.com/team/repo.git?token=secret',
-    'ssh://git@example.com/team/repo.git#branch',
-  ]) {
-    assert.equal(RegisterRepositoryRequestSchema.safeParse({ name: 'repo', url }).success, false, url);
-  }
 });

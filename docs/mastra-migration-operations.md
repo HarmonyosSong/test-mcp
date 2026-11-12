@@ -30,7 +30,7 @@ make build
 HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 ```
 
-启动后检查 `GET /api/health`、`GET /api/conversations`，再打开网页确认会话、报告和仓库绑定可读。runtime 启动诊断所需 MCP 时会调用 `uv`，因此演练环境也必须安装 Python/uv。迁移演练应优先使用 `/tmp` 中的数据副本和临时 LibSQL 文件。
+启动后检查 `GET /api/health`、`GET /api/conversations`，再打开网页确认会话和诊断报告可读；需要代码时再用用户提示词触发动态源码快照绑定。Runtime 启动诊断所需 MCP 时会调用 `uv`，因此演练环境也必须安装 Python/uv。迁移演练应优先使用 `/tmp` 中的数据副本和临时 LibSQL 文件。
 
 ## 回滚
 

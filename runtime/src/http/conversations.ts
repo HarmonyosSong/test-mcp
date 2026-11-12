@@ -27,6 +27,7 @@ import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js'
 import type { InvestigationBudget } from '../orchestration/plan.js';
 import { ExternalConsultationError } from '../orchestration/consultation.js';
 import { PromptVersionContextError, resolvePromptSourceContext } from '../capabilities/prompt-version-context.js';
+import { hasCompleteSourceBinding } from '../capabilities/source-binding.js';
 
 interface ConversationRouteOptions {
   knowledgeQueryLog?: string;
@@ -334,12 +335,7 @@ export function createConversationRoutes(
     const admissionGrant = acquired.grant;
     let prepared;
     try {
-      const hasBoundSource = Boolean(
-        conversation.workspace_path ||
-        conversation.repository_id ||
-        conversation.resolved_commit ||
-        conversation.source_repositories.length > 0,
-      );
+      const hasBoundSource = hasCompleteSourceBinding(conversation);
       if (!hasBoundSource) {
         const promptSource = resolvePromptSourceContext(parsedInput.data.content, {
           ...conversation,

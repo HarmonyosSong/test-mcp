@@ -13,8 +13,6 @@ import type {
 } from './types';
 
 const REQUEST_TIMEOUT_MS = 5_000;
-// Runtime prepares a source snapshot after the first user prompt.
-const SOURCE_RESOLUTION_TIMEOUT_MS = 300_000;
 
 export class ApiError extends Error {
   constructor(
@@ -108,7 +106,7 @@ export const api = {
     request<ChatConversation>('/conversations', {
       method: 'POST',
       body: JSON.stringify(input),
-    }, SOURCE_RESOLUTION_TIMEOUT_MS),
+    }),
   getConversation: (id: string) => request<ChatConversation>(`/conversations/${id}`),
   updateConversation: (
     id: string,

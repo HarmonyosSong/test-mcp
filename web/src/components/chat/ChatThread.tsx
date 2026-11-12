@@ -301,9 +301,6 @@ export function ChatThread({
             {conversation.repository_name} @ {conversation.requested_ref}
           </span>
         )}
-        {!conversation.repository_name && conversation.workspace_path && (
-          <span className="chat-thread-source">{conversation.workspace_path}</span>
-        )}
       </header>
 
       {progress && (

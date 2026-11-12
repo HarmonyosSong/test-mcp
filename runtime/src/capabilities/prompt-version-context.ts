@@ -60,6 +60,10 @@ function detectBuild(content: string, version: string | null): string | null {
   return content.match(TAG_BUILD_PATTERN)?.[1] ?? null;
 }
 
+function normalizeVersion(value: string): string {
+  return value.trim().replace(/^v/i, '').replace(/^(\d+\.\d+\.\d+)(?:\.\d+)?$/, '$1');
+}
+
 function uniqueOrThrow<T extends string>(values: readonly T[], label: string): T | undefined {
   const unique = [...new Set(values)];
   if (unique.length > 1) throw new PromptVersionContextError(`提示词中的${label}存在歧义：${unique.join('、')}`);
@@ -105,8 +109,21 @@ export function resolvePromptSourceContext(
   if (conversation.product_line && detectProductLine(content) && conversation.product_line !== productLine) {
     throw new PromptVersionContextError(`提示词产品线与会话产品线不一致：${conversation.product_line} / ${productLine}`);
   }
+  if (conversation.form_factor && currentFormFactor && conversation.form_factor !== currentFormFactor) {
+    throw new PromptVersionContextError(`提示词端形态与会话端形态不一致：${conversation.form_factor} / ${currentFormFactor}`);
+  }
+  if (conversation.version && currentVersion && normalizeVersion(conversation.version) !== normalizeVersion(currentVersion)) {
+    throw new PromptVersionContextError(`提示词版本与会话版本不一致：${conversation.version} / ${currentVersion}`);
+  }
+  if (conversation.build && currentBuild(content, currentVersion) && conversation.build !== currentBuild(content, currentVersion)) {
+    throw new PromptVersionContextError(`提示词构建与会话构建不一致：${conversation.build} / ${currentBuild(content, currentVersion)}`);
+  }
   if (!platform && !productLine && !formFactor && !version && !build) return null;
   return { platform, productLine, formFactor, version, build };
+}
+
+function currentBuild(content: string, version: string | null): string | null {
+  return detectBuild(content, version);
 }
 
 function firstDetected<T>(messages: readonly string[], detector: (content: string) => T | null): T | null {

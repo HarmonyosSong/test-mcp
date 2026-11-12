@@ -60,7 +60,6 @@ test('HarmonyOS、Android、iOS 都能从登记表解析固定版本，空会话
       HARMONY_AGENT_RUN_MODE: 'local',
       HARMONY_MASTRA_DATA_DIR: undefined,
       HARMONY_AGENT_DATA_ROOT: join(root, 'data'),
-      HARMONY_AGENT_ALLOWED_ROOTS: root,
       HARMONY_AGENT_VERSION_REGISTRY_ROOT: registryRoot,
       HARMONY_AGENT_GITLAB_BASE_URL: 'https://git.example.test',
       HARMONY_AGENT_GITLAB_TOKEN: 'test-token',

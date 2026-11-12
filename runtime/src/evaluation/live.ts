@@ -143,7 +143,6 @@ export async function runLive(datasetPath: string, outputPath: string, timeoutSe
     databaseUrl: `file:${resolve(scratch, 'data', 'runtime.db')}`,
     knowledgeQueryLog: resolve(scratch, 'knowledge-queries.jsonl'),
     caseArchiveDir: resolve(scratch, 'cases'),
-    gitMirrorDir: resolve(scratch, 'git-mirrors'),
     snapshotDir: resolve(scratch, 'snapshots'),
   };
   let runtimeForCleanup: Awaited<ReturnType<typeof createRuntimeApp>> | undefined;

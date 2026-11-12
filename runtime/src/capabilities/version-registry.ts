@@ -8,7 +8,6 @@ import {
   ClientPlatformSchema,
   ClientProductLineSchema,
 } from '../domain/schemas.js';
-import { normalizeClientVersion } from './repository.js';
 
 export const ProductLineSchema = ClientProductLineSchema;
 export const FormFactorSchema = ClientFormFactorSchema;
@@ -79,6 +78,13 @@ export type FormFactor = z.infer<typeof FormFactorSchema>;
 export type VersionRegistryRepository = z.input<typeof RegistryRepositorySchema>;
 export type VersionRegistryBuild = z.input<typeof RegistryBuildSchema>;
 export type VersionRegistryEntry = z.input<typeof VersionRegistryEntrySchema>;
+
+/** Remove a marketing-version prefix and hotfix segment before registry lookup. */
+export function normalizeClientVersion(value: string): string {
+  const trimmed = value.trim().replace(/^v/i, '');
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:\.\d+)?$/.exec(trimmed);
+  return match ? `${match[1]}.${match[2]}.${match[3]}` : trimmed;
+}
 
 export class VersionRegistryError extends Error {
   public constructor(

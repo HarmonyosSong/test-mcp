@@ -812,7 +812,7 @@ async function runOrchestratedDiagnosisRound(
       const compassEnabled = compassAvailable;
       plan = createInvestigationPlan({
         question: content,
-        repositoryBound: Boolean(conversation.workspace_path || conversation.repository_id || conversation.resolved_commit),
+        repositoryBound: Boolean(conversation.workspace_path),
         hasLocalEvidence: hasLocalEvidence(conversation),
         hasLogObservation: hasLogObservation(conversation),
         requestedScope,

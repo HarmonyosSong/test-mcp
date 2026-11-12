@@ -18,7 +18,7 @@
 当前可变状态默认落在项目根下 `.data/`（容器内即 `/app/.data`）：
 
 - LibSQL（`mastra/runtime.db`）
-- Git mirror / workspace 快照
+- 版本源码 workspace 快照
 - 模型配置、知识查询日志、终态案例归档
 
 Dockerfile 在镜像层 `mkdir .data/...`，生产 env 使用相对路径 `.data/...`。容器销毁重建时，可写层数据丢失；应用层「重启恢复」无法对抗卷未挂载。
@@ -75,8 +75,7 @@ dev-agent 容器 Dockerfile 模式要点：`WORKDIR` + 依赖层 + `COPY` 应用
 ```text
 $HARMONY_AGENT_DATA_ROOT/
 ├── mastra/                  # 原 HARMONY_MASTRA_DATA_DIR；内含 runtime.db
-├── git-mirrors/             # 原 HARMONY_MASTRA_GIT_MIRROR_DIR
-├── workspaces/              # 原 HARMONY_MASTRA_SNAPSHOT_DIR / legacy snapshot
+├── workspaces/              # 版本登记表生成的固定 commit 快照
 ├── model-config.json        # 原 HARMONY_AGENT_MODEL_CONFIG_FILE
 ├── knowledge-queries.jsonl  # 原 HARMONY_AGENT_KNOWLEDGE_QUERY_LOG
 └── knowledge-cases/         # 原 HARMONY_AGENT_KNOWLEDGE_CASES_DIR
@@ -95,7 +94,6 @@ $HARMONY_AGENT_DATA_ROOT/
 **容器部署必须删除下列相对路径单项**，否则会继续落到 `/app/.data`，挂卷无效：
 
 - `HARMONY_MASTRA_DATA_DIR`
-- `HARMONY_MASTRA_GIT_MIRROR_DIR`
 - `HARMONY_MASTRA_SNAPSHOT_DIR`
 - `HARMONY_AGENT_MODEL_CONFIG_FILE`
 - `HARMONY_AGENT_KNOWLEDGE_QUERY_LOG`
@@ -107,7 +105,7 @@ $HARMONY_AGENT_DATA_ROOT/
 
 - 源码与构建产物：`runtime/`、`web/dist`、`mcp_server/`、`knowledge/`、`skills/`
 - 进程配置：`.env` / 平台挂载的配置文件
-- 只读允许根：`HARMONY_AGENT_ALLOWED_ROOTS`（仓库检视路径，不是会话库）
+- 版本登记表和源码快照均由 Runtime 管理；用户本地工作区不进入数据根，也不是源码选择入口。
 
 ---
 
@@ -135,7 +133,6 @@ HARMONY_AGENT_DATA_ROOT=/data/troubleshoot-odyssey
 
 ```env
 HARMONY_MASTRA_DATA_DIR=.data/mastra
-HARMONY_MASTRA_GIT_MIRROR_DIR=.data/git-mirrors
 HARMONY_MASTRA_SNAPSHOT_DIR=.data/workspaces
 HARMONY_AGENT_MODEL_CONFIG_FILE=.data/model-config.json
 HARMONY_AGENT_KNOWLEDGE_QUERY_LOG=.data/knowledge-queries.jsonl
@@ -157,7 +154,7 @@ HARMONY_AGENT_KNOWLEDGE_CASES_DIR=.data/knowledge-cases
 2. **删除**当前将可变数据落在镜像层的做法，例如：
 
 ```dockerfile
-&& mkdir -p .data/mastra .data/git-mirrors .data/workspaces .data/knowledge-cases \
+&& mkdir -p .data/mastra .data/workspaces .data/knowledge-cases \
 ```
 
 3. 注释改为明确：运行时数据根为 `HARMONY_AGENT_DATA_ROOT`（生产 `/data/troubleshoot-odyssey`），须由平台挂持久卷；子目录由 runtime 启动时按配置创建（`0700` / 敏感文件 `0600`）。  

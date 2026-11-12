@@ -76,7 +76,7 @@ export function createInvestigationPlan(
       : localPlan(base, '用户指定服务端，但外部协查未启用或远端预算已耗尽');
   }
   if (!input.repositoryBound && !input.hasLocalEvidence) {
-    return localPlan(base, '会话未绑定仓库且无本地证据，先走知识或澄清路径');
+    return localPlan(base, '会话尚未绑定动态源码快照且无本地证据，先走知识或澄清路径');
   }
 
   const signal = matchServerSignals(input.question, signals);

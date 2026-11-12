@@ -151,8 +151,6 @@ export interface ConsultationAction {
 export interface ChatConversation {
   id: string;
   title: string;
-  workspace_path?: string | null;
-  repository_id?: string | null;
   repository_name?: string | null;
   requested_ref?: string | null;
   resolved_commit?: string | null;
@@ -192,14 +190,6 @@ export interface ChatConversationSummary {
 
 export interface CreateConversationInput {
   title?: string;
-  workspace_path?: string;
-  repository_id?: string;
-  branch?: string;
-  platform?: 'harmony' | 'android' | 'ios';
-  product_line?: 'xueersi' | 'xuejiayun';
-  form_factor?: 'phone' | 'pad' | 'universal';
-  version?: string;
-  build?: string;
 }
 
 export interface HealthResponse {

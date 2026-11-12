@@ -82,10 +82,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
     const modelConfiguration = new ModelConfiguration({ filePath: config.modelConfigFile });
     await modelConfiguration.initialize();
     const repositories = new RepositoryCapability({
-      mirrorDir: config.gitMirrorDir,
       snapshotDir: config.snapshotDir,
-      allowedRoots: config.allowedRoots,
-      timeoutMs: config.gitTimeoutMs,
       initialRecords: await store.listRepositories(),
     });
     const versionRegistry = new VersionRegistry(config.versionRegistryRoot);

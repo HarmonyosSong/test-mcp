@@ -12,7 +12,6 @@ test('defaults data paths under projectRoot/.data when DATA_ROOT is unset', () =
   });
   const dataRoot = resolve(PROJECT_ROOT, '.data');
   assert.equal(config.dataDir, resolve(dataRoot, 'mastra'));
-  assert.equal(config.gitMirrorDir, resolve(dataRoot, 'git-mirrors'));
   assert.equal(config.snapshotDir, resolve(dataRoot, 'workspaces'));
   assert.equal(config.legacySnapshotDir, resolve(dataRoot, 'workspaces'));
   assert.equal(config.modelConfigFile, resolve(dataRoot, 'model-config.json'));
@@ -31,7 +30,6 @@ test('absolute DATA_ROOT derives all runtime data paths', () => {
     HARMONY_AGENT_DATA_ROOT: dataRoot,
   });
   assert.equal(config.dataDir, resolve(dataRoot, 'mastra'));
-  assert.equal(config.gitMirrorDir, resolve(dataRoot, 'git-mirrors'));
   assert.equal(config.snapshotDir, resolve(dataRoot, 'workspaces'));
   assert.equal(config.modelConfigFile, resolve(dataRoot, 'model-config.json'));
   assert.equal(config.knowledgeQueryLog, resolve(dataRoot, 'knowledge-queries.jsonl'));
@@ -49,5 +47,4 @@ test('explicit path overrides beat DATA_ROOT derivation', () => {
   });
   assert.equal(config.dataDir, resolve(PROJECT_ROOT, '.data/mastra'));
   assert.equal(config.modelConfigFile, resolve(PROJECT_ROOT, '.data/model-config.json'));
-  assert.equal(config.gitMirrorDir, resolve(dataRoot, 'git-mirrors'));
 });
