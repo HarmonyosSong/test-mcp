@@ -188,7 +188,7 @@ export function selectVersionRegistryEntry(
   const version = requestedVersion ? normalizeClientVersion(requestedVersion) : null;
   const candidates = version
     ? scopedEntries.filter((entry) => normalizeClientVersion(entry.version) === version)
-    : latestVersionEntries(scopedEntries);
+    : latestEntriesForFormFactor(scopedEntries, formFactor);
   if (candidates.length === 0) {
     throw new VersionRegistryError(
       'version_not_registered',
@@ -240,6 +240,19 @@ export function selectVersionRegistryEntry(
     build: builds[0]!,
     repositories: builds[0]!.repos,
   };
+}
+
+function latestEntriesForFormFactor(
+  entries: readonly VersionRegistryEntry[],
+  formFactor: FormFactor | undefined,
+): VersionRegistryEntry[] {
+  if (!formFactor || formFactor === 'universal') return latestVersionEntries(entries);
+  const exact = entries.filter((entry) => entry.form_factor === formFactor);
+  const universal = entries.filter((entry) => entry.form_factor === 'universal');
+  // A stated form factor must be applied before choosing the newest version.
+  // Universal entries remain a fallback when that form has no verified build.
+  const exactVerified = exact.some((entry) => entry.builds.some((build) => build.verified));
+  return latestVersionEntries(exactVerified ? exact : universal);
 }
 
 function latestVersionEntries(entries: readonly VersionRegistryEntry[]): VersionRegistryEntry[] {

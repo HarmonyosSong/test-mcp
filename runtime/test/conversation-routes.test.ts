@@ -260,6 +260,42 @@ test('message route reports missing conversations and disabled models with legac
   }
 });
 
+test('诊断入口会清除不完整的旧工作区字段，避免绕过动态源码绑定', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mastra-legacy-source-binding-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  const conversation = await store.createConversation();
+  conversation.workspace_path = directory;
+  conversation.repository_id = 'legacy-repository';
+  conversation.repository_name = 'legacy-app';
+  conversation.requested_ref = 'main';
+  conversation.resolved_commit = 'a'.repeat(40);
+  conversation.source_limitations = ['legacy workspace'];
+  await store.saveConversation(conversation);
+  const app = createConversationRoutes(
+    store,
+    { async *stream() { yield { type: 'completed', text: '已完成', report: null, evidence_state: {}, messages_state: [], tool_usage: {} }; } } as unknown as DiagnosisAgent,
+    { createKnowledgeSession: async () => null } as unknown as CapabilityMcp,
+    { enabled: true } as ModelConfiguration,
+  );
+  try {
+    const response = await app.request(`/conversations/${conversation.id}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: '检查问题' }),
+    });
+    assert.equal(response.status, 200);
+    await response.text();
+    const saved = await store.getConversation(conversation.id);
+    assert.equal(saved.workspace_path, null);
+    assert.equal(saved.repository_id, null);
+    assert.equal(saved.requested_ref, null);
+    assert.deepEqual(saved.source_repositories, []);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('retries a transient terminal persistence failure before releasing the conversation lock', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'mastra-terminal-retry-'));
   const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));

@@ -2448,8 +2448,7 @@ button:disabled {
 }
 
 .new-case-dialog,
-.model-settings-dialog,
-.repository-settings-dialog {
+.model-settings-dialog {
   width: min(620px, 100%);
   max-height: min(760px, calc(100dvh - 48px));
   overflow: auto;
@@ -2461,10 +2460,6 @@ button:disabled {
 
 .model-settings-dialog {
   width: min(680px, 100%);
-}
-
-.repository-settings-dialog {
-  width: min(720px, 100%);
 }
 
 .dialog-header {
@@ -2485,126 +2480,6 @@ button:disabled {
 
 .new-case-dialog form,
 .model-settings-dialog form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px;
-}
-
-.repository-dialog-body {
-  display: flex;
-  flex-direction: column;
-}
-
-.registered-repositories {
-  padding: 16px;
-  background: var(--surface-soft);
-  border-bottom: 1px solid var(--border);
-}
-
-.repository-section-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--ink-soft);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.repository-section-title > span {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.repository-list {
-  display: flex;
-  flex-direction: column;
-  margin-top: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.repository-row {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 2px;
-  color: var(--green);
-  border-bottom: 1px solid var(--border);
-}
-
-.repository-row > div {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.repository-row strong {
-  color: var(--ink);
-  font-size: 12px;
-}
-
-.repository-row span {
-  overflow: hidden;
-  color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.repository-row code {
-  padding: 3px 6px;
-  color: var(--ink-soft);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 9px;
-}
-
-.repository-row > .repository-branch-editor {
-  display: flex;
-  grid-column: 3 / 5;
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
-}
-
-.repository-branch-editor input {
-  width: 190px;
-  min-height: 32px;
-  padding: 5px 8px;
-  font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 10px;
-}
-
-.repository-branch-editor .icon-button,
-.repository-branch-edit {
-  width: 30px;
-  height: 30px;
-}
-
-.repository-default-note {
-  margin: 10px 0 0;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 16px;
-}
-
-.repository-empty {
-  margin-top: 10px;
-  padding: 18px;
-  color: var(--muted);
-  text-align: center;
-  border: 1px dashed var(--border-strong);
-  border-radius: 10px;
-  font-size: 11px;
-}
-
-.repository-settings-dialog form {
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -2641,39 +2516,6 @@ button:disabled {
   border-color: var(--border);
   box-shadow: var(--shadow-sm);
   font-weight: 600;
-}
-
-.repository-source-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-}
-
-.branch-input {
-  display: flex;
-  min-height: 38px;
-  align-items: center;
-  gap: 8px;
-  padding-left: 10px;
-  color: var(--muted);
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-}
-
-.branch-input:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--focus-ring-soft);
-}
-
-.branch-input input {
-  min-width: 0;
-  flex: 1 1 auto;
-  padding-left: 0;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  font-family: "SFMono-Regular", Consolas, monospace;
 }
 
 .snapshot-note {
@@ -3260,8 +3102,7 @@ button:disabled {
   }
 
   .new-case-dialog,
-  .model-settings-dialog,
-  .repository-settings-dialog {
+  .model-settings-dialog {
     width: 100%;
     max-height: 92dvh;
     border-right: 0;
@@ -3287,33 +3128,6 @@ button:disabled {
 
   .form-grid-two {
     grid-template-columns: 1fr;
-  }
-
-  .repository-source-fields {
-    grid-template-columns: 1fr;
-  }
-
-  .repository-row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .repository-row code {
-    grid-column: 2;
-    width: fit-content;
-  }
-
-  .repository-branch-edit {
-    grid-column: 3;
-    grid-row: 2;
-  }
-
-  .repository-row > .repository-branch-editor {
-    grid-column: 2 / 4;
-  }
-
-  .repository-branch-editor input {
-    width: min(190px, 100%);
-    min-width: 0;
   }
 
   .model-dialog-actions .danger-text-button {

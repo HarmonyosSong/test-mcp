@@ -8,7 +8,7 @@
 
 ## 职责与入口
 
-本节记录产品策略；工具名和运行时行为反映 2026-09 的 Python 实现。Mastra 当前能力和未完成的兼容验收以迁移规格为准。
+本节记录产品策略；当前 Mastra 运行时行为以 `runtime/src/diagnosis/agent.ts`、`runtime/src/diagnosis/evidence.ts` 和 `runtime/src/capabilities/session.ts` 为准，文中的 Python 命令只作为历史评测记录。
 
 - Knowledge 保存术语、候选、区分判据、代码锚点与适用范围。
 - Skill 按已有线索选择检索、读取、追问或结论，不把知识命中当作根因证明。
@@ -56,7 +56,7 @@
 ## 验收与后续评估
 
 离线回归覆盖入口无预扫描、协议配对、请求前裁剪、相同读取复用、预算停止、真实观测接受及伪造证据拒绝，
-并以脚本化模型驱动真实工具链端到端验证报告提交与证据快照（`agent/evals/test_diagnosis_regression.py`）。
+并以 Runtime 的 TypeScript 测试驱动真实工具链端到端验证报告提交与证据快照（`runtime/test/`）。
 评估用例使用独立内容夹具，不能依赖生产知识库保留 mock 条目。
 生产知识内容的召回另由 `agent/evals/test_knowledge_retrieval.py` 评测，覆盖已发现的回归措辞、
 未原样加入 aliases 的额外改写和无关查询。内容变化需复核预期，不降低全局阈值来强行制造命中。

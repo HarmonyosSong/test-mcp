@@ -51,8 +51,8 @@
 
 | 职责 | 当前位置及行为 |
 |---|---|
-| 会话挂载 | [chat.py](../agent/src/harmony_agent/agents/chat.py) 的 `stream_turn` 每轮构造知识工具集 |
-| 工具包装 | [knowledge_mcp.py](../agent/src/harmony_agent/toolsets/knowledge_mcp.py) 将本地 FastMCP 包成 `MCPToolset` |
+| 会话挂载 | `runtime/src/capabilities/session.ts` 按轮次创建 Knowledge MCP 会话 |
+| 工具包装 | `runtime/src/capabilities/mcp.ts` 通过 `@mastra/mcp` 暴露知识工具 |
 | 载入与校验 | [loader.py](../mcp_server/src/harmony_knowledge_mcp/loader.py) 的 `KnowledgeBase.load()` 加载条目并校验引用 |
 | 匹配字段与响应 | [schemas.py](../mcp_server/src/harmony_knowledge_mcp/schemas.py) 的 `KnowledgeEntry.match_terms`、`SearchHit`、`KnowledgeLookup` |
 | 字面与概念打分 | [retriever.py](../mcp_server/src/harmony_knowledge_mcp/retriever.py)、[concepts.py](../mcp_server/src/harmony_knowledge_mcp/concepts.py) |

@@ -95,6 +95,32 @@ test('没有版本时按平台、产品线和形态选择最新版本', () => {
   assert.equal(selected.repositories[0]?.repository_id, 'new');
 });
 
+test('先按明确形态筛选再选择最新版本，避免 HD 误绑定手机源码', () => {
+  const entries = [
+    {
+      platform: 'android' as const,
+      product_line: 'xueersi' as const,
+      version: '7.106.5',
+      form_factor: 'phone' as const,
+      builds: [{ build: '2', tag: 'phone-new', source: 'manual' as const, verified: true, repos: [{ repository_id: 'phone', role: 'shell' as const, ref: 'phone-new', expected_commit: COMMIT }] }],
+    },
+    {
+      platform: 'android' as const,
+      product_line: 'xueersi' as const,
+      version: '5.106.5',
+      form_factor: 'pad' as const,
+      builds: [{ build: '1', tag: 'pad-old', source: 'manual' as const, verified: true, repos: [{ repository_id: 'pad', role: 'shell' as const, ref: 'pad-old', expected_commit: COMMIT }] }],
+    },
+  ];
+  const selected = selectVersionRegistryEntry(entries, {
+    platform: 'android',
+    productLine: 'xueersi',
+    formFactor: 'pad',
+  });
+  assert.equal(selected.entry.form_factor, 'pad');
+  assert.equal(selected.repositories[0]?.repository_id, 'pad');
+});
+
 test('未说明形态且同一产品线有手机和平板版本时拒绝猜测', () => {
   const entries = [
     {
