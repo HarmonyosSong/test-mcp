@@ -17,6 +17,7 @@ const optionalTrimmedText = (max: number) =>
 export const ClientPlatformSchema = z.enum(['harmony', 'android', 'ios']);
 export const ClientProductLineSchema = z.enum(['xueersi', 'xuejiayun']);
 export const ClientFormFactorSchema = z.enum(['phone', 'pad', 'universal']);
+export const SourceCompletenessSchema = z.enum(['complete', 'partial', 'unknown']);
 
 export const VerdictSchema = z.enum([
   'located',
@@ -102,6 +103,45 @@ export const LogObservationContextSchema = z.strictObject({
   platform_conflict: z.boolean(),
 });
 
+// Runtime-owned identity for source observations. Model drafts intentionally do not
+// expose this field; it is derived from the conversation's bound snapshot.
+export const SourceSnapshotIdentitySchema = z.strictObject({
+  repository_id: z.string().trim().min(1).max(300),
+  resolved_commit: z.string().trim().min(1).max(128),
+});
+
+export const SourceObservationContextSchema = z.strictObject({
+  ...SourceSnapshotIdentitySchema.shape,
+  path: z.string().trim().min(1).max(2_000),
+});
+
+// Runtime-owned bindings for every repository mounted into a conversation's
+// immutable source workspace. The shell uses an empty mount_path.
+export const SourceRepositoryBindingSchema = z.strictObject({
+  repository_id: z.string().trim().min(1).max(300),
+  repository_name: z.string().trim().min(1).max(300),
+  requested_ref: z.string().trim().min(1).max(500),
+  resolved_commit: z.string().trim().min(1).max(128),
+  role: z.enum(['shell', 'component', 'config']),
+  mount_path: z.string().trim().max(2_000),
+}).superRefine((value, ctx) => {
+  const parts = value.mount_path.split('/');
+  if (value.mount_path !== '' && (
+    value.mount_path.startsWith('/') ||
+    value.mount_path.includes('\\') ||
+    /^[A-Za-z]:/.test(value.mount_path) ||
+    parts.some((part) => !part || part === '.' || part === '..')
+  )) {
+    ctx.addIssue({ code: 'custom', path: ['mount_path'], message: 'mount_path 必须是安全的相对路径' });
+  }
+  if (value.role === 'shell' && value.mount_path !== '') {
+    ctx.addIssue({ code: 'custom', path: ['mount_path'], message: 'shell 仓库的 mount_path 必须为空' });
+  }
+  if (value.role !== 'shell' && value.mount_path === '') {
+    ctx.addIssue({ code: 'custom', path: ['mount_path'], message: 'component/config 仓库必须提供 mount_path' });
+  }
+});
+
 export const EvidenceSchema = z.strictObject({
   id: z.string().default(defaultEvidenceId),
   kind: EvidenceKindSchema,
@@ -111,6 +151,16 @@ export const EvidenceSchema = z.strictObject({
   supports: z.string(),
   // 只能由 Runtime 的观测适配器写入，模型草稿没有该字段。
   observation_context: LogObservationContextSchema.optional(),
+  // 只能由 Runtime 根据会话绑定的源码快照写入，模型草稿没有该字段。
+  source_context: SourceObservationContextSchema.optional(),
+}).superRefine((value, ctx) => {
+  if (value.source_context && value.kind !== 'source') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['source_context'],
+      message: 'source_context is only valid for source observations',
+    });
+  }
 });
 
 export const EvidenceCitationSchema = z.strictObject({
@@ -280,6 +330,9 @@ export const ConversationRecordSchema = z.object({
   repository_name: nullableText.optional().default(null),
   requested_ref: nullableText.optional().default(null),
   resolved_commit: nullableText.optional().default(null),
+  source_repositories: z.array(SourceRepositoryBindingSchema).default([]),
+  source_completeness: SourceCompletenessSchema.nullable().optional().default(null),
+  source_limitations: z.array(z.string()).default([]),
   platform: ClientPlatformSchema.nullable().optional().default(null),
   product_line: ClientProductLineSchema.nullable().optional().default(null),
   form_factor: ClientFormFactorSchema.nullable().optional().default(null),
@@ -326,8 +379,8 @@ export const CreateConversationRequestSchema = z.object({
     ctx.addIssue({ code: 'custom', message: 'workspace_path and repository_id are mutually exclusive' });
   }
   const hasVersionContext = Boolean(value.platform || value.product_line || value.form_factor || value.version || value.build);
-  if (hasVersionContext && (!value.platform || !value.product_line || !value.version)) {
-    ctx.addIssue({ code: 'custom', path: ['version'], message: '精确版本源码需要同时提供 platform、product_line 和 version' });
+  if (hasVersionContext && (!value.platform || !value.product_line)) {
+    ctx.addIssue({ code: 'custom', path: ['platform'], message: '版本源码需要同时提供 platform 和 product_line；未填写 version 时将绑定该范围内最新版本' });
   }
   if (hasVersionContext && (value.workspace_path || value.repository_id || value.branch)) {
     ctx.addIssue({ code: 'custom', message: '精确版本源码不能与 workspace_path、repository_id 或 branch 同时提供' });
@@ -525,6 +578,8 @@ export const HealthResponseSchema = z.object({
 export type Verdict = z.infer<typeof VerdictSchema>;
 export type Severity = z.infer<typeof SeveritySchema>;
 export type EvidenceKind = z.infer<typeof EvidenceKindSchema>;
+export type SourceSnapshotIdentity = z.infer<typeof SourceSnapshotIdentitySchema>;
+export type SourceObservationContext = z.infer<typeof SourceObservationContextSchema>;
 export type Responsibility = z.infer<typeof ResponsibilitySchema>;
 export type DiagnosisTaskType = z.infer<typeof DiagnosisTaskTypeSchema>;
 export type RunState = z.infer<typeof RunStateSchema>;
@@ -546,6 +601,10 @@ export type ConversationRecord = z.infer<typeof ConversationRecordSchema>;
 export type ModelConfigRequest = z.infer<typeof ModelConfigRequestSchema>;
 export type RepositoryRecord = z.infer<typeof RepositoryRecordSchema>;
 export type ClientPlatform = z.infer<typeof ClientPlatformSchema>;
+export type ClientProductLine = z.infer<typeof ClientProductLineSchema>;
+export type ClientFormFactor = z.infer<typeof ClientFormFactorSchema>;
 export type RepositoryVersionMapping = z.infer<typeof RepositoryVersionMappingSchema>;
 export type RepositoryBranch = z.infer<typeof RepositoryBranchSchema>;
 export type RepositorySnapshot = z.infer<typeof RepositorySnapshotSchema>;
+export type SourceRepositoryBinding = z.infer<typeof SourceRepositoryBindingSchema>;
+export type SourceCompleteness = z.infer<typeof SourceCompletenessSchema>;

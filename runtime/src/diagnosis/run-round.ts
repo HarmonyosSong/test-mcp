@@ -336,6 +336,8 @@ async function runLegacyDiagnosisRound(
       messageId: assistantMessage.id,
       runId,
       workspacePath: conversation.workspace_path,
+      repositoryId: conversation.repository_id ?? null,
+      resolvedCommit: conversation.resolved_commit ?? null,
       logCorrelation: buildRoundLogCorrelation(conversation, content),
       abortSignal,
     });
@@ -739,6 +741,8 @@ async function runOrchestratedDiagnosisRound(
           messageId: assistantMessage.id,
           runId,
           workspacePath: conversation.workspace_path ?? null,
+          repositoryId: conversation.repository_id ?? null,
+          resolvedCommit: conversation.resolved_commit ?? null,
         },
       },
       approveRemote: async () => {
@@ -840,6 +844,8 @@ async function runOrchestratedDiagnosisRound(
       messageId: assistantMessage.id,
       runId,
       workspacePath: conversation.workspace_path,
+      repositoryId: conversation.repository_id ?? null,
+      resolvedCommit: conversation.resolved_commit ?? null,
       logCorrelation: buildRoundLogCorrelation(conversation, content),
       abortSignal,
     });

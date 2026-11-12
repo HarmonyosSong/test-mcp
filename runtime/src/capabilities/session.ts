@@ -8,6 +8,9 @@ export interface CapabilityContext {
   readonly messageId: string;
   readonly runId: string;
   readonly workspacePath: string | null;
+  /** Bound source identity, when this round is attached to a repository snapshot. */
+  readonly repositoryId?: string | null;
+  readonly resolvedCommit?: string | null;
   readonly logCorrelation?: LogToolCorrelation;
   readonly abortSignal?: AbortSignal;
 }

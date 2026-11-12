@@ -156,6 +156,16 @@ export interface ChatConversation {
   repository_name?: string | null;
   requested_ref?: string | null;
   resolved_commit?: string | null;
+  source_repositories?: Array<{
+    repository_id: string;
+    repository_name: string;
+    requested_ref: string;
+    resolved_commit: string;
+    role: 'shell' | 'component' | 'config';
+    mount_path: string;
+  }>;
+  source_completeness?: 'complete' | 'partial' | 'unknown' | null;
+  source_limitations?: string[];
   platform?: 'harmony' | 'android' | 'ios' | null;
   product_line?: 'xueersi' | 'xuejiayun' | null;
   form_factor?: 'phone' | 'pad' | 'universal' | null;

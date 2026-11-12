@@ -145,7 +145,9 @@ function validateArchiveEntries(entries: readonly string[]): number {
   });
   const first = normalized.find((parts) => parts.length > 0)?.[0];
   if (!first) throw new ArchiveSnapshotError('invalid_archive', 'archive 不包含有效路径');
-  const hasSingleRoot = normalized.every((parts) => parts.length > 0 && parts[0] === first);
+  // A plain archive containing `Main.ets` has no wrapper directory to strip.
+  const hasSingleRoot = normalized.some((parts) => parts.length > 1)
+    && normalized.every((parts) => parts.length > 0 && parts[0] === first);
   return hasSingleRoot ? 1 : 0;
 }
 

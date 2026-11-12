@@ -37,7 +37,7 @@ FIFO 挤掉、复用响应不含证据 ID、模型编 ID 提交报告三连失�
 - 复用前核对缓存的证据引用仍在账本;已被淘汰则缓存失效,允许一次真实重读,
   恢复成功计 `evidence_restored` 且不计入无进展——不能既阻止重读又要求引用失效 ID。
 
-当前 Runtime 的远程日志适配器会为合格条目附加可选 `observation_context`。该上下文由 Runtime 生成，模型报告草稿只能提交证据 ID、逐字摘录和 supports；恢复引用时透传上下文。这是 v2 账本主生命周期之外的 additive 元数据，不改变淘汰、墓碑、容量或重读规则。只有目标绑定且身份匹配的脱敏日志可入账，未关联日志不能支持正向根因。
+当前 Runtime 的远程日志适配器会为合格条目附加可选 `observation_context`；绑定源码快照时，源码适配器还会附加 Runtime 生成的 `source_context={repository_id, resolved_commit, path}`。这些上下文由 Runtime 生成，模型报告草稿只能提交证据 ID、逐字摘录和 supports；恢复引用时透传上下文，并拒绝与当前会话 commit 不一致的源码证据。这是 v2 账本主生命周期之外的 additive 元数据，不改变淘汰、墓碑、容量或重读规则。只有目标绑定且身份匹配的脱敏日志可入账，未关联日志不能支持正向根因。
 
 ## 验收
 

@@ -48,6 +48,69 @@ test('captures only delivered source observations with deterministic stable IDs'
   assert.equal(ledger.entries.size, 1);
 });
 
+test('source observations carry the bound repository commit and path', () => {
+  const sourceContext = {
+    repository_id: 'group/client-app',
+    resolved_commit: 'a'.repeat(40),
+  };
+  const ledger = new EvidenceLedger({ sourceContext });
+  const captured = read(ledger, 'src/a.ets', 'throw new Error("boom")');
+  const id = captured.evidence_refs[0]!.id;
+  assert.deepEqual(ledger.entries.get(id)?.source_context, {
+    ...sourceContext,
+    path: 'src/a.ets',
+  });
+
+  const otherCommit = { ...sourceContext, resolved_commit: 'b'.repeat(40) };
+  const otherLedger = new EvidenceLedger({ sourceContext: otherCommit });
+  const other = read(otherLedger, 'src/a.ets', 'throw new Error("boom")');
+  assert.notEqual(other.evidence_refs[0]?.id, id);
+
+  const restored = EvidenceLedger.restore(ledger.snapshot(), [], undefined, otherCommit);
+  assert.throws(
+    () => restored.resolveDraft(draft(id, 'throw new Error("boom")')),
+    (error: unknown) => error instanceof EvidenceLedgerError && error.code === 'source_snapshot_mismatch',
+  );
+});
+
+test('multi-repository source observations use the longest matching mount path', () => {
+  const ledger = new EvidenceLedger({
+    sourceContexts: [
+      {
+        repository_id: 'repo-shell',
+        repository_name: 'shell',
+        requested_ref: 'release',
+        resolved_commit: 'a'.repeat(40),
+        role: 'shell',
+        mount_path: '',
+      },
+      {
+        repository_id: 'repo-component',
+        repository_name: 'component',
+        requested_ref: 'release',
+        resolved_commit: 'b'.repeat(40),
+        role: 'component',
+        mount_path: 'components/feature',
+      },
+    ],
+  });
+  const component = read(ledger, 'components/feature/Page.ets', 'throw new Error("component")');
+  const shell = read(ledger, 'Entry.ets', 'throw new Error("shell")');
+  assert.deepEqual(ledger.entries.get(component.evidence_refs[0]!.id)?.source_context, {
+    repository_id: 'repo-component',
+    resolved_commit: 'b'.repeat(40),
+    path: 'Page.ets',
+  });
+  assert.deepEqual(ledger.entries.get(shell.evidence_refs[0]!.id)?.source_context, {
+    repository_id: 'repo-shell',
+    resolved_commit: 'a'.repeat(40),
+    path: 'Entry.ets',
+  });
+  const rejected = read(ledger, '../outside.ets', 'not in workspace');
+  assert.equal(rejected.evidence_refs.length, 0);
+  assert.equal(ledger.resolveDraft(draft(component.evidence_refs[0]!.id, 'throw new Error("component")')).evidence[0]?.source_context?.repository_id, 'repo-component');
+});
+
 test('search evidence contains only delivered matches, never locator metadata', () => {
   const ledger = new EvidenceLedger();
   const page = {

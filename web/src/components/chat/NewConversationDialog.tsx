@@ -78,6 +78,9 @@ export function NewConversationDialog({ repositories, onClose, onCreate }: NewCo
         </header>
 
         <form onSubmit={(event) => void submit(event)}>
+          <p className="snapshot-note">
+            无需预选平台、产品线或版本，直接描述问题；Runtime 会结合首条提示词和 LogCenter 关联事实确定排查范围。
+          </p>
           <label className="form-field">
             <span>代码仓库 <small>可选</small></span>
             <div className="branch-input">

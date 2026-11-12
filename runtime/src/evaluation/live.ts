@@ -189,6 +189,8 @@ export async function runLive(datasetPath: string, outputPath: string, timeoutSe
             messageId: message.id,
             runId: `eval-${item.id}-${turn}`,
             workspacePath: conversation.workspace_path ?? null,
+            repositoryId: conversation.repository_id ?? null,
+            resolvedCommit: conversation.resolved_commit ?? null,
             abortSignal,
           });
           const run = runtime.diagnosisAgent.stream({ conversation, content: prompt, toolsets: capabilitySession.toolsets, abortSignal });

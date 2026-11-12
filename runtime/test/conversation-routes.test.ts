@@ -132,6 +132,54 @@ test('Web 新建会话绑定当前登录主体', async () => {
   }
 });
 
+test('创建会话透传精确端上下文并持久化源码绑定信息', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mastra-conversation-version-source-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  let sourceInput: Record<string, unknown> | undefined;
+  const routes = createConversationRoutes(store, undefined, undefined, undefined, {
+    createConversationSource: async (input) => {
+      sourceInput = input as unknown as Record<string, unknown>;
+      return {
+        workspace_path: '/snapshots/android-7.106.5',
+        repository_id: 'repo-android',
+        repository_name: 'android-app',
+        requested_ref: 'V7.106.5-55364-CUSTOM',
+        resolved_commit: 'a'.repeat(40),
+        platform: input.platform,
+        product_line: input.productLine,
+        form_factor: input.formFactor,
+        version: input.version,
+        build: input.build,
+      };
+    },
+  });
+  try {
+    const response = await routes.request('/conversations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title: '精确版本会话',
+        platform: 'android',
+        product_line: 'xueersi',
+        form_factor: 'phone',
+        version: '7.106.5',
+        build: '55364',
+      }),
+    });
+    assert.equal(response.status, 201);
+    assert.equal(sourceInput?.platform, 'android');
+    assert.equal(sourceInput?.productLine, 'xueersi');
+    assert.equal(sourceInput?.version, '7.106.5');
+    const conversation = await response.json() as Record<string, unknown>;
+    assert.equal(conversation.resolved_commit, 'a'.repeat(40));
+    assert.equal(conversation.platform, 'android');
+    assert.equal(conversation.build, '55364');
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('message route reports missing conversations and disabled models with legacy statuses', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'mastra-conversation-routes-'));
   const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
@@ -212,6 +260,86 @@ test('retries a transient terminal persistence failure before releasing the conv
     assert.equal(second.status, 200);
     assert.match(await second.text(), /RUN_FINISHED/);
     assert.equal(runs, 2);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('首条用户提示词中的版本上下文会在诊断前绑定源码', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mastra-prompt-version-binding-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  let sourceInput: Record<string, unknown> | undefined;
+  const app = createConversationRoutes(
+    store,
+    {
+      async *stream() {
+        yield { type: 'completed', text: '已完成', report: null, evidence_state: {}, messages_state: [], tool_usage: {} };
+      },
+    } as unknown as DiagnosisAgent,
+    {
+      createKnowledgeSession: async () => null,
+      createRepositorySession: async () => ({
+        toolsets: {},
+        client: { disconnect: async () => undefined },
+      }),
+    } as unknown as CapabilityMcp,
+    { enabled: true, redact: (value: string) => value } as unknown as ModelConfiguration,
+    {
+      ...observabilityOptions(directory),
+      createConversationSource: async (input) => {
+        sourceInput = input as unknown as Record<string, unknown>;
+        return {
+          workspace_path: directory,
+          repository_id: 'repo-android',
+          repository_name: 'android-app',
+          requested_ref: 'release-7.106.5',
+          resolved_commit: 'a'.repeat(40),
+          source_repositories: [{
+            repository_id: 'repo-android',
+            repository_name: 'android-app',
+            requested_ref: 'release-7.106.5',
+            resolved_commit: 'a'.repeat(40),
+            role: 'shell' as const,
+            mount_path: '',
+          }],
+          source_completeness: 'partial' as const,
+          source_limitations: ['组件源码未挂载'],
+          platform: input.platform,
+          product_line: input.productLine,
+          form_factor: input.formFactor,
+          version: '7.106.5',
+          build: '55364',
+        };
+      },
+    },
+  );
+  try {
+    const createdResponse = await app.request('/conversations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    assert.equal(createdResponse.status, 201);
+    const conversation = await createdResponse.json() as { id: string; workspace_path: string | null };
+    assert.equal(conversation.workspace_path, null);
+    assert.equal(sourceInput, undefined);
+
+    const response = await app.request(`/conversations/${conversation.id}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: 'Android 学而思 7.106.5 build 55364 的问题' }),
+    });
+    assert.equal(response.status, 200);
+    await response.text();
+    const boundSourceInput = sourceInput as unknown as Record<string, unknown> | undefined;
+    assert.equal(boundSourceInput?.platform, 'android');
+    assert.equal(boundSourceInput?.productLine, 'xueersi');
+    assert.equal(boundSourceInput?.version, '7.106.5');
+    assert.equal(boundSourceInput?.build, '55364');
+    const saved = await store.getConversation(conversation.id);
+    assert.equal(saved.version, '7.106.5');
+    assert.equal(saved.source_completeness, 'partial');
   } finally {
     await store.close();
     await rm(directory, { recursive: true, force: true });

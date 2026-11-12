@@ -32,7 +32,10 @@ export async function loadRepositoryBranches(
   return { branches, selectedBranch: preferred?.name ?? '' };
 }
 
-export function conversationCreateInput(repositoryId: string, branch: string): CreateConversationInput {
+export function conversationCreateInput(
+  repositoryId: string,
+  branch: string,
+): CreateConversationInput {
   if (!repositoryId) return {};
   if (!branch) throw new Error('请选择诊断分支。');
   return { repository_id: repositoryId, branch };

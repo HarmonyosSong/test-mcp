@@ -62,7 +62,7 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 
 | 内容 | 当前归属 | 能否支撑正向根因 |
 | --- | --- | --- |
-| 同一快照的源码读取/搜索 | `EvidenceLedger`，`kind=source` | 可以，但仍需模型说明因果 |
+| 同一快照的源码读取/搜索 | `EvidenceLedger`，`kind=source`，携带 `source_context={repository_id, resolved_commit, path}` | 可以，但仍需模型说明因果 |
 | 可追溯到用户输入的 hilog 解析 | `EvidenceLedger`，`kind=log` | 可以 |
 | 用户消息 | `ev-user-*` 用户引用 | 只能证明报告现象，不能单独证明技术根因 |
 | Knowledge MCP / Skill / Catalog | 导航与判据线索 | 不可以 |
@@ -74,10 +74,11 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 
 ## 5. 仓库、版本与并发
 
-- Git 会话绑定 detached commit 快照；本地目录会话读取允许根目录内的实时工作区。
+- Git 会话绑定 detached commit 快照；本地目录会话读取允许根目录内的实时工作区。精确版本会话在所有登记仓库 commit 校验完成后绑定固定快照。
 - 仓库默认分支可编辑，保存前验证远端分支存在。已有会话和已创建快照不随默认分支变化。
-- 仓库记录支持 `platform` 和 `version_map: version → {branch, expected_commit}`，保存时验证映射分支存在。Runtime 启动时加载 `version-registry/<platform>/<product-line>.yaml`，只接受已核验的精确 commit；可按已确认平台、产品线、形态、版本和构建号唯一选择映射，并只复用 commit 一致的本地有效快照。GitLab archive 物化前先校验 commit，缺映射、多个命中、构建号不明或快照未准备均失败关闭。
-- 当前会话仍是单仓库、单分支、固定 commit。精确快照选择器已经实现，但观察后的轮内自动换绑尚未接入；不得回退默认分支或最新分支冒充精确版本，也不能把旧证据 retroactively 改标到新 commit。
+- 仓库记录支持 `platform` 和 `version_map: version → {branch, expected_commit}`，保存时验证映射分支存在。Runtime 启动时加载 `version-registry/<platform>/<product-line>.yaml`，只接受已核验的 commit；Web 新建会话不要求预选端或版本，Runtime 根据首条用户提示词和 LogCenter 关联事实确定范围。提示词明确版本时按指定版本选择，未提供版本但范围已确定时选择该范围内最新已核验版本/构建；没有足够的平台、产品线或实际日志事实时不跨端猜测。GitLab archive 物化前先校验 commit，缺映射、版本歧义、commit 不符或快照未准备均失败关闭。
+- 精确版本会话支持 shell + component/config 多仓组合快照：登记表的 `mount_path` 决定组合工作区布局，组合 manifest 记录每个仓库的角色、ref 和 resolved commit；单仓仍复用原快照路径。会话对只挂载 shell 的 Android/iOS 版本标记 `partial` 并保留组件缺口。无预选会话可从提示词和已保存的 LogCenter 事实在后续轮次绑定源码；正在运行轮次不热切换，不得回退默认分支或最新分支冒充精确版本，也不能把旧证据 retroactively 改标到新 commit。
+- 源码证据的 `source_context` 由 Runtime 从会话绑定的仓库、commit 和挂载路径注入，稳定证据 ID 也包含该身份；如果恢复到不同 commit，旧源码证据不能继续引用，必须重新读取。无法归属挂载仓库的复合路径会被拒绝。无仓库旧会话仍保留历史兼容行为。
 - 单进程内不同会话可并行，各自拥有独立 run、能力会话、预算、账本和远端任务。历史 `waiting_confirmation` 暂停态释放全局运行槽位，恢复时重新准入；新的常规协查不再进入等待态。
 - 多进程 lease/CAS 尚未实现，当前部署仍只支持一个 Runtime 进程。
 
@@ -99,7 +100,7 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 | 多用户会话隔离与全局并发闸门 | 单进程已实现 |
 | LogCenter Catalog/SLS 四工具 | 目标绑定、身份发现、脱敏和关联入账框架已实现；真实生产字段覆盖仍待验收 |
 | 学员日志 → 平台确认 → 日志证据 | 合成 mock 链路已实现；真实学员与 HarmonyOS/具体业务字段尚未联调 |
-| Android/iOS/HarmonyOS 精确版本快照选择 | 登记表加载、精确选择和 GitLab archive 物化能力已实现；观察后的会话自动换绑尚未接入 |
+| Android/iOS/HarmonyOS 精确版本快照选择 | 登记表加载、精确选择、GitLab archive 物化、多仓组合挂载、提示词/日志上下文补齐和后续轮次绑定已实现；正在运行轮次不热切换 |
 | Repository MCP 内部代码导航 | 可选挂载 `search_code_symbols`、`get_code_outline`、`trace_code_path`；未配置时保留原工具，失败时明确报错并引导文本搜索。真实鸿蒙工程的导航与回读已做冒烟验证，三端精度仍待验收 |
 
 启动、配置和验证命令以根目录 [README.md](../README.md) 为准。

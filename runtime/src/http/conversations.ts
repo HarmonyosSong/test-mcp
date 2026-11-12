@@ -26,6 +26,7 @@ import type { ServerSignals } from '../orchestration/server-signals.js';
 import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js';
 import type { InvestigationBudget } from '../orchestration/plan.js';
 import { ExternalConsultationError } from '../orchestration/consultation.js';
+import { PromptVersionContextError, resolvePromptSourceContext } from '../capabilities/prompt-version-context.js';
 
 interface ConversationRouteOptions {
   knowledgeQueryLog?: string;
@@ -45,7 +46,7 @@ interface ConversationRouteOptions {
     version: ConversationRecord['version'];
     build: ConversationRecord['build'];
     signal?: AbortSignal;
-  }) => Promise<Partial<Pick<ConversationRecord, 'workspace_path' | 'repository_id' | 'repository_name' | 'requested_ref' | 'resolved_commit' | 'platform' | 'product_line' | 'form_factor' | 'version' | 'build'>>>;
+  }) => Promise<Partial<Pick<ConversationRecord, 'workspace_path' | 'repository_id' | 'repository_name' | 'requested_ref' | 'resolved_commit' | 'source_repositories' | 'source_completeness' | 'source_limitations' | 'platform' | 'product_line' | 'form_factor' | 'version' | 'build'>>>;
 }
 
 function publicConversation(value: ReturnType<typeof ConversationRecordSchema.parse>) {
@@ -236,20 +237,35 @@ export function createConversationRoutes(
     const parsed = CreateConversationRequestSchema.safeParse(input);
     if (!parsed.success) return requestValidationError(parsed.error.issues);
     try {
-      const source = await options.createConversationSource?.({
-        repositoryId: parsed.data.repository_id,
-        branch: parsed.data.branch,
-        workspacePath: parsed.data.workspace_path,
-        platform: parsed.data.platform,
-        productLine: parsed.data.product_line,
-        formFactor: parsed.data.form_factor,
-        version: parsed.data.version,
-        build: parsed.data.build,
-        signal: context.req.raw.signal,
-      });
+      // Keep a scope-only session unbound so the first user prompt can choose
+      // an explicit version before the latest-version fallback runs.
+      const shouldPrepareSource = Boolean(
+        parsed.data.repository_id ||
+        parsed.data.workspace_path ||
+        parsed.data.version ||
+        parsed.data.build,
+      );
+      const source = shouldPrepareSource
+        ? await options.createConversationSource?.({
+          repositoryId: parsed.data.repository_id,
+          branch: parsed.data.branch,
+          workspacePath: parsed.data.workspace_path,
+          platform: parsed.data.platform,
+          productLine: parsed.data.product_line,
+          formFactor: parsed.data.form_factor,
+          version: parsed.data.version,
+          build: parsed.data.build,
+          signal: context.req.raw.signal,
+        })
+        : undefined;
       const conversation = await store.createConversation({
         title: parsed.data.title ?? '新会话',
         owner_subject: context.get('identity')?.subject ?? null,
+        platform: parsed.data.platform,
+        product_line: parsed.data.product_line,
+        form_factor: parsed.data.form_factor,
+        version: parsed.data.version,
+        build: parsed.data.build,
         ...source,
       });
       return context.json(publicView(redactRecord(conversation, redact)), 201);
@@ -349,6 +365,38 @@ export function createConversationRoutes(
     const admissionGrant = acquired.grant;
     let prepared;
     try {
+      const hasBoundSource = Boolean(
+        conversation.workspace_path ||
+        conversation.repository_id ||
+        conversation.resolved_commit ||
+        conversation.source_repositories.length > 0,
+      );
+      if (!hasBoundSource) {
+        const promptSource = resolvePromptSourceContext(parsedInput.data.content, conversation);
+        if (promptSource) {
+          Object.assign(conversation, {
+            ...(promptSource.platform ? { platform: promptSource.platform } : {}),
+            ...(promptSource.productLine ? { product_line: promptSource.productLine } : {}),
+            ...(promptSource.formFactor ? { form_factor: promptSource.formFactor } : {}),
+            ...(promptSource.version ? { version: promptSource.version } : {}),
+            ...(promptSource.build ? { build: promptSource.build } : {}),
+          });
+          if (options.createConversationSource && promptSource.platform && promptSource.productLine) {
+            const source = await options.createConversationSource({
+              repositoryId: null,
+              branch: null,
+              workspacePath: null,
+              platform: promptSource.platform,
+              productLine: promptSource.productLine,
+              formFactor: promptSource.formFactor,
+              version: promptSource.version,
+              build: promptSource.build,
+              signal: context.req.raw.signal,
+            });
+            Object.assign(conversation, source);
+          }
+        }
+      }
       prepared = await prepareDiagnosisRound({
         store,
         modelConfiguration,
@@ -358,6 +406,8 @@ export function createConversationRoutes(
       });
     } catch (error) {
       await admission.release(admissionGrant.runId);
+      if (error instanceof PromptVersionContextError) return jsonError(error.message, 422);
+      if (error instanceof RepositoryGitError) return jsonError(error.message, 422);
       throw error;
     }
     return streamPreparedRound({

@@ -1,6 +1,6 @@
 # 编排层设计与实现：Supervisor、Agent Slot 与会话并发
 
-> 状态：本文描述**当前已接入聊天链路的实现**。学员日志关联入账和精确快照选择器已接入框架；真实字段验收与观察后的自动换绑边界见 [multi-capability-expansion-plan.md](multi-capability-expansion-plan.md)。
+> 状态：本文描述**当前已接入聊天链路的实现**。学员日志关联入账、提示词/日志上下文解析和精确快照选择器已接入框架；真实字段验收与正在运行轮次的源码热切换边界见 [multi-capability-expansion-plan.md](multi-capability-expansion-plan.md)。
 
 ## 1. 范围
 
@@ -17,7 +17,7 @@
 | --- | --- |
 | 学员标识、设备/会话发现和 `observed_platform` | 私有上下文和有界发现框架已实现；生产 Catalog 尚未核实完整身份/平台字段 |
 | 远程 SLS 日志证据化 | 目标绑定、身份匹配、脱敏和 `observation_context` 入账已实现；未关联条目不收录 |
-| 平台/版本 → 固定源码快照 | 唯一映射与本地精确快照选择器已实现；会话轮内自动换绑尚未接入 |
+| 平台/版本 → 固定源码快照 | 唯一映射、提示词/日志补齐上下文、后续轮次绑定和本地精确快照选择器已实现；正在运行轮次不热切换 |
 | 多端知识库与端上下文完整产品化 | 仍需 Android/iOS 真实端到端验收 |
 | 代码索引导航 | 由 Repository MCP 可选挂载，不属于 Supervisor 编排依赖；导航结果不能进入 EvidenceLedger |
 | 多进程 lease/CAS | 未实现，只支持单进程准入 |
@@ -91,7 +91,7 @@ type InvestigationPlan = {
 
 - **特征词表是配置，不写死在代码里**：首版放 `runtime/contracts/server-signals.yaml`（服务名、接口前缀、错误码模式三组），按真实漏判/误判案例迭代；词表变更走评审，与知识库变更同级。
 - **误分流的代价可控**：误判为 `parallel` 的最坏结果是多一次受预算约束的自动协查，客户端分支结果仍完整保留；误判为 `local` 则由 Agent 补充事实，或在发现明确跨侧线索后自动接续。首版宁可偏 `local`。
-- `clientPlatform` 字段在 Plan 输入结构中预留；当前多端未接入，取值恒为 `harmony`，不参与分流。老师报告的系统只作 `reported_platform` 排序线索；只有关联到当前学员/设备/会话的日志或设备事实才能形成 `observed_platform`，不得把报告平台当硬过滤条件。
+- `clientPlatform` 字段仍是 Plan 输入结构中的兼容字段，不参与分流。老师报告的系统只作 `reported_platform` 排序线索；只有关联到当前学员/设备/会话的日志或设备事实才能形成 `observed_platform`，不得把报告平台当硬过滤条件。源码版本选择由提示词和已保存的 LogCenter 事实完成。
 - `unknown` 模式不落库为计划；信号不足即 `local`。
 
 ### 4.2 分支执行

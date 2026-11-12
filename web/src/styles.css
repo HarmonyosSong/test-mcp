@@ -2821,6 +2821,35 @@ button:disabled {
   font-weight: 450;
 }
 
+.form-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.form-fieldset legend {
+  padding: 0 5px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.form-fieldset legend small {
+  color: var(--muted-light);
+  font-size: 10px;
+  font-weight: 450;
+}
+
+.form-grid-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .form-field input,
 .form-field textarea,
 .form-field select {
@@ -3253,6 +3282,10 @@ button:disabled {
   }
 
   .model-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid-two {
     grid-template-columns: 1fr;
   }
 

@@ -7,6 +7,8 @@ import {
   type DiagnosisReport,
   type DiagnosisReportDraft,
   type Evidence,
+  type SourceRepositoryBinding,
+  type SourceSnapshotIdentity,
 } from '../domain/schemas.js';
 import type { ClientLogPrivacy } from '../security/log-privacy.js';
 
@@ -27,7 +29,8 @@ export class EvidenceLedgerError extends Error {
       | 'evidence_expired'
       | 'excerpt_mismatch'
       | 'positive_without_observed_source'
-      | 'log_evidence_unrelated',
+      | 'log_evidence_unrelated'
+      | 'source_snapshot_mismatch',
     message: string,
   ) {
     super(`${code}: ${message}`);
@@ -112,6 +115,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isSafeRelativePath(value: string): boolean {
+  const normalized = value.replaceAll('\\', '/');
+  return Boolean(normalized) && !normalized.startsWith('/') && !normalized.split('/').some((part) => part === '.' || part === '..' || part === '');
+}
+
 function positiveInteger(value: unknown, fallback: number): number {
   return Number.isSafeInteger(value) && (value as number) >= 0 ? (value as number) : fallback;
 }
@@ -133,6 +141,8 @@ export class EvidenceLedger {
     maxCurrentTurn?: number;
     maxCurrentTurnBytes?: number;
     privacy?: ClientLogPrivacy;
+    sourceContext?: SourceSnapshotIdentity;
+    sourceContexts?: readonly SourceRepositoryBinding[];
   } = {}) {
     this.inputTexts = [...(options.inputTexts ?? [])];
     this.privacy = options.privacy;
@@ -142,12 +152,16 @@ export class EvidenceLedger {
       options.maxCurrentTurnBytes,
       DEFAULTS.maxCurrentTurnBytes,
     );
+    this.sourceContext = options.sourceContext;
+    this.sourceContexts = [...(options.sourceContexts ?? [])];
   }
 
   readonly maxEntries: number;
   readonly maxCurrentTurn: number;
   readonly maxCurrentTurnBytes: number;
   private readonly privacy?: ClientLogPrivacy;
+  private readonly sourceContext?: SourceSnapshotIdentity;
+  private readonly sourceContexts: readonly SourceRepositoryBinding[];
 
   registerUserTexts(): Array<{ id: string; preview: string }> {
     return this.inputTexts.map((text) => {
@@ -159,6 +173,7 @@ export class EvidenceLedger {
 
   add(rawEvidence: Evidence, text?: string): boolean {
     const evidence = EvidenceSchema.parse(rawEvidence);
+    this.assertSourceSnapshot(evidence);
     const body = text ?? evidence.excerpt;
     const incomingBytes = byteLength(body);
     const isNew = !this.entries.has(evidence.id);
@@ -207,7 +222,13 @@ export class EvidenceLedger {
     };
   }
 
-  static restore(state: unknown, inputTexts: string[] = [], privacy?: ClientLogPrivacy): EvidenceLedger {
+  static restore(
+    state: unknown,
+    inputTexts: string[] = [],
+    privacy?: ClientLogPrivacy,
+    sourceContext?: SourceSnapshotIdentity,
+    sourceContexts: readonly SourceRepositoryBinding[] = [],
+  ): EvidenceLedger {
     const snapshot = isRecord(state) ? state : {};
     const ledger = new EvidenceLedger({
       inputTexts,
@@ -218,6 +239,8 @@ export class EvidenceLedger {
         snapshot.max_current_turn_bytes,
         DEFAULTS.maxCurrentTurnBytes,
       ),
+      sourceContext,
+      sourceContexts,
     });
 
     if (Array.isArray(snapshot.entries)) {
@@ -274,6 +297,7 @@ export class EvidenceLedger {
 
     const evidenceRefs: Array<Omit<Evidence, 'excerpt' | 'supports'>> = [];
     let capacityReached = false;
+    let sourcePathsRejected = 0;
     for (const row of rows) {
       if (!isRecord(row)) continue;
       const rawText = row.content ?? row.excerpt ?? '';
@@ -281,10 +305,15 @@ export class EvidenceLedger {
       const text = name === 'parse_hilog' && this.privacy
         ? String(this.privacy.sanitize(rawText).value)
         : rawText;
-      const path = row.path ?? 'pasted-hilog';
+      const path = String(row.path ?? 'pasted-hilog').trim() || 'pasted-hilog';
       const line = row.line ?? row.start_line ?? 1;
       const location = `${String(path)}:${String(line)}`;
-      const idPayload = pythonJson([name, arguments_, location, text]);
+      const sourceContext = name === 'parse_hilog' ? undefined : this.sourceContextForPath(path);
+      if (name !== 'parse_hilog' && this.sourceContexts.length > 0 && !sourceContext) {
+        sourcePathsRejected += 1;
+        continue;
+      }
+      const idPayload = pythonJson([name, arguments_, location, text, sourceContext]);
       const evidence = EvidenceSchema.parse({
         id: `ev-${sha256(idPayload).slice(0, 16)}`,
         kind: name === 'parse_hilog' ? 'log' : 'source',
@@ -292,6 +321,7 @@ export class EvidenceLedger {
         location,
         excerpt: codepointSlice(text, 2_000),
         supports: '工具实际返回的观测；是否支持因果关系仍需判断',
+        ...(sourceContext ? { source_context: sourceContext } : {}),
       });
       if (!this.add(evidence, text)) {
         capacityReached = true;
@@ -309,7 +339,33 @@ export class EvidenceLedger {
         limitation: '本轮观测容量已达上限;未接纳的行没有可引用 ID。请用已有观测收尾。',
       };
     }
-    return { evidence_refs: evidenceRefs, result };
+    return {
+      evidence_refs: evidenceRefs,
+      result,
+      ...(sourcePathsRejected > 0 ? { source_paths_rejected: sourcePathsRejected } : {}),
+      ...(evidenceRefs.length === 0 && rows.length > 0 && this.sourceContexts.length > 0
+        ? { limitation: '源码路径无法归属当前会话绑定的仓库挂载点，未进入证据账本。' }
+        : {}),
+    };
+  }
+
+  private sourceContextForPath(rawPath: string): SourceSnapshotIdentity & { path: string } | undefined {
+    const path = rawPath.replaceAll('\\', '/').trim();
+    if (!isSafeRelativePath(path)) return undefined;
+    if (this.sourceContexts.length > 0) {
+      const binding = [...this.sourceContexts]
+        .sort((left, right) => right.mount_path.length - left.mount_path.length)
+        .find((item) => item.mount_path === '' || path === item.mount_path || path.startsWith(`${item.mount_path}/`));
+      if (!binding) return undefined;
+      const relativePath = binding.mount_path === '' ? path : path.slice(binding.mount_path.length + 1);
+      if (!relativePath) return undefined;
+      return {
+        repository_id: binding.repository_id,
+        resolved_commit: binding.resolved_commit,
+        path: relativePath,
+      };
+    }
+    return this.sourceContext ? { ...this.sourceContext, path } : undefined;
   }
 
   private captureRemoteLogs(name: string, result: unknown): unknown {
@@ -390,6 +446,42 @@ export class EvidenceLedger {
     };
   }
 
+  private assertSourceSnapshot(evidence: Evidence): void {
+    if (evidence.kind !== 'source' || (!this.sourceContext && this.sourceContexts.length === 0)) return;
+    const boundSourceContext = this.sourceContext;
+    const context = evidence.source_context;
+    if (!context) {
+      throw new EvidenceLedgerError(
+        'source_snapshot_mismatch',
+        '当前会话绑定了源码快照，但该源码观测没有 Runtime 注入的仓库和 commit 身份。请重新读取当前快照。',
+      );
+    }
+    if (!isSafeRelativePath(context.path)) {
+      throw new EvidenceLedgerError('source_snapshot_mismatch', '源码观测路径必须是当前快照内的安全相对路径。');
+    }
+    if (this.sourceContexts.length > 0) {
+      const matchingBinding = this.sourceContexts.some((binding) => (
+        context.repository_id === binding.repository_id &&
+        context.resolved_commit === binding.resolved_commit &&
+        context.path.length > 0
+      ));
+      if (matchingBinding) return;
+      throw new EvidenceLedgerError(
+        'source_snapshot_mismatch',
+        `源码观测属于 ${context.repository_id}@${context.resolved_commit}，不在当前会话绑定的多仓快照中。`,
+      );
+    }
+    if (
+      context.repository_id !== boundSourceContext?.repository_id ||
+      context.resolved_commit !== boundSourceContext?.resolved_commit
+    ) {
+      throw new EvidenceLedgerError(
+        'source_snapshot_mismatch',
+        `源码观测属于 ${context.repository_id}@${context.resolved_commit}，与当前会话绑定的 ${boundSourceContext?.repository_id}@${boundSourceContext?.resolved_commit} 不一致。`,
+      );
+    }
+  }
+
   private validateVerifiedClaims(report: DiagnosisReport): void {
     report.joint_assessment?.verified_claims.forEach((claim, claimIndex) => {
       for (const id of claim.evidence_ids) {
@@ -451,6 +543,7 @@ export class EvidenceLedger {
         );
       }
       const observedText = this.texts.get(citation.id) ?? observed.excerpt;
+      this.assertSourceSnapshot(observed);
       if (!excerptMatches(observedText, citation.excerpt)) {
         throw new EvidenceLedgerError(
           'excerpt_mismatch',
@@ -465,6 +558,7 @@ export class EvidenceLedger {
         excerpt: citation.excerpt,
         supports: citation.supports,
         observation_context: observed.observation_context,
+        source_context: observed.source_context,
       }));
     }
 

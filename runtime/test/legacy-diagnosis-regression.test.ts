@@ -522,7 +522,11 @@ test('legacy source-location case records a real observation before submitting a
   const line = Number(lineText);
   const source = `// fixture lines before observed source\n`.repeat(line - 1) + `throw new TypeError('${sample.evidence.split(':')[0]}')`;
   const args = { relative_path: relativePath };
-  const observed = new EvidenceLedger().capture('read_project_file', args, {
+  const sourceIdentity = {
+    repository_id: 'repo-fixture',
+    resolved_commit: 'a'.repeat(40),
+  };
+  const observed = new EvidenceLedger({ sourceContext: sourceIdentity }).capture('read_project_file', args, {
     path: relativePath, start_line: line, end_line: line, content: source,
   }) as { evidence_refs: Array<{ id: string }> };
   const id = observed.evidence_refs[0]!.id;
@@ -542,7 +546,11 @@ test('legacy source-location case records a real observation before submitting a
     execute: async () => ({ path: relativePath, start_line: line, end_line: line, content: source }),
   });
   const events = await run(diagnosis, sample.description, {
-    conversation: { workspace_path: '/fixture' },
+    conversation: {
+      workspace_path: '/fixture',
+      repository_id: sourceIdentity.repository_id,
+      resolved_commit: sourceIdentity.resolved_commit,
+    },
     toolsets: { repository: { read_project_file: read } },
   });
   const completed = events.at(-1);
@@ -550,6 +558,10 @@ test('legacy source-location case records a real observation before submitting a
   if (completed?.type !== 'completed') return;
   assert.equal(completed.report?.verdict, sample.expected_verdict);
   assert.equal(completed.report?.evidence[0]?.kind, 'source');
+  assert.deepEqual(completed.report?.evidence[0]?.source_context, {
+    ...sourceIdentity,
+    path: relativePath,
+  });
   assert.equal(((completed.evidence_state as { entries: unknown[] }).entries).length, 1);
 });
 

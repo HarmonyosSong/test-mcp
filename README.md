@@ -13,7 +13,7 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 ## 功能
 
 - 多轮对话和 SSE 流式回复；单进程 runtime 的中断状态修复与重启续聊已通过自动化和生产冒烟验证，多进程并发准入尚不支持。
-- 证据账本：正向根因只能引用本轮或历史工具实际观测到的源码/日志证据。
+- 证据账本：正向根因只能引用本轮或历史工具实际观测到的源码/日志证据；绑定固定快照时，源码证据还携带 `repository_id + resolved_commit + path`，避免跨版本混用。
 - 本地 Markdown 知识库和声明式 `skills/*/SKILL.md`。
 - 客户端本地 Markdown 知识库通过 Knowledge MCP 提供检索；云学习知识能力由后续 A2A 对端 Agent 提供，不在客户端直连第二套知识 MCP。
 - 可选 LogCenter / Aliyun SLS 四工具：私有身份发现、用户原文目标绑定、超时取消和脱敏观察已接入共享能力会话；目标绑定且身份匹配的远程日志可携带 Runtime 观察上下文进入证据账本。上述链路已有合成 mock 测试，真实生产字段覆盖和真实学员联调尚未验收，Catalog 的 appid 查询兼容性仍需修正。
@@ -122,7 +122,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 1. 用企业账号完成知音楼 SSO 登录。
 2. 在模型设置中配置供应商、模型和 API Key，或在 `.env` 中配置环境变量。
-3. 新建会话，输入问题和已知 hilog/代码片段。
+3. 新建会话后直接输入问题和已知 hilog/代码片段，无需预选平台、产品线或版本；Runtime 会结合首条提示词和已关联的 LogCenter 事实确定源码范围。
 4. 需要检查代码时，设置 `HARMONY_AGENT_ALLOWED_ROOTS`，再绑定本地目录；或先登记 Git 仓库并选择分支。
 5. 等待工具步骤完成。报告会显示结论、证据原文、来源位置、已排除项和缺少的信息。
 
@@ -196,7 +196,7 @@ Git 仓库流程是：
 
 会话创建请求携带 `repository_id` 和 `branch` 时，runtime 会自动保存快照的仓库、分支、Commit 和工作区路径。后续远端分支变化不会改变已经绑定的会话。直接绑定本地目录不创建快照，读取的是当前工作区内容。
 
-仓库记录还支持 `platform` 和 `version_map: version → {branch, expected_commit}`；保存映射前验证分支存在。多端登记表使用 `version-registry/<platform>/<product-line>.yaml`，Runtime 启动时加载并只接受已核验的 commit；缺映射、多映射、构建号不明、commit 不符或快照未准备均失败关闭，不回退默认分支。GitLab archive 快照会先校验 commit，再以 `repository_id + commit` 物化到固定目录。观察后的轮内自动换绑尚未接入，已有会话和旧证据仍保持原 commit。详细设计见 [`docs/multi-platform-version-snapshot-design.md`](docs/multi-platform-version-snapshot-design.md)。
+仓库记录还支持 `platform` 和 `version_map: version → {branch, expected_commit}`；保存映射前验证分支存在。多端登记表使用 `version-registry/<platform>/<product-line>.yaml`，Runtime 启动时加载并只接受已核验的 commit。Web 新建会话不要求预选端或版本：Runtime 先读取首条提示词中的显式平台、产品线、版本和构建，并结合 LogCenter 关联到的实际平台/版本事实；未提供版本但范围已确定时，自动选择该范围内最新的已核验版本/构建；上下文不足或冲突时不跨端猜测。若首轮日志才补齐上下文，Runtime 保存关联事实并在后续轮次开始前绑定固定源码，不在正在运行的轮次热切换。随后先校验 GitLab commit，再物化 archive 到固定目录；登记的 `repos` 可包含一个 shell 和多个 component/config，并通过安全的 `mount_path` 合成只读工作区。缺映射、版本歧义、commit 不符、仓库冲突或快照未准备均失败关闭；已有会话和旧证据仍保持原 commit。详细设计见 [`docs/multi-platform-version-snapshot-design.md`](docs/multi-platform-version-snapshot-design.md)。
 
 ## 数据迁移
 

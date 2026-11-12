@@ -69,6 +69,19 @@ test('report schemas apply defaults and enforce strict evidence references', () 
   assert.deepEqual(parsed.ruled_out, []);
   assert.equal(parsed.evidence[0]?.kind, 'source');
 
+  const snapshotEvidence = DiagnosisReportSchema.parse({
+    ...positiveReport,
+    evidence: [{
+      ...positiveReport.evidence[0],
+      source_context: {
+        repository_id: 'group/client-app',
+        resolved_commit: 'a'.repeat(40),
+        path: 'Entry.ets',
+      },
+    }],
+  });
+  assert.equal(snapshotEvidence.evidence[0]?.source_context?.resolved_commit, 'a'.repeat(40));
+
   assert.equal(DiagnosisReportSchema.safeParse({ ...positiveReport, injected: true }).success, false);
   assert.equal(DiagnosisReportSchema.safeParse({
     ...positiveReport,
@@ -171,6 +184,19 @@ test('draft evidence only permits citations and positive candidates need linked 
   assert.equal(DiagnosisReportDraftSchema.safeParse({
     ...positiveReport,
     evidence: [{ id: 'ev-source-1', excerpt: 'literal excerpt', supports: 'supports claim', source: 'forged' }],
+  }).success, false);
+  assert.equal(DiagnosisReportDraftSchema.safeParse({
+    ...positiveReport,
+    evidence: [{
+      id: 'ev-source-1',
+      excerpt: 'literal excerpt',
+      supports: 'supports claim',
+      source_context: {
+        repository_id: 'forged-repository',
+        resolved_commit: 'b'.repeat(40),
+        path: 'Entry.ets',
+      },
+    }],
   }).success, false);
 });
 
@@ -276,7 +302,15 @@ test('conversation orchestration fields preserve plans, consultations, findings,
 test('request schemas normalize text and expose Python None defaults as null', async () => {
   const { CreateConversationRequestSchema, SendMessageRequestSchema, UpdateConversationRequestSchema } = await import('../src/domain/schemas.js');
   assert.deepEqual(CreateConversationRequestSchema.parse({}), {
-    title: null, workspace_path: null, repository_id: null, branch: null,
+    title: null,
+    workspace_path: null,
+    repository_id: null,
+    branch: null,
+    platform: null,
+    product_line: null,
+    form_factor: null,
+    version: null,
+    build: null,
   });
   assert.deepEqual(SendMessageRequestSchema.parse({ content: '  hello  ' }), { content: 'hello' });
   assert.deepEqual(UpdateConversationRequestSchema.parse({}), {});
