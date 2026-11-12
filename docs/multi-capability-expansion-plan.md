@@ -6,11 +6,11 @@
 
 - Runtime 是稳定内核和 Supervisor，不为每个客户端平台复制 Agent。
 - HarmonyOS、Android、iOS 共用一个客户端诊断 Agent；端差异由已确认上下文、Skill、知识排序和源码快照承载。
-- Compass 是云学习服务端 Agent 的第一个 A2A Slot。客户端不直连云学习知识库，也不把 Compass 当作客户端日志查询接口。
+- Compass 是统一外部全栈 Agent 的第一个 A2A Slot，对端覆盖本项目前端、H5 和服务端。客户端不直连对端知识库，也不把 Compass 当作客户端日志查询接口。
 - 知识库提供产品规则、候选原因和排查导航，不替代现场日志与源码。
 - IT 老师报告的“鸿蒙”只是 `reported_platform`。只有关联到当前学员、设备或会话的实际日志/设备事实才能形成 `observed_platform`。
 - grep/搜索只寻找候选实现，结论前必须 read 调用上下文。
-- 外发审批、预算、取消、远端结论隔离和联合报告规则继续沿用现有实现，不为新链路开旁路。
+- 固定脱敏外发、Runtime 自动协查、预算、取消、远端结论隔离和联合报告规则继续沿用现有实现，不为新链路开旁路。
 
 ## 2. 当前优先级：完整客户端排查链
 
@@ -86,7 +86,7 @@ version_map: Record<string, {
 4. 仅 store 命中、目录命中、空结果、查询失败、平台冲突和无身份匹配均不能确认平台。
 5. 不相关日志不能进入正向根因证据链；合法日志可跨轮恢复且模型不能伪造上下文。
 6. 精确版本映射命中后固定 expected commit；缺映射、缺快照和 commit 不符全部失败关闭。
-7. 后续需要服务端协查时仍走 Supervisor、审批、Compass Slot 和联合报告，不绕过现有链路。
+7. 后续需要外部协查时仍走 Supervisor、固定脱敏摘要、Compass Slot 和联合报告，由 Runtime 自动调用，不绕过现有链路。
 
 真实学员联调需单独授权；mock 通过不等于生产字段和权限已经验收。
 
@@ -112,7 +112,7 @@ version_map: Record<string, {
 
 ### 3.3 多进程与完整多用户数据隔离
 
-当前只支持单进程运行准入。多进程部署前需要 LibSQL lease/CAS、续期、崩溃回收和恢复语义。普通会话 CRUD 的完整主体隔离也应单独审计，不能因外发审批已有 owner 校验就宣称所有数据面都完成多租户隔离。
+当前只支持单进程运行准入。多进程部署前需要 LibSQL lease/CAS、续期、崩溃回收和恢复语义。普通会话 CRUD 的完整主体隔离也应单独审计，不能因历史外发审批已有 owner 校验就宣称所有数据面都完成多租户隔离。
 
 ### 3.4 业务知识与三端代码索引（已搭建首版，待验证）
 
@@ -125,7 +125,7 @@ version_map: Record<string, {
 - 为索引设置独立持久卷与可重建策略；Docker 重新部署不应触发无条件全量索引。共享索引不替代会话授权和证据隔离。
 - HarmonyOS dirty 工作树 PoC 已验证 `codebase-memory-mcp` 0.12.1 的 ArkTS 索引、Struct/Builder 符号和部分调用方候选，源码抽查可对应；排除资源后的 649 个 `.ets` 对照中，中英文自然语言样本仍未命中目标 Top 10。仅继续代码导航实验，暂不接管业务问句；调用边保留静态推断及回调语义缺失的限制。
 
-具体比较、当前缺口、接入边界及验收见 [业务知识与三端代码检索调研](business-knowledge-and-code-search-research.md)。本项不改变现有 `observe → source`、Supervisor 与 A2A 审批链路。
+具体比较、当前缺口、接入边界及验收见 [业务知识与三端代码检索调研](business-knowledge-and-code-search-research.md)。本项不改变现有 `observe → source`、Supervisor 与 A2A 自动协查链路。
 
 ## 4. 实施与文档纪律
 

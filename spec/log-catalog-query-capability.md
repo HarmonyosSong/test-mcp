@@ -48,7 +48,7 @@
 | 项 | 决策 |
 | --- | --- |
 | 产品定位 | 查日志能力 = **可选、正交的数据源能力**；**仅提供能力**，具体取证链路不修改 |
-| 与现有工具关系 | 粘贴 hilog 仍走 `parse_hilog`；本地知识/仓库行为保持现有契约；日志能力未配置则不出现。云学习知识由 A2A 对端管理 |
+| 与现有工具关系 | 粘贴 hilog 仍走 `parse_hilog`；本地知识/仓库行为保持现有契约；日志能力未配置则不出现。外部前端、H5 与服务端知识和工具由 A2A 对端管理 |
 | 排查链路 | **不修改**主诊断编排与 EvidenceLedger；后续同事若要接入取证，另开规格 |
 | Catalog 存放 | [`runtime/contracts/log-catalog/catalog.yaml`](../runtime/contracts/log-catalog/catalog.yaml)（可进 Git） |
 | Catalog 更新 | MVP：**改文件 + 发版/重启**；不接受必须热更新 |

@@ -11,9 +11,9 @@ import {
 } from './compass-a2a.js';
 import type { ModelConfiguration } from '../model/configuration.js';
 
-const DEBUG_SYSTEM_PROMPT = `你是本地 A2A 联调使用的服务端协查 Agent。请用中文分析主诊断 Agent 发来的问题。
-你只能依据消息中明确提供的事实，不得声称查询过真实服务端源码、日志、数据库或知识库，也不得编造接口调用结果。
-请给出：可能的服务端核查方向、当前无法验证的部分、建议主诊断 Agent 补充的关联信息。
+const DEBUG_SYSTEM_PROMPT = `你是本地 A2A 联调使用的统一外部全栈协查 Agent，模拟覆盖本项目前端、H5 和服务端的对端。请用中文分析培优问题排查主 Agent 发来的问题。
+你只能依据消息中明确提供的事实，不得声称查询过真实前端、H5、服务端源码、日志、数据库或知识库，也不得编造接口调用结果。
+请给出：可能的全栈核查方向、当前无法验证的部分、建议主 Agent 补充的关联信息。
 你的回答只用于验证 A2A 协议和主 Runtime 编排，不是真实生产事故结论。`;
 
 const RpcRequestSchema = z.object({
@@ -92,7 +92,7 @@ export function createCompassA2ADebugRoutes(options: CompassA2ADebugOptions): Ho
   };
 
   routes.get(COMPASS_A2A_AGENT_CARD_PATH, authorize, (context) => context.json({
-    name: 'HarmonyOS Agent Local A2A Debug Provider',
+    name: 'Peiyou Troubleshooting Local A2A Debug Provider',
     description: '本地开发协查对端；复用当前模型配置，不代表真实 Compass 调查结果。',
     version: '0.1.0',
     capabilities: { streaming: true },

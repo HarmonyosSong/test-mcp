@@ -1,4 +1,5 @@
 import { InvestigationBudgetTracker } from './budget.js';
+import type { DiagnosisTaskType } from '../domain/schemas.js';
 import type { CapabilityContext } from '../capabilities/session.js';
 import { decideLocalContinuation } from './loop.js';
 import type {
@@ -13,6 +14,7 @@ export type BranchResult = {
   branch: InvestigationBranch;
   status: BranchStatus;
   responsibility?: 'client' | 'server' | 'shared' | 'unknown';
+  taskType?: DiagnosisTaskType;
   nextAction?: string;
   hasObservedEvidence?: boolean;
   data?: unknown;
@@ -119,6 +121,7 @@ export class RuntimeSupervisor {
           const usage = tracker.snapshot();
           const decision = decideLocalContinuation(input.plan, {
             responsibility: local.responsibility ?? 'unknown',
+            taskType: local.taskType ?? 'unknown',
             nextAction: local.nextAction,
             hasObservedEvidence: local.hasObservedEvidence === true,
             requestedScope: input.context.requestedScope,
@@ -131,7 +134,7 @@ export class RuntimeSupervisor {
           if (decision.type === 'needs_user_facts') {
             needsUserFacts = true;
             reason = decision.reason;
-          } else if (decision.type === 'continue_server' && tracker.tryConsumeHandoff()) {
+          } else if (decision.type === 'continue_external' && tracker.tryConsumeHandoff()) {
             planHistory.push(decision.plan);
             results.push(await runServer(decision.plan));
           } else if (decision.type === 'finish') {

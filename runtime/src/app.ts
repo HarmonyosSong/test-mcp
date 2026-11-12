@@ -92,8 +92,8 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         slot: {
           slotId: 'compass',
           agentCardUrl: new URL(COMPASS_A2A_AGENT_CARD_PATH, `${config.a2aBaseUrl}/`).toString(),
-          role: 'server',
-          capabilities: ['server-diagnosis'],
+          role: 'external',
+          capabilities: ['frontend-investigation', 'h5-investigation', 'server-investigation'],
           authRef: 'runtime:a2aToken',
           timeoutMs: config.a2aWaitSeconds * 1000,
           maxOutputChars: config.a2aMaxOutputChars,

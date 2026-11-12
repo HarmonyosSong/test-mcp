@@ -199,6 +199,47 @@ test('Mastra stream pairs each tool result with the originating call ID', async 
   assert.equal(ends[0]!.event.status, 'completed');
 });
 
+test('本地知识未命中时可提交实现查询的外部协查报告，主 Agent 不再限定为鸿蒙或云学习', async () => {
+  const { diagnosis, scripted } = await setup([
+    { tool: 'lookup_issue', args: { query: '英语绘本阅读排行榜接口' } },
+    {
+      tool: 'submit_diagnosis_report',
+      args: {
+        verdict: 'insufficient_evidence',
+        summary: '本地知识未覆盖该接口实现，需要统一外部全栈 Agent 协查',
+        issue_category: 'interface',
+        task_type: 'implementation',
+        confidence: 0.2,
+        responsibility: 'unknown',
+        next_action: { target: 'external', question: '请核查英语绘本阅读排行榜的前端、H5 与服务端接口实现' },
+        missing_information: ['接口实现与返回示例'],
+        evidence: [],
+      },
+    },
+    { text: '本地知识未覆盖该实现，需要进一步外部协查。' },
+  ]);
+  const lookup = createTool({
+    id: 'lookup_issue',
+    description: 'Look up a project implementation clue.',
+    inputSchema: z.object({ query: z.string() }),
+    execute: async () => ({ hits: [] }),
+  });
+  const events = await run(diagnosis, '请查询一下英语绘本阅读排行榜的接口', {
+    toolsets: { knowledge: { lookup_issue: lookup } },
+  });
+  const completed = events.at(-1);
+  assert.equal(completed?.type, 'completed');
+  if (completed?.type !== 'completed') return;
+  assert.equal(completed.report?.task_type, 'implementation');
+  assert.equal(completed.report?.responsibility, 'unknown');
+  assert.equal(completed.report?.next_action?.target, 'external');
+  const prompts = JSON.stringify(scripted.prompts);
+  assert.match(prompts, /培优问题排查助手的主 Agent/);
+  assert.match(prompts, /统一外部全栈 Agent/);
+  assert.match(prompts, /前端、H5 和服务端/);
+  assert.doesNotMatch(prompts, /云学习服务端 Agent/);
+});
+
 test('工具事件不会持久化模型复述的原始学员标识', async () => {
   const rawQuery = 'uid=student-fixture-001 phone=+8613800000000';
   const { diagnosis } = await setup([
@@ -321,7 +362,7 @@ test('a confirmed product-rule clarification answers directly without forcing a 
   if (completed?.type !== 'completed') return;
   assert.equal(completed.report, null);
   assert.match(completed.text, /仅对符合条件的课程开放/);
-  assert.match(JSON.stringify(scripted.prompts), /规则澄清直接回答，不提交报告/);
+  assert.match(JSON.stringify(scripted.prompts), /只有规则解答不需要外部实现调查时才直接结束/);
   assert.equal(events.some((event: any) => event.type === 'tool-start' && event.event.tool === 'submit_diagnosis_report'), false);
 });
 

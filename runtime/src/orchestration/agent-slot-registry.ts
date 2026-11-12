@@ -6,7 +6,7 @@ export type { CapabilityContext } from '../capabilities/session.js';
 export type RemoteAgentSlot = {
   slotId: string;
   agentCardUrl: string;
-  role: 'server' | 'specialist' | 'domain';
+  role: 'server' | 'external' | 'specialist' | 'domain';
   capabilities: string[];
   authRef: string;
   timeoutMs: number;
@@ -176,7 +176,7 @@ function normalizeSlot(slot: RemoteAgentSlot): RemoteAgentSlot {
   if (!agentCardUrl || !isHttpUrl(agentCardUrl)) {
     return invalidSlot(`Agent card URL is invalid for slot: ${slotId}`);
   }
-  if (!['server', 'specialist', 'domain'].includes(slot.role)) {
+  if (!['server', 'external', 'specialist', 'domain'].includes(slot.role)) {
     return invalidSlot(`Agent slot role is invalid: ${slotId}`);
   }
   if (!Array.isArray(slot.capabilities) ||

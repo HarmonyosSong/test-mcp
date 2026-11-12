@@ -1,10 +1,10 @@
 # Compass A2A 接入规格
 
-> 状态：P0 传输与 P1 受控联合排查均已实现；真实云学习 Agent 已做过受控联调。
+> 状态：P0 传输与 P1 受控联合排查均已实现；真实 Compass Agent 已做过受控联调。
 > 范围：Mastra TypeScript Runtime。
 > 关联：[当前架构](../docs/ARCHITECTURE.md)、[编排层实现](../docs/orchestration-layer-design.md)。
 
-本文是 Compass 这个 A2A Agent Slot 的接入契约。通用调查计划、审批恢复、预算和联合报告由 Runtime Supervisor 所有；Compass 不拥有客户端编排，也不承担客户端日志查询。
+本文是 Compass 这个 A2A Agent Slot 的接入契约。通用调查计划、自动协查、历史审批恢复、预算和联合报告由 Runtime Supervisor 所有；Compass 不拥有客户端编排，也不承担客户端日志查询。
 
 ## 1. 角色与证据边界
 
@@ -15,15 +15,15 @@ Web / IM
        ├─ ClientBranch → DiagnosisAgent → 本地知识 / 仓库 / 可选日志工具
        └─ ServerBranch → AgentSlotRegistry → CompassSlot
                                       → CompassA2AClient
-                                      → 云学习服务端 Agent
+                                      → 统一外部全栈 Agent（前端 / H5 / 服务端）
    → 本地 EvidenceLedger + external_findings → 联合报告
 ```
 
 - 客户端只有一个统一 `DiagnosisAgent`，不按 HarmonyOS、Android、iOS 复制 Agent。
-- 客户端只挂载本地 Knowledge MCP；云学习知识、代码和服务端日志由 Compass 对端自己管理。
+- 本地分支只挂载本地 Knowledge MCP；本项目前端、H5 和服务端的知识、代码与日志由 Compass 对端自己管理。
 - 模型不能直接调用 Compass 叶子客户端，也没有可绕过 Supervisor 的 `ask_compass` 自由文本工具。
 - Compass 返回是外部 Agent 结论，保存为 `RemoteConclusion` / `external_findings`，永不进入本地 `evidence_refs`。
-- `responsibility=server` 只表示当前路由指向服务端，不等于本地已经验证服务端根因。
+- `responsibility` 只表示当前证据支持的责任判断；`next_action.target=external` 才表示请求统一外部全栈 Agent，两者不能互相替代。
 
 ## 2. 传输与配置
 
@@ -49,30 +49,30 @@ Web / IM
 
 ### 3.1 初始计划
 
-- 会话级 `consult_compass` 默认关闭，只能由受保护的用户操作修改；普通聊天文本和模型输出不能开启。
+- 常规协查是否执行只取决于 Runtime 的远端可用性、调查范围、证据与预算规则；`consult_compass` 是保留用于旧记录读取的历史字段，不再作为用户开关或路由门槛。
 - 新工单即使命中服务端关键词并带 traceId/requestId，只要 EvidenceLedger 没有本地 `kind=log` 观测，仍先执行 `local`。
-- 已有本地日志观测，同时满足服务端信号、请求关联标识、Compass 开关和预算时才可直接 `parallel`。
-- 用户明确限定只查服务端时可以生成 `server` 计划，但仍须经过外发审批。
+- 已有本地日志观测，同时满足服务端信号、请求关联标识、远端可用性和预算时才可直接 `parallel`。
+- 用户明确限定只查服务端时可以生成 `server` 计划，并由 Runtime 自动执行，不向老师展示技术路由或审批操作。
 - 学员编号和联系电话不等于请求级关联标识，不能单独满足 `correlationReady`。
 
-### 3.2 自动跨侧
+### 3.2 自动外部接续
 
-本地报告经证据校验后，如果结构化 `responsibility` 和 `next_action` 给出明确跨侧调查问题，Supervisor 可在预算和 handoff 上限内自动创建服务端计划。IT 老师不需要选择技术路由。
+本地报告经证据校验后，`next_action.target=external` 和明确调查问题即可请求统一外部全栈 Agent；`responsibility` 只保留责任判断，不作路由门槛。`task_type=rule/implementation` 的项目内规则与实现查询在本地知识不足时可自动协查，不要求本地源码/日志观测或 traceId/requestId，也不据此推断服务端责任。`task_type=incident` 的故障诊断仍要求本地源码/日志观测和请求关联信息。所有路径都受用户范围、远端可用性、预算和 handoff 上限约束。
 
 自动接续不是两个 Agent 自由对话：计划变化会持久化，旧本地结果保留；服务端计划必须将 `clientSteps` 置空，恢复时不能继续携带客户端观察阶段。
 
-### 3.3 外发审批
+### 3.3 自动协查与固定外发边界
 
-每个服务端调查范围首次启动前：
+每个外部调查范围启动前：
 
-1. Runtime 从绑定的当前轮用户文本生成固定脱敏出站摘要，保存 `ExternalConsultation`。
-2. 前端展示接收方、调查范围和准确摘要；未批准、拒绝或过期时 mock/真实端均不得收到任务请求。
-3. 批准/拒绝接口校验会话 owner、CSRF、会话和轮次，不能接受文本、URL、Token 或模型参数覆盖摘要。
-4. 批准范围内 Compass 可自主使用自己的知识和工具，不为对端每个内部步骤重复弹窗。
-5. 新增客户端日志、源码、关联标识或扩大服务/环境范围时必须创建新审批。
-6. `waiting_confirmation` 释放全局并发槽位；批准后以新轮次重新准入，不能把半截工具调用交给模型。
+1. Runtime 从绑定的当前轮用户文本生成固定脱敏出站摘要，保存 `ExternalConsultation` 和摘要 digest。
+2. Runtime 按固定策略自动把记录置为内部 `approved`，随后在同一轮调用 Slot 并进入联合阶段；`approved` 不表示老师执行过审批，新请求不产生 `waiting_confirmation`。
+3. 老师只看到“正在进一步协查”等通俗进度和最终结果，不需要知道 Compass、A2A 或前端/服务端路由。
+4. 模型不能覆盖外发正文、URL、Token 或槽位参数；Compass 可在当前摘要范围内自主使用自己的知识和工具，不为其内部步骤重复交互。
+5. 首版不发送本地源码、日志正文、工具结果或附件。新增调查范围时创建新的固定摘要和协查记录，仍受预算与 handoff 上限约束。
+6. 历史 `pending` 会话继续使用原批准/拒绝接口和 `waiting_confirmation` 恢复协议；接口仍校验 owner、CSRF、会话、轮次和 digest。该兼容路径不改变新请求的自动执行行为。
 
-首版不向 Compass 发送本地源码、日志正文或工具结果。默认出站摘要已在通用凭证脱敏之外增加学员编号和电话脱敏，并由合成测试覆盖；traceId/requestId 保留为审批后的请求关联信息。真实学员数据和生产日志链路尚未联调，不据此宣称完整 PII 策略已通过生产验收。
+Compass 及其模型链路均在内网，外发正文使用用户原文（入库时已做通用凭证脱敏），学员编号/电话不再伪名化；traceId/requestId 保留为请求关联信息。真实学员数据和生产日志链路尚未联调，PII 策略仍需随真实联调复查。
 
 ## 4. 结果、取消与联合报告
 
@@ -86,7 +86,7 @@ Web / IM
 
 ## 5. 当前验证边界
 
-离线测试覆盖 Agent Card、SSE、终态、审批前零请求、owner/CSRF、恢复、取消、输出限长、并行分支、外部结论隔离和联合报告引用。真实云学习联调已验证 Agent Card、SSE、审批恢复、外部结论与联合报告链路。
+离线测试覆盖 Agent Card、SSE、终态、自动协查、固定脱敏摘要、历史审批前零请求、owner/CSRF、恢复、取消、输出限长、并行分支、外部结论隔离和联合报告引用。真实 Compass 联调已验证 Agent Card、SSE、历史审批恢复、外部结论与联合报告链路；自动协查主路径当前由离线测试验收。
 
 这些结果不证明：
 

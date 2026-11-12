@@ -18,7 +18,7 @@ export function investigationProgressForEvent(
     case 'BRANCH_STATUS':
       if (event.status === 'running') {
         return {
-          text: event.branch === 'server' ? '正在请求 Compass 协助排查' : '正在检查应用',
+          text: event.branch === 'server' ? '正在进一步协查' : '正在检查应用',
           state: 'active',
         };
       }

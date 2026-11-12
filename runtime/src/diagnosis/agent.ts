@@ -45,8 +45,10 @@ const DEFAULT_TOOL_ARGS: Record<string, Record<string, unknown>> = {
   get_knowledge_entry: { offset: 0, limit: 2000 },
 };
 
-const MAX_TOOL_ATTEMPTS = 30;
-const MAX_TOOL_FAILURES = 10;
+const MAX_TOOL_ATTEMPTS = 120;
+const MAX_TOOL_FAILURES = 40;
+// 报告校验会返回可纠正的错误原因，允许模型充分迭代草稿；上线后按真实消耗再收敛。
+const MAX_REPORT_ATTEMPTS = 12;
 const MAX_CONSECUTIVE_CACHE_HITS = 4;
 export type DiagnosisFailureCategory =
   | "cancelled"
@@ -305,9 +307,9 @@ export function withToolBudget<T extends { execute?: (...args: any[]) => any }>(
           Set<string>
         >());
         if (exempt) {
-          if (budget.reportAttempts >= 3) {
+          if (budget.reportAttempts >= MAX_REPORT_ATTEMPTS) {
             budget.blocked += 1;
-            throw new Error("诊断报告提交尝试已达到 3 次上限");
+            throw new Error(`诊断报告提交尝试已达到 ${MAX_REPORT_ATTEMPTS} 次上限`);
           }
           budget.reportAttempts += 1;
           try {
@@ -556,11 +558,11 @@ function promptFor(
     .registerUserTexts()
     .map((item) => `${item.id}: ${item.preview}`)
     .join("\n");
-  return `你是一个只读的 HarmonyOS 客户端问题诊断助手。用中文回答，不修改仓库、不执行 shell、构建、设备或 DevEco 操作。
+  return `你是培优问题排查助手的主 Agent，负责本地调查，并在需要时通过结构化路由请求统一外部全栈 Agent 协查。用中文回答，不修改仓库、不执行 shell、构建、设备或 DevEco 操作。
 
 诊断约束：
-- 规则澄清先调用知识检索；故障定位先获取现场观察，再读取源码。知识只提供产品规则、已知问题和导航线索，不代替本次故障的现场证据。有明确文件、符号、接口或日志线索时可以缩小观察范围，但仍须遵守客户端阶段门禁。
-- 先区分规则澄清与故障定位。知识检索确认了产品支持范围、版本或端限制时，直接解释规则、出处和正确操作，不绑定仓库、不提交诊断报告；若知识来源互相冲突或适用版本不明，明确保留冲突并追问，不能挑一条说成当前规则。不得声称核对源码，除非相应源码/搜索工具已成功返回观察。只有用户追问实现原因或需要开发定位时才进入代码调查。查无规则时不得凭常识断言。
+- 先判定 task_type：rule 表示产品规则或支持范围，implementation 表示接口、页面、H5 或前后端实现查询，incident 表示线上故障定位，无法判断时为 unknown。规则澄清和实现查询先调用本地知识检索获取已知规则、术语和候选；故障定位先获取现场观察，再读取源码。知识只提供线索，不代替实际实现或本次故障的现场证据。有明确文件、符号、接口或日志线索时可以缩小调查范围，但仍须遵守对应任务的门禁。
+- 知识检索确认了产品支持范围、版本或端限制，且已经足以回答用户时，直接解释规则、出处和正确操作，不绑定仓库、不提交诊断报告；若知识来源互相冲突或适用版本不明，明确保留冲突并追问，不能挑一条说成当前规则。不得声称核对源码或接口实现，除非相应工具已成功返回观察。只有规则解答不需要外部实现调查时才直接结束。查无规则时不得凭常识断言。
 - 多条调查路径仍未区分时，先基于知识返回的判据询问 1-2 个能区分路径的问题，再读推测性的源码。线上工单或客服转述优先询问可获得的录屏/截图、复现路径、版本机型和客服侧日志；只有确认用户能获取时再要求 hilog，并提供可替代的观察问题。
 - 知识和 Skill 只能提供静态线索，不能证明本次故障根因。用户明确提供的复现步骤、输入值、错误和环境是本次现场证据；逐项复用，不得再称这些值“未观察”，并在报告 evidence 中引用对应 user evidence ID。用户只报告现象而未提供触发输入时，才把触发条件列为缺口。
 - 工具返回的源码和日志观察才可以支持正向根因候选。工具失败是证据缺口，不是反向证明。
@@ -568,12 +570,13 @@ function promptFor(
 - 只有实际枚举或检查覆盖了相应调用路径，才能声称“唯一失败点”“没有其他路径”或“已排除其他实现”；单个文件/片段的读取只支持该观察范围内的结论。
 - 需要查代码时只能使用当前会话绑定的只读快照，不能假设仓库路径或分支。
 - 当证据不足时说明缺少什么，必要时追问能区分候选原因的问题。
-- 对故障定位，在已有证据足以形成结论、用户明确要求结构化报告，或需要明确记录证据不足时，先调用 submit_diagnosis_report 再总结。规则澄清直接回答，不提交报告。工具只接受证据 ID、逐字摘录和 supports；不要填写 kind/source/location。
+- 对故障定位，在已有证据足以形成结论、用户明确要求结构化报告，或需要明确记录证据不足时，先调用 submit_diagnosis_report 再总结。规则或实现查询在本地无法可靠回答、需要外部协查时，也必须提交结构化路由报告，不能直接以“知识库没有”结束。工具只接受证据 ID、逐字摘录和 supports；不要填写 kind/source/location。
 - 诊断流程只做只读定位和证据收集，不提出修复方案、代码片段、补丁或“改成……”建议。提交报告后的文字总结必须与报告一致，也不得追加修复建议。
 - 不得编造 evidence ID、摘录、文件位置、工具结果或验证结论。
-- 本项目的客户端知识库是唯一的知识检索来源。云学习服务端 Agent 属于独立的 A2A 对端能力，当前诊断轮不直连其知识 MCP，也不要声称已查询云学习知识。
-- 提交故障报告时，responsibility 只表示下一步路由，不代表远端根因已验证。本地观测明确指向服务端或需要两侧共同核查时填 server/shared，并用 next_action={target:'server',question:'明确的下一步调查问题'}；需要用户补充故障事实时 target='user'；无需继续时 next_action=null。不得自行调用或声称已经调用远端 Agent。
+- 本地 Knowledge MCP 只代表当前助手的本地策展知识。Compass 槽位连接统一外部全栈 Agent，覆盖本项目前端、H5 和服务端；本地调查轮不直连其内部知识、代码或日志，也不要声称已经查询。需要这些能力时，通过结构化 next_action 请求 Supervisor 协查。
+- responsibility 只表示当前证据支持的责任判断，不代表远端根因已验证，也不作为是否协查的路由门槛。需要统一外部全栈 Agent 时，用 next_action={target:'external',question:'明确的下一步调查问题'}；需要用户补充故障事实时 target='user'；无需继续时 next_action=null。项目内规则或实现查询经本地知识检索仍无法可靠回答时，不要只说“知识库没有、请补充信息”：提交 verdict='insufficient_evidence' 和对应 task_type，没有证据时 responsibility 保持 unknown，并给出 target='external' 的明确问题。此类协查不要求本地源码/日志观测或 traceId，也不代表已确认服务端责任；提交结构化路由后由 Runtime 自动执行，不向老师请求技术审批。故障诊断的跨侧调查仍须满足本地观测与请求关联要求。不得自行调用或声称已经调用远端 Agent。
 ${phase.kind === 'local' && phase.clientSteps?.includes('observe') ? `
+以下客户端观察约束仅适用于 task_type=incident；规则或实现查询不得伪造学员现场，也不要求为了查询接口实现而查询故障日志。
 客户端调查顺序：
 - 故障定位先执行 observe 阶段：有学员/请求标识时先执行 discover_client_sessions；也可利用用户原文中的业务词绑定日志目标，再完成 count/search。用户粘贴的 hilog 也属于现场观察。知识检索可用于产品规则和日志导航，但不能替代现场观察。
 - ${phase.clientSteps.includes('source') ? 'observe 完成后才进入 source 阶段。Runtime 会拒绝过早的源码工具调用；目录不覆盖、查询失败或空结果时允许降级检查源码，但必须在 limitations 中保留现场日志缺口。' : '当前没有绑定源码快照，不要声称已核对源码。'}
@@ -714,27 +717,37 @@ export class DiagnosisAgent {
       description: "提交经过证据账本校验的结构化诊断报告。",
       inputSchema: DiagnosisReportDraftSchema,
       execute: async (draft) => {
-        const resolved = ledger.resolveDraft(draft);
-        const externalFindings = input.phase === 'joint' ? input.externalFindings ?? [] : [];
-        const report = DiagnosisReportSchema.parse({
-          ...resolved,
-          joint_assessment: input.phase === 'joint' ? resolved.joint_assessment : null,
-          remote_conclusion: externalFindings.at(-1) ?? null,
-          external_findings: externalFindings,
-        });
-        holder.report = report;
-        return {
-          status: "submitted",
-          verdict: report.verdict,
-          evidence_count: report.evidence.length,
-        };
+        try {
+          const resolved = ledger.resolveDraft(draft);
+          const externalFindings = input.phase === 'joint' ? input.externalFindings ?? [] : [];
+          const report = DiagnosisReportSchema.parse({
+            ...resolved,
+            joint_assessment: input.phase === 'joint' ? resolved.joint_assessment : null,
+            remote_conclusion: externalFindings.at(-1) ?? null,
+            external_findings: externalFindings,
+          });
+          holder.report = report;
+          return {
+            status: "submitted",
+            verdict: report.verdict,
+            evidence_count: report.evidence.length,
+          };
+        } catch (error) {
+          // 校验拒绝原因只含证据 ID、位置和规则说明，记录到服务日志便于联调定位。
+          console.warn('[diagnosis] report rejected', {
+            conversationId: input.conversation.id,
+            phase: input.phase ?? 'local',
+            reason: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
       },
     });
 
     const agent = new Agent({
       id: "harmony-diagnosis",
-      name: "HarmonyOS Diagnosis",
-      description: "Evidence-driven, read-only HarmonyOS troubleshooting agent",
+      name: "Peiyou Troubleshooting",
+      description: "培优问题排查助手主 Agent，负责本地调查与统一外部全栈协查",
       instructions: promptFor(
         this.skills,
         ledger,
@@ -780,7 +793,7 @@ export class DiagnosisAgent {
       {
         toolsets: budgetToolsets(input.toolsets, ledger, budget, locators, input.clientSteps),
         abortSignal: input.abortSignal,
-        maxSteps: 32,
+        maxSteps: 96,
         tracingOptions: {
           metadata: {
             conversation_id: input.conversation.id,

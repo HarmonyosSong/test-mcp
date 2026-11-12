@@ -29,7 +29,6 @@ export interface ChatController {
   loaded: boolean;
   progress: InvestigationProgress | null;
   consultationAction: ConsultationAction | null;
-  consultCompassSaving: boolean;
   select: (id: string) => void;
   createNew: (input?: CreateConversationInput) => Promise<boolean>;
   refresh: () => Promise<boolean>;
@@ -41,7 +40,6 @@ export interface ChatController {
   ) => Promise<void>;
   stop: () => void;
   setModelOverride: (spec: string) => Promise<void>;
-  setConsultCompass: (allowed: boolean) => Promise<void>;
 }
 
 export function useChatSessions({
@@ -55,13 +53,11 @@ export function useChatSessions({
   const [loaded, setLoaded] = useState(false);
   const [progress, setProgress] = useState<InvestigationProgress | null>(null);
   const [consultationAction, setConsultationAction] = useState<ConsultationAction | null>(null);
-  const [consultCompassSaving, setConsultCompassSaving] = useState(false);
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
   const abortRef = useRef<AbortController | null>(null);
   // 状态提交到下一次渲染之间仍可能连点，同步锁负责真正的请求防重。
   const busyRef = useRef(false);
-  const consultCompassSavingRef = useRef(false);
 
   const refreshSummaries = useCallback(async () => {
     const list = await api.listConversations();
@@ -261,28 +257,6 @@ export function useChatSessions({
     [onNotice],
   );
 
-  const setConsultCompass = useCallback(
-    async (allowed: boolean) => {
-      const conversationId = activeIdRef.current;
-      if (!conversationId || busyRef.current || consultCompassSavingRef.current) return;
-      consultCompassSavingRef.current = true;
-      setConsultCompassSaving(true);
-      try {
-        const updated = await api.updateConversation(conversationId, {
-          consult_compass: allowed,
-        });
-        if (activeIdRef.current === conversationId) setActive(updated);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : '协查设置保存失败';
-        onNotice({ kind: 'error', message: `协查设置保存失败：${message}` });
-      } finally {
-        consultCompassSavingRef.current = false;
-        setConsultCompassSaving(false);
-      }
-    },
-    [onNotice],
-  );
-
   return {
     summaries,
     active,
@@ -291,7 +265,6 @@ export function useChatSessions({
     loaded,
     progress,
     consultationAction,
-    consultCompassSaving,
     select,
     createNew,
     refresh: load,
@@ -300,6 +273,5 @@ export function useChatSessions({
     decideConsultation,
     stop,
     setModelOverride,
-    setConsultCompass,
   };
 }

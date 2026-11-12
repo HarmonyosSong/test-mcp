@@ -42,7 +42,7 @@ test('外发确认事件只追加固定内容并进入等待状态', () => {
 test('编排进度使用面向 IT 老师的阶段描述，不要求技术路由选择', () => {
   assert.deepEqual(
     investigationProgressForEvent({ type: 'BRANCH_STATUS', branch: 'server', status: 'running' }),
-    { text: '正在请求 Compass 协助排查', state: 'active' },
+    { text: '正在进一步协查', state: 'active' },
   );
   assert.deepEqual(
     investigationProgressForEvent({ type: 'EXTERNAL_CONSULTATION_REQUIRED' }),

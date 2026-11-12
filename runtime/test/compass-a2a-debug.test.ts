@@ -71,7 +71,7 @@ test('本地调试提供端与真实 CompassA2AClient 完成 Agent Card、流式
   assert.ok(result.taskId);
   assert.equal(result.text, `${first}\n还需要补充 traceId。`);
   assert.deepEqual(partials, [first, result.text]);
-  assert.match(JSON.stringify(prompt), /不得声称查询过真实服务端/);
+  assert.match(JSON.stringify(prompt), /不得声称查询过真实前端、H5、服务端源码/);
   assert.match(JSON.stringify(prompt), /页面请求失败/);
 });
 

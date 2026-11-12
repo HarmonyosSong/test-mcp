@@ -164,10 +164,10 @@
           <article class="diagram-card">
             <div class="diagram-card-header">
               <h3>01 · 当前诊断主流程</h3>
-              <p>先完成客户端观察与固定快照取证，再按条件审批并接续 Compass</p>
+              <p>先完成客户端观察与固定快照取证，再按条件由 Runtime 自动接续 Compass 协查</p>
             </div>
             <div class="diagram-frame">
-              <img src="diagrams/01-system-architecture.svg" alt="当前诊断主流程：请求准入后，客户端先观察日志并读取固定源码快照；需要服务端协查时先审批，再经 Compass 获取独立外部结论，最后保存本地或联合报告。" />
+              <img src="diagrams/01-system-architecture.svg" alt="当前诊断主流程：请求准入后，客户端先观察日志并读取固定源码快照；需要协查时由 Runtime 自动经 Compass 获取独立外部结论，最后保存本地或联合报告。" />
             </div>
           </article>
           <article class="diagram-card">
@@ -341,7 +341,7 @@
               <li><strong>固定契约：</strong>每个插槽实现同一套约定——Agent Card（能力自描述）、任务/结果 Schema、鉴权、取消、预算和输出限制。</li>
               <li><strong>可插拔：</strong>新增远端 Agent = 新增一个适配器并注册到 Slot Registry，Runtime Core 和诊断主流程不变。</li>
               <li><strong>知识与工具不越界：</strong>远端 Agent 使用自己的知识、代码和日志；客户端不复制远端知识，也不直连远端 Knowledge MCP。</li>
-              <li><strong>信任边界固定：</strong>每次调用前由用户批准本次调查范围，外发内容经硬门控；远端返回按不可信外部输入处理，结论单独保存，不进入本地证据账本。</li>
+              <li><strong>信任边界固定：</strong>外发内容只有 Runtime 生成的固定脱敏摘要，由代码硬门控自动执行，老师无需审批；远端返回按不可信外部输入处理，结论单独保存，不进入本地证据账本。</li>
             </ul>
             <p>这样 Runtime Core 保持稳定，远端能力以槽位形式扩展；证据规则和数据边界不随接入方增多而稀释。</p>
 
@@ -351,7 +351,7 @@
               <tbody>
                 <tr><td>Mastra Runtime、Hono API、Web 工作台</td><td><span class="status status-live">已实现</span></td><td>支持会话、流式诊断、工具状态展示和持久化恢复。</td></tr>
                 <tr><td>Knowledge MCP、Repository MCP</td><td><span class="status status-live">已实现</span></td><td>支持本地知识检索、绑定快照源码查询和证据登记。</td></tr>
-                <tr><td>Compass A2A Agent Slot</td><td><span class="status status-live">已接入聊天链路</span></td><td>已有 Agent Card、JSON-RPC SSE、审批恢复、CancelTask 和外部结论隔离。</td></tr>
+                <tr><td>Compass A2A Agent Slot</td><td><span class="status status-live">已接入聊天链路</span></td><td>已有 Agent Card、JSON-RPC SSE、自动协查、CancelTask 和外部结论隔离。</td></tr>
                 <tr><td>LogCenter</td><td><span class="status status-framework">关联入账框架已实现</span></td><td>四工具支持私有身份发现、目标绑定、脱敏和关联日志入账；真实生产字段与学员联调待验收。</td></tr>
                 <tr><td>Repository MCP 内部代码图</td><td><span class="status status-framework">框架已接入</span></td><td>已搭建三种只读导航工具；索引版本、三端精度、并发和生产缓存仍待验收。</td></tr>
                 <tr><td>Supervisor 并行调度、联合报告</td><td><span class="status status-live">已实现</span></td><td>支持本地优先观察、条件并行、自动跨侧、预算取消和本地/外部结论联合报告。</td></tr>

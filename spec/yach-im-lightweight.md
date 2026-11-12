@@ -30,7 +30,7 @@ Odyssey 已具备网页 SSO 与 `DiagnosisAgent` 诊断能力，但知音楼数�
 |---|---|---|
 | 网页 SSO | `HARMONY_AGENT_SSO_*` | 独立；IM **不**走 Cookie/CSRF |
 | 数字伙伴 IM | `HARMONY_AGENT_YACH_*` | **本文** |
-| Compass A2A | `HARMONY_AGENT_A2A_*` | Odyssey **出站**调 Compass；不是 IM 入站通道，审批与外发仍由 Supervisor 独立控制 |
+| Compass A2A | `HARMONY_AGENT_A2A_*` | Odyssey **出站**调 Compass；不是 IM 入站通道，固定脱敏外发与自动协查仍由 Supervisor 独立控制 |
 
 ### 1.4 为何必须用知音楼 SDK 收信
 
@@ -146,7 +146,7 @@ sequenceDiagram
 | 进队成功 / 建卡 | 已收到问题，正在处理 |
 | `tool-start`，工具名匹配知识检索 / knowledge / `resolve_*` / `search_*`（非外部） | 正在查阅知识库 |
 | `tool-start`，仓库 / 工作区 / repository / 源码读取类 | 正在读取代码证据 |
-| `tool-start`，Compass / A2A | 正在请求服务端 Agent |
+| `tool-start`，Compass / A2A | 正在请求外部全栈 Agent |
 | 其它 `tool-start` | 正在收集证据 |
 | 持续出现 `text` 且本阶段无新的工具类进度 | 正在生成诊断报告 |
 | `completed` | 诊断完成（随后关卡） |

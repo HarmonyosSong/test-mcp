@@ -22,6 +22,7 @@ function setup() {
     consecutiveCacheHits: 0,
     blocked: 0,
     reportAttempts: 0,
+    failureLimit: undefined as number | undefined,
     cache: new Map<string, unknown>(),
   };
   return { ledger, budget };
@@ -270,6 +271,7 @@ test("counts empty and duplicate search results as no progress", async () => {
 
 test("serializes concurrent tool execution under one shared failure budget", async () => {
   const { ledger, budget } = setup();
+  budget.failureLimit = 10;
   let calls = 0;
   const tools = Array.from({ length: 16 }, (_, index) =>
     wrap(
@@ -329,7 +331,7 @@ test("bounds consecutive reuse while leaving report submission exempt from the b
   await assert.rejects(tool.execute!({ query: "same" }, {}), /连续无进展/);
   assert.equal(budget.cacheHits, 3);
 
-  budget.attempts = 30;
+  budget.attempts = 120;
   const submit = wrap(
     { execute: async () => ({ status: "submitted" }) },
     "agent",
@@ -420,7 +422,7 @@ test("does not cache non-read tools or reuse a cached observation after its evid
 
 test("limits report validation failures while allowing report attempts at the tool-call cap", async () => {
   const { ledger, budget } = setup();
-  budget.attempts = 30;
+  budget.attempts = 118;
   const submit = wrap(
     {
       execute: async () => {
@@ -433,9 +435,9 @@ test("limits report validation failures while allowing report attempts at the to
     budget,
     true,
   );
-  for (let i = 0; i < 3; i += 1)
+  for (let i = 0; i < 12; i += 1)
     await assert.rejects(submit.execute!({}, {}), /invalid citation/);
   await assert.rejects(submit.execute!({}, {}), /提交尝试已达到/);
-  assert.equal(budget.reportAttempts, 3);
-  assert.equal(budget.failures, 3);
+  assert.equal(budget.reportAttempts, 12);
+  assert.equal(budget.failures, 12);
 });

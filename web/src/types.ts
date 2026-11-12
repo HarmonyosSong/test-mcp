@@ -59,6 +59,7 @@ export interface DiagnosticReport {
   severity: 'critical' | 'high' | 'medium' | 'low' | 'unknown';
   summary: string;
   issue_category: string;
+  task_type?: 'rule' | 'implementation' | 'incident' | 'unknown';
   confidence: number;
   likely_location?: string | null;
   root_cause_candidates: RootCauseCandidate[];

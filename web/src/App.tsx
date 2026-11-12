@@ -233,8 +233,6 @@ function App() {
               onModelChange={(spec) => void chat.setModelOverride(spec)}
               progress={chat.progress}
               consultationAction={chat.consultationAction}
-              consultCompassSaving={chat.consultCompassSaving}
-              onConsultCompassChange={(allowed) => void chat.setConsultCompass(allowed)}
               onConsultationDecision={(consultationId, decision) =>
                 void chat.decideConsultation(consultationId, decision)
               }

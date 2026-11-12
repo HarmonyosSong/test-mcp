@@ -90,6 +90,23 @@ test('缺少关联信息时请求补充事实，不发起授权或远端调用',
   assert.deepEqual(calls, ['run:client']);
 });
 
+test('实现查询经授权后接续统一外部 Agent，不要求本地观测或关联信息', async () => {
+  const { value, calls } = input();
+  value.plan.correlationReady = false;
+  value.branches.client = branch('client', {
+    responsibility: 'unknown',
+    taskType: 'implementation',
+    nextAction: '请核查排行榜的前端、H5 与服务端接口实现',
+    hasObservedEvidence: false,
+  }, calls);
+  const result = await new RuntimeSupervisor().run(value);
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(calls, ['run:client', 'approve', 'run:server']);
+  assert.deepEqual(result.planHistory.map((item) => item.mode), ['local', 'server']);
+  assert.equal(result.budget.handoffRoundsUsed, 1);
+  assert.equal(result.budget.remoteCallsUsed, 1);
+});
+
 test('并行模式授权等待不阻塞客户端启动，拒绝后保留本地结果', async () => {
   const { value, calls } = input({ plan: plan('parallel') });
   let approve!: (value: boolean) => void;

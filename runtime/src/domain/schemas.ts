@@ -22,6 +22,7 @@ export const SeveritySchema = z.enum(['critical', 'high', 'medium', 'low', 'unkn
 export const EvidenceKindSchema = z.enum(['user', 'log', 'source', 'config', 'tool']);
 export const ChatMessageStatusSchema = z.enum(['streaming', 'completed', 'failed']);
 export const ResponsibilitySchema = z.enum(['client', 'server', 'shared', 'unknown']);
+export const DiagnosisTaskTypeSchema = z.enum(['rule', 'implementation', 'incident', 'unknown']);
 export const RunStateSchema = z.enum([
   'idle',
   'running',
@@ -60,7 +61,8 @@ export const JointAssessmentSchema = z.strictObject({
 });
 
 export const NextActionSchema = z.strictObject({
-  target: z.enum(['client', 'server', 'user']),
+  // server 仅用于兼容旧报告；新路由统一使用 external，不预设对端只负责服务端。
+  target: z.enum(['client', 'server', 'external', 'user']),
   question: z.string().trim().min(1),
 });
 
@@ -123,6 +125,7 @@ const reportFields = {
   severity: SeveritySchema.default('unknown'),
   summary: z.string(),
   issue_category: z.string(),
+  task_type: DiagnosisTaskTypeSchema.default('unknown'),
   likely_location: nullableLocation.default(null),
   root_cause_candidates: z.array(RootCauseCandidateSchema).default([]),
   ruled_out: z.array(z.string()).default([]),
@@ -494,6 +497,7 @@ export type Verdict = z.infer<typeof VerdictSchema>;
 export type Severity = z.infer<typeof SeveritySchema>;
 export type EvidenceKind = z.infer<typeof EvidenceKindSchema>;
 export type Responsibility = z.infer<typeof ResponsibilitySchema>;
+export type DiagnosisTaskType = z.infer<typeof DiagnosisTaskTypeSchema>;
 export type RunState = z.infer<typeof RunStateSchema>;
 export type RemoteConclusion = z.infer<typeof RemoteConclusionSchema>;
 export type VerifiedClaim = z.infer<typeof VerifiedClaimSchema>;

@@ -61,6 +61,7 @@ test('report schemas apply defaults and enforce strict evidence references', () 
   const parsed = DiagnosisReportSchema.parse(positiveReport);
   assert.equal(parsed.severity, 'unknown');
   assert.equal(parsed.responsibility, 'unknown');
+  assert.equal(parsed.task_type, 'unknown');
   assert.equal(parsed.next_action, null);
   assert.equal(parsed.joint_assessment, null);
   assert.equal(parsed.remote_conclusion, null);
@@ -99,6 +100,14 @@ test('orchestration reports accept runtime conclusions and structured next actio
   });
   assert.equal(parsed.responsibility, 'shared');
   assert.equal(parsed.next_action?.target, 'server');
+  const external = DiagnosisReportSchema.parse({
+    ...positiveReport,
+    task_type: 'implementation',
+    responsibility: 'unknown',
+    next_action: { target: 'external', question: '请核查排行榜的前端、H5 与服务端实现' },
+  });
+  assert.equal(external.task_type, 'implementation');
+  assert.equal(external.next_action?.target, 'external');
   assert.equal(parsed.joint_assessment?.verified_claims[0]?.evidence_ids[0], 'ev-source-1');
   assert.equal(parsed.remote_conclusion?.consultation_id, 'consultation-1');
   assert.equal(parsed.external_findings.length, 1);

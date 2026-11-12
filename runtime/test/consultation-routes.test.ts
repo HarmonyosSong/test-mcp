@@ -10,10 +10,17 @@ import { Hono } from 'hono';
 import type { AuthVariables } from '../src/auth/index.js';
 import type { CapabilityMcp } from '../src/capabilities/mcp.js';
 import type { DiagnosisAgent, DiagnosisRunInput } from '../src/diagnosis/agent.js';
+import { prepareDiagnosisRound } from '../src/diagnosis/run-round.js';
 import { DiagnosisReportSchema } from '../src/domain/schemas.js';
 import { createConversationRoutes } from '../src/http/conversations.js';
 import type { ModelConfiguration } from '../src/model/configuration.js';
 import type { AgentSlotRegistry } from '../src/orchestration/agent-slot-registry.js';
+import { createExternalConsultation } from '../src/orchestration/consultation.js';
+import {
+  createInvestigationStateSnapshot,
+  serializeInvestigationState,
+} from '../src/orchestration/investigation-state.js';
+import type { InvestigationPlan } from '../src/orchestration/plan.js';
 import type { ServerSignals } from '../src/orchestration/server-signals.js';
 import { ProductStore } from '../src/product/store.js';
 
@@ -109,23 +116,85 @@ async function setup() {
   };
 }
 
-async function startWaiting(app: Hono<{ Variables: AuthVariables }>, id: string) {
-  const response = await app.request(`/conversations/${id}/messages`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ content: '页面异常，traceId: trace-route' }),
+async function startLegacyWaiting(harness: Awaited<ReturnType<typeof setup>>) {
+  const content = '页面异常，traceId: trace-route';
+  const prepared = await prepareDiagnosisRound({
+    store: harness.store,
+    modelConfiguration: { enabled: true, redact: (text: string) => text } as unknown as ModelConfiguration,
+    conversation: harness.conversation,
+    content,
+    runId: 'run-legacy',
   });
-  assert.equal(response.status, 200);
-  const events = await response.text();
-  assert.match(events, /EXTERNAL_CONSULTATION_REQUIRED/);
-  assert.doesNotMatch(events, /RUN_FINISHED|RUN_ERROR/);
-  return events;
+  const localPlan: InvestigationPlan = {
+    mode: 'local', branches: ['client'], remoteSlots: [], clientSteps: ['observe', 'source'],
+    reason: '历史本地调查', correlationReady: true,
+    budget: { maxSeconds: 5, maxRemoteCalls: 2 }, maxHandoffRounds: 1,
+  };
+  const remotePlan: InvestigationPlan = {
+    ...localPlan, mode: 'server', branches: ['server'], remoteSlots: ['compass'], clientSteps: [],
+    reason: '历史外部协查',
+  };
+  const state = createInvestigationStateSnapshot({
+    originalContent: content, userMessageId: prepared.userMessage.id, plan: localPlan,
+  });
+  state.currentPlan = remotePlan;
+  state.planHistory.push(remotePlan);
+  state.localReport = DiagnosisReportSchema.parse({
+    verdict: 'insufficient_evidence', summary: '本地事实已保留', issue_category: 'runtime',
+    confidence: 0.4, responsibility: 'server',
+    next_action: { target: 'server', question: '核查请求失败原因' },
+    evidence: [{
+      id: 'local-source', kind: 'source', source: 'read_project_file',
+      location: 'Entry.ets:1', excerpt: 'throw new Error("local")', supports: '本地异常路径',
+    }],
+  });
+  state.localText = '本地中间报告';
+  state.handoffRoundsUsed = 1;
+  const consultation = createExternalConsultation({
+    conversationId: harness.conversation.id,
+    messageId: prepared.assistantMessage.id,
+    runId: 'run-legacy',
+    reason: remotePlan.reason,
+    outboundText: `当前用户问题：${content}`,
+    redact: (text) => text,
+  });
+  state.consultationId = consultation.id;
+  prepared.assistantMessage.content = state.localText;
+  prepared.assistantMessage.status = 'completed';
+  harness.conversation.consultations.push(consultation);
+  harness.conversation.investigation = serializeInvestigationState(state);
+  harness.conversation.evidence_state = { entries: [{ id: 'local-source', kind: 'source' }], texts: {} };
+  harness.conversation.run_state = 'waiting_confirmation';
+  await harness.store.saveConversation(harness.conversation);
 }
+
+test('普通消息自动完成外部协查，不产生审批等待', async () => {
+  const harness = await setup();
+  try {
+    const response = await harness.app.request(`/conversations/${harness.conversation.id}/messages`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: '页面异常，traceId: trace-auto' }),
+    });
+    assert.equal(response.status, 200);
+    const events = await response.text();
+    assert.match(events, /JOINT_ASSESSMENT/);
+    assert.match(events, /RUN_FINISHED/);
+    assert.doesNotMatch(events, /EXTERNAL_CONSULTATION_REQUIRED|RUN_ERROR/);
+    assert.equal(harness.remoteCalls.length, 1);
+    const completed = await harness.store.getConversation(harness.conversation.id);
+    assert.equal(completed.run_state, 'completed');
+    assert.equal(completed.consultations[0]?.status, 'completed');
+  } finally {
+    await harness.store.close();
+    await rm(harness.directory, { recursive: true, force: true });
+  }
+});
 
 test('审批路由执行所有权、摘要和恢复 SSE 校验', async () => {
   const harness = await setup();
   try {
     const { app, conversation, store, remoteCalls } = harness;
-    await startWaiting(app, conversation.id);
+    await startLegacyWaiting(harness);
     const waiting = await store.getConversation(conversation.id);
     const consultation = waiting.consultations[0]!;
     const originalOutboundText = consultation.outbound_text;
@@ -168,7 +237,7 @@ test('审批路由执行所有权、摘要和恢复 SSE 校验', async () => {
     assert.equal(completed.external_findings.length, 1);
     assert.equal(completed.messages.filter((message) => message.role === 'user').length, 1);
     assert.equal(completed.messages.length, originalMessages + 1);
-    assert.equal(harness.inputs.filter((input) => (input.phase ?? 'local') === 'local').length, 1);
+    assert.equal(harness.inputs.filter((input) => (input.phase ?? 'local') === 'local').length, 0);
     assert.equal(harness.inputs.filter((input) => input.phase === 'joint').length, 1);
   } finally {
     await harness.store.close();
@@ -180,7 +249,7 @@ test('过期确认自动形成保留本地事实的终态，不卡住会话也�
   const harness = await setup();
   try {
     const { app, conversation, store, remoteCalls } = harness;
-    await startWaiting(app, conversation.id);
+    await startLegacyWaiting(harness);
     const waiting = await store.getConversation(conversation.id);
     const consultation = waiting.consultations[0]!;
     waiting.consultations[0]!.expires_at = '2020-01-01T00:00:00.000Z';
@@ -209,7 +278,7 @@ test('没有 owner 的旧会话审批失败关闭，拒绝恢复保留本地报�
   const harness = await setup();
   try {
     const { app, conversation, store, remoteCalls } = harness;
-    await startWaiting(app, conversation.id);
+    await startLegacyWaiting(harness);
     const waiting = await store.getConversation(conversation.id);
     const consultation = waiting.consultations[0]!;
     waiting.owner_subject = null;

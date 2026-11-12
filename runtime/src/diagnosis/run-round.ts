@@ -53,15 +53,15 @@ import {
   type InvestigationStateSnapshot,
 } from '../orchestration/investigation-state.js';
 
-const DEFAULT_INVESTIGATION_BUDGET: InvestigationBudget = { maxSeconds: 300, maxRemoteCalls: 2 };
+const DEFAULT_INVESTIGATION_BUDGET: InvestigationBudget = { maxSeconds: 900, maxRemoteCalls: 4 };
 const EMPTY_SERVER_SIGNALS: ServerSignals = {
   version: 1,
   serviceNames: [],
   apiPrefixes: [],
   errorCodePatterns: [],
 };
-const REMOTE_REJECTED_SUFFIX = '\n\n未获服务端协查批准，本次仅保留现有调查结果和证据缺口。';
-const REMOTE_EXPIRED_SUFFIX = '\n\n服务端协查确认已过期，本次仅保留现有调查结果和证据缺口。';
+const REMOTE_REJECTED_SUFFIX = '\n\n未获外部协查批准，本次仅保留现有调查结果和证据缺口。';
+const REMOTE_EXPIRED_SUFFIX = '\n\n外部协查确认已过期，本次仅保留现有调查结果和证据缺口。';
 
 /** 原始标识只进入本轮私有工具上下文，不进入模型 schema、计划或持久化记录。 */
 export function buildRoundLogCorrelation(
@@ -200,9 +200,14 @@ function redactConversationForPersistence(
 ): ConversationRecord {
   // 用户原文仍由会话所有者保存，后续轮次身份识别依赖它；其他运行时产物统一脱敏。
   const originals = new Map(conversation.messages.map((message) => [message.id, message.content]));
+  // 外发摘要与用户原文同级（内网全链路），持久化保留实际发送的原文，保持与 digest 一致。
+  const outboundOriginals = new Map(conversation.consultations.map((item) => [item.id, item.outbound_text]));
   const result = redactRecordInPlace(conversation, redact);
   for (const message of result.messages) {
     if (message.role === 'user') message.content = originals.get(message.id) ?? message.content;
+  }
+  for (const consultation of result.consultations) {
+    consultation.outbound_text = outboundOriginals.get(consultation.id) ?? consultation.outbound_text;
   }
   return result;
 }
@@ -534,26 +539,6 @@ async function runOrchestratedDiagnosisRound(
     outputTokens: event.output_tokens,
     toolUsage: event.tool_usage,
   });
-  const waitForConfirmation = async (consultation: ExternalConsultation) => {
-    if (!state) throw new Error('等待确认前缺少调查状态');
-    assistantMessage.content = redact(state.localText);
-    assistantMessage.status = 'completed';
-    assistantMessage.error = null;
-    assistantMessage.report = null;
-    conversation.run_state = 'waiting_confirmation';
-    persistInvestigation();
-    conversation.updated_at = new Date().toISOString();
-    await persistTerminalConversation(saveConversation, conversation);
-    terminalPersisted = true;
-    terminal = 'waiting_confirmation';
-    text = assistantMessage.content;
-    await emit({
-      type: 'EXTERNAL_CONSULTATION_REQUIRED',
-      runId,
-      plan: state.currentPlan,
-      consultation: redactRecord(consultation, redact),
-    });
-  };
   const completeRejectedLocal = async (suffix: string) => {
     if (!state?.localReport || terminal) return;
     assistantMessage.content = `${redact(state.localText || state.localReport.summary)}${suffix}`;
@@ -684,7 +669,8 @@ async function runOrchestratedDiagnosisRound(
         branch: 'client',
         status: 'completed',
         responsibility: report?.responsibility ?? 'unknown',
-        nextAction: report?.next_action?.target === 'server' ? report.next_action.question : undefined,
+        taskType: report?.task_type ?? 'unknown',
+        nextAction: externalInvestigationQuestion(report),
         hasObservedEvidence: Boolean(report?.evidence.some((item) => item.kind === 'source' || item.kind === 'log')),
         data: completedEvent,
       };
@@ -733,7 +719,7 @@ async function runOrchestratedDiagnosisRound(
         run: async () => ({
           branch: 'server',
           status: allowRemote ? 'failed' : 'skipped',
-          error: allowRemote ? '已批准的服务端协查不可用' : '服务端协查未获批准',
+          error: allowRemote ? '已批准的外部协查不可用' : '外部协查未获批准',
         }),
         cancel: async () => undefined,
       };
@@ -746,7 +732,7 @@ async function runOrchestratedDiagnosisRound(
       },
       context: {
         abortSignal,
-        // 初始 local 的自动接续由轮次层先转为确认等待，不能在 Supervisor 内直接发远端。
+        // 本地接续由轮次层先建立固定摘要的自动授权记录，再执行远端与联合阶段。
         compassEnabled: allowRemote,
         capabilityContext: {
           conversationId: conversation.id,
@@ -791,6 +777,21 @@ async function runOrchestratedDiagnosisRound(
     }
   };
 
+  const runExternalAndJoint = async (currentPlan: InvestigationPlan, correlation: CorrelationContext) => {
+    if (!state || !capabilitySession) throw new Error('外部协查前缺少调查状态或能力会话');
+    const consultation = createAutomaticConsultation(
+      conversation, assistantMessage.id, runId, currentPlan, content, correlation,
+    );
+    state.consultationId = consultation.id;
+    upsertConsultation(conversation, consultation);
+    persistInvestigation();
+    conversation.updated_at = new Date().toISOString();
+    await saveConversation(conversation);
+    const result = await executeSupervisor(currentPlan, true);
+    if (result.status === 'cancelled') await finishCancelledOrFailed(result);
+    else await consumeAgentStream('joint', true, abortSignal, capabilitySession.toolsets);
+  };
+
   try {
     let plan: InvestigationPlan;
     let correlation: CorrelationContext;
@@ -804,7 +805,7 @@ async function runOrchestratedDiagnosisRound(
       correlation = extractCorrelationContext(content);
       const requestedScope = requestedScopeFor(content);
       const compassAvailable = options.compassAvailable === true && Boolean(options.slotRegistry);
-      const compassEnabled = conversation.consult_compass && compassAvailable;
+      const compassEnabled = compassAvailable;
       plan = createInvestigationPlan({
         question: content,
         repositoryBound: Boolean(conversation.workspace_path || conversation.repository_id || conversation.resolved_commit),
@@ -820,13 +821,6 @@ async function runOrchestratedDiagnosisRound(
       persistInvestigation();
       await emit({ type: 'INVESTIGATION_PLAN', runId, plan, resumed: false });
 
-      if (plan.mode !== 'local') {
-        const consultation = createPendingConsultation(conversation, assistantMessage.id, runId, plan, content, correlation, redact);
-        state.consultationId = consultation.id;
-        upsertConsultation(conversation, consultation);
-        await waitForConfirmation(consultation);
-        return roundResult(conversation, assistantMessage, runId, terminal, terminalPersisted, text);
-      }
       conversation.updated_at = new Date().toISOString();
       await saveConversation(conversation);
     }
@@ -851,37 +845,39 @@ async function runOrchestratedDiagnosisRound(
     });
 
     if (!input.resume) {
-      const result = await executeSupervisor(plan, false);
-      if (result.status === 'cancelled') {
-        await finishCancelledOrFailed(result);
-      } else if (localCompleted) {
-        const report = localCompleted.report;
-        const decision = decideLocalContinuation(plan, {
-          responsibility: report?.responsibility ?? 'unknown',
-          nextAction: report?.next_action?.target === 'server' ? report.next_action.question : undefined,
-          hasObservedEvidence: Boolean(report?.evidence.some((item) => item.kind === 'source' || item.kind === 'log')),
-          requestedScope: requestedScopeFor(content),
-          compassEnabled: conversation.consult_compass && options.compassAvailable === true && Boolean(options.slotRegistry),
-          correlationReady: plan.correlationReady,
-          budgetExpired: false,
-          remoteCallsExhausted: state.remoteCallsUsed >= plan.budget.maxRemoteCalls,
-          handoffsExhausted: state.handoffRoundsUsed >= plan.maxHandoffRounds,
-        });
-        if (decision.type === 'continue_server') {
-          state.handoffRoundsUsed += 1;
-          state.currentPlan = decision.plan;
-          appendPlanHistory(state, decision.plan);
-          plan = decision.plan;
-          const consultation = createPendingConsultation(conversation, assistantMessage.id, runId, plan, content, correlation, redact);
-          state.consultationId = consultation.id;
-          upsertConsultation(conversation, consultation);
-          await emit({ type: 'INVESTIGATION_PLAN', runId, plan, resumed: false });
-          await waitForConfirmation(consultation);
-        } else {
-          await complete(localCompleted);
-        }
+      if (plan.mode !== 'local') {
+        await runExternalAndJoint(plan, correlation);
       } else {
-        await finishCancelledOrFailed(result);
+        const result = await executeSupervisor(plan, false);
+        if (result.status === 'cancelled') {
+          await finishCancelledOrFailed(result);
+        } else if (localCompleted) {
+          const report = localCompleted.report;
+          const decision = decideLocalContinuation(plan, {
+            responsibility: report?.responsibility ?? 'unknown',
+            taskType: report?.task_type ?? 'unknown',
+            nextAction: externalInvestigationQuestion(report),
+            hasObservedEvidence: Boolean(report?.evidence.some((item) => item.kind === 'source' || item.kind === 'log')),
+            requestedScope: requestedScopeFor(content),
+            compassEnabled: options.compassAvailable === true && Boolean(options.slotRegistry),
+            correlationReady: plan.correlationReady,
+            budgetExpired: false,
+            remoteCallsExhausted: state.remoteCallsUsed >= plan.budget.maxRemoteCalls,
+            handoffsExhausted: state.handoffRoundsUsed >= plan.maxHandoffRounds,
+          });
+          if (decision.type === 'continue_external') {
+            state.handoffRoundsUsed += 1;
+            state.currentPlan = decision.plan;
+            appendPlanHistory(state, decision.plan);
+            plan = decision.plan;
+            await emit({ type: 'INVESTIGATION_PLAN', runId, plan, resumed: false });
+            await runExternalAndJoint(plan, correlation);
+          } else {
+            await complete(localCompleted);
+          }
+        } else {
+          await finishCancelledOrFailed(result);
+        }
       }
     } else if (input.resume.decision !== 'approved') {
       if (state.initialPlan.mode === 'parallel') {
@@ -890,7 +886,7 @@ async function runOrchestratedDiagnosisRound(
           mode: 'local',
           branches: ['client'],
           remoteSlots: [],
-          reason: '服务端协查被拒绝，仅执行尚未运行的本地分支',
+          reason: '外部协查被拒绝，仅执行尚未运行的本地分支',
         };
         state.currentPlan = plan;
         appendPlanHistory(state, plan);
@@ -929,27 +925,35 @@ async function runOrchestratedDiagnosisRound(
   return roundResult(conversation, assistantMessage, runId, terminal, terminalPersisted, text);
 }
 
-function createPendingConsultation(
+function externalInvestigationQuestion(report: DiagnosisReport | null | undefined): string | undefined {
+  return report?.next_action?.target === 'external' || report?.next_action?.target === 'server'
+    ? report.next_action.question
+    : undefined;
+}
+
+function createAutomaticConsultation(
   conversation: ConversationRecord,
   messageId: string,
   runId: string,
   plan: InvestigationPlan,
   content: string,
   correlation: CorrelationContext,
-  redact: (text: string) => string,
 ): ExternalConsultation {
   const correlationText = [
     correlation.traceId ? `traceId: ${correlation.traceId}` : null,
     correlation.requestId ? `requestId: ${correlation.requestId}` : null,
   ].filter((item): item is string => Boolean(item)).join('\n');
-  return createExternalConsultation({
+  const pending = createExternalConsultation({
     conversationId: conversation.id,
     messageId,
     runId,
     reason: plan.reason,
     outboundText: `当前用户问题：${content}${correlationText ? `\n关联信息：\n${correlationText}` : ''}`,
-    redact,
+    // Compass 及其模型链路均在内网，外发使用用户原文（入库时已做通用凭证脱敏），不再伪名化学员标识。
+    redact: (text) => text,
   });
+  // approved 在这里表示 Runtime 已按固定摘要策略自动授权，不代表老师执行过审批。
+  return approveExternalConsultation(pending, { conversationId: conversation.id, runId });
 }
 
 function upsertConsultation(conversation: ConversationRecord, consultation: ExternalConsultation): void {

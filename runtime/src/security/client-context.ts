@@ -29,5 +29,5 @@ export function createClientLogPrivacy(
 }
 
 export function redactClientText(privacy: ClientLogPrivacy, text: string): string {
-  return String(privacy.sanitize(text).value);
+  return privacy.sanitizeText(text);
 }

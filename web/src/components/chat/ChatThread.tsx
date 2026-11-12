@@ -21,7 +21,6 @@ import type {
 } from '../../types';
 import { ChatComposer } from './ChatComposer';
 import { ConsultationCard } from './ConsultationCard';
-import { ConversationSettings } from './ConversationSettings';
 import { ReportCard } from './ReportCard';
 import { ToolStepCard } from './ToolStepCard';
 
@@ -37,8 +36,6 @@ interface ChatThreadProps {
   onModelChange: (spec: string) => void;
   progress: InvestigationProgress | null;
   consultationAction: ConsultationAction | null;
-  consultCompassSaving: boolean;
-  onConsultCompassChange: (allowed: boolean) => void;
   onConsultationDecision: (
     consultationId: string,
     decision: ConsultationAction['decision'],
@@ -173,8 +170,6 @@ export function ChatThread({
   onModelChange,
   progress,
   consultationAction,
-  consultCompassSaving,
-  onConsultCompassChange,
   onConsultationDecision,
 }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -309,14 +304,6 @@ export function ChatThread({
         {!conversation.repository_name && conversation.workspace_path && (
           <span className="chat-thread-source">{conversation.workspace_path}</span>
         )}
-        <div className="chat-thread-header-actions">
-          <ConversationSettings
-            allowed={conversation.consult_compass ?? false}
-            saving={consultCompassSaving}
-            disabled={sending}
-            onAllowedChange={onConsultCompassChange}
-          />
-        </div>
       </header>
 
       {progress && (
@@ -334,7 +321,7 @@ export function ChatThread({
         {conversation.messages.length === 0 ? (
           <div className="chat-empty-thread">
             <MessageSquare size={26} strokeWidth={1.6} />
-            <p>描述你遇到的 HarmonyOS 问题，助手会按需加载技能、检索代码并逐步分析。</p>
+            <p>描述你遇到的培优问题，助手会按需检索知识、检查代码并自动协查。</p>
           </div>
         ) : (
           conversation.messages.map((message, index) =>

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1120" role="img" aria-labelledby="title description">
   <title id="title">Troubleshoot Odyssey 当前诊断主流程</title>
-  <desc id="description">请求经准入后，默认先由客户端 Agent 观察日志、完成关联入账并读取固定源码快照。本地报告若给出明确跨侧问题，则自动创建外发审批，经 Compass 获取独立外部结论并生成联合报告；否则直接完成本地报告。</desc>
+  <desc id="description">请求经准入后，默认先由客户端 Agent 观察日志、完成关联入账并读取固定源码快照。本地报告若给出明确跨侧问题，则由 Runtime 自动协查，经 Compass 获取独立外部结论并生成联合报告；否则直接完成本地报告。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#63758b"/>
@@ -34,8 +34,8 @@
 
   <rect width="1400" height="1120" fill="#ffffff"/>
   <text x="54" y="54" class="title">当前一轮诊断：先观察，再取证，按需协查</text>
-  <text x="54" y="84" class="subtitle">Supervisor 负责技术路由；老师只描述故障、补充事实，并在需要时确认外发内容</text>
-  <text x="54" y="110" class="small">实线为本地主流程，绿色虚线为审批后的服务端协查；两条证据路径始终分开。</text>
+  <text x="54" y="84" class="subtitle">Supervisor 负责技术路由与协查；老师只描述故障、补充事实，不需要理解另一个 Agent</text>
+  <text x="54" y="110" class="small">实线为本地主流程，绿色虚线为自动外部协查；两条证据路径始终分开。</text>
 
   <rect x="54" y="132" width="1292" height="140" rx="12" class="frame"/>
   <text x="78" y="160" class="section">01 · 接入与调查计划</text>
@@ -95,18 +95,18 @@
   <text x="102" y="574" class="small">精确版本快照选择器已可用，但轮内自动换绑未接入；当前主流程仍读取会话固定 commit，旧证据保持原快照。</text>
 
   <rect x="54" y="640" width="1292" height="414" rx="12" class="server-frame"/>
-  <text x="78" y="670" class="section">03 · 服务端协查：初始计划先审批；本地报告也可自动接续</text>
+  <text x="78" y="670" class="section">03 · 外部协查：满足条件后由 Runtime 自动执行，老师无需审批</text>
 
   <rect x="1130" y="700" width="216" height="100" rx="8" class="runtime"/>
-  <text x="1150" y="734" class="heading-compact">需要服务端协查？</text>
+  <text x="1150" y="734" class="heading-compact">需要外部协查？</text>
   <text x="1150" y="760" class="body">本地报告给出明确跨侧问题</text>
   <text x="1150" y="782" class="small">Supervisor 判断，老师不选路由</text>
   <path d="M 1238 522 V 694" class="edge"/>
 
   <rect x="820" y="700" width="250" height="100" rx="8" class="external"/>
-  <text x="844" y="734" class="heading">外发审批</text>
-  <text x="844" y="760" class="body">固定脱敏摘要 · 批准前零请求</text>
-  <text x="844" y="782" class="small">初始 server / parallel 同样先审批</text>
+  <text x="844" y="734" class="heading">固定外发边界</text>
+  <text x="844" y="760" class="body">固定脱敏摘要 · digest 校验</text>
+  <text x="844" y="782" class="small">Runtime 自动授权，模型不可改写</text>
   <path d="M 1130 750 H 1076" class="edge-external"/>
   <text x="1090" y="736" class="edge-label">是</text>
 
@@ -129,7 +129,7 @@
 
   <rect x="1000" y="862" width="346" height="88" rx="8" class="data"/>
   <text x="1024" y="896" class="heading">本地诊断报告</text>
-  <text x="1024" y="922" class="body">无需协查，或审批被拒绝 / 已过期</text>
+  <text x="1024" y="922" class="body">无需协查，或远端不可用 / 预算耗尽</text>
   <path d="M 1238 800 V 856" class="edge"/>
   <text x="1252" y="828" class="small">否</text>
 

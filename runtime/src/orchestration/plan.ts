@@ -70,7 +70,7 @@ export function createInvestigationPlan(
   if (input.requestedScope === 'server') {
     return remoteAvailable
       ? serverPlan(base, '用户明确指定只查服务端')
-      : localPlan(base, '用户指定服务端，但服务端协查未启用或远端预算已耗尽');
+      : localPlan(base, '用户指定服务端，但外部协查未启用或远端预算已耗尽');
   }
   if (!input.repositoryBound && !input.hasLocalEvidence) {
     return localPlan(base, '会话未绑定仓库且无本地证据，先走知识或澄清路径');
@@ -93,7 +93,7 @@ export function createInvestigationPlan(
     return localPlan(base, `命中服务端特征（${signal.labels.join('、')}），但缺少 traceId 或请求 ID`);
   }
   if (signal.matched && !remoteAvailable) {
-    return localPlan(base, '命中服务端特征，但服务端协查未启用或远端预算已耗尽');
+    return localPlan(base, '命中服务端特征，但外部协查未启用或远端预算已耗尽');
   }
   return localPlan(base, '缺少足够的服务端信号，先进行本地调查');
 }

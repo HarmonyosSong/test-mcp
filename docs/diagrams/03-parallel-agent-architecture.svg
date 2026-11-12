@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" role="img" aria-labelledby="title description">
   <title id="title">Troubleshoot Odyssey 并行 Agent 架构</title>
-  <desc id="description">展示 Runtime Supervisor 的本地优先观察、条件并行、外发审批与结果聚合。客户端关联日志和源码进入 EvidenceLedger，Compass 结论进入 ExternalFindings，最后形成本地或联合报告。</desc>
+  <desc id="description">展示 Runtime Supervisor 的本地优先观察、条件并行、自动外部协查与结果聚合。客户端关联日志和源码进入 EvidenceLedger，Compass 结论进入 ExternalFindings，最后形成本地或联合报告。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#63758b"/>
@@ -37,7 +37,7 @@
 
   <rect width="1400" height="900" fill="#ffffff"/>
   <text x="54" y="56" class="title">Troubleshoot Odyssey | 并行 Agent 架构</text>
-  <text x="54" y="84" class="subtitle">先本地观察，满足全部条件才并行；远端始终先审批，Runtime 负责聚合、边界和生命周期</text>
+  <text x="54" y="84" class="subtitle">先本地观察，满足全部条件才并行；远端由 Runtime 自动协查，负责聚合、边界和生命周期</text>
 
   <rect x="54" y="122" width="1292" height="112" rx="12" class="frame"/>
   <text x="78" y="151" class="section">01 · 统一入口与调查计划</text>
@@ -76,11 +76,11 @@
   <rect x="724" y="270" width="622" height="328" rx="12" class="server-frame"/>
   <text x="748" y="300" class="section">03 · 服务端调查分支</text>
   <rect x="758" y="334" width="252" height="78" rx="8" class="external"/>
-  <text x="782" y="367" class="heading">审批 + A2A Agent Slot</text>
-  <text x="782" y="391" class="body">固定摘要批准 → JSON-RPC · SSE</text>
+  <text x="782" y="367" class="heading">固定摘要 + A2A Agent Slot</text>
+  <text x="782" y="391" class="body">自动授权 → JSON-RPC · SSE</text>
   <rect x="1056" y="334" width="252" height="78" rx="8" class="server"/>
-  <text x="1080" y="367" class="heading">远端 Agent</text>
-  <text x="1080" y="391" class="body">云学习 / 服务端 / 专项知识与工具</text>
+  <text x="1080" y="367" class="heading">统一外部全栈 Agent</text>
+  <text x="1080" y="391" class="body">前端 / H5 / 服务端知识与工具</text>
   <rect x="758" y="464" width="252" height="78" rx="8" class="external"/>
   <text x="782" y="497" class="heading">ExternalFindings</text>
   <text x="782" y="521" class="body">任务状态 · 外部结论 · 限制</text>
@@ -88,7 +88,7 @@
   <text x="1080" y="497" class="heading">范围内自主探索</text>
   <text x="1080" y="521" class="body">不新增客户端数据，不扩大权限</text>
   <path d="M 700 224 V 254 H 884 V 328" class="edge-orange"/>
-  <text x="710" y="248" class="small">批准后 server 分支</text>
+  <text x="710" y="248" class="small">自动协查 server 分支</text>
   <path d="M 1010 373 H 1056" class="edge-green"/>
   <path d="M 1182 412 V 458" class="edge-green"/>
   <path d="M 1056 503 H 1016" class="edge-green"/>
@@ -110,7 +110,7 @@
   <text x="400" y="626" class="small">外部结论</text>
   <path d="M 450 754 H 560" class="edge"/>
   <path d="M 860 754 H 1050" class="edge"/>
-  <text x="78" y="814" class="small">本地报告给出明确跨侧问题时自动创建审批；parallel 必须已有 kind=log、服务端信号、请求关联、开关和预算。</text>
+  <text x="78" y="814" class="small">本地报告给出明确跨侧问题时自动协查；parallel 必须已有 kind=log、服务端信号、请求关联和预算。</text>
 
   <text x="78" y="850" class="small">关键边界：关联日志与实际源码进入 EvidenceLedger；A2A 结果进入 ExternalFindings；local-only 直接报告，有远端结果才联合判断。</text>
 </svg>

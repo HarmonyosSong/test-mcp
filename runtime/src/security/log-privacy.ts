@@ -55,6 +55,26 @@ export class ClientLogPrivacy {
     };
   }
 
+  /** 助手回复、外发摘要等长文本只脱敏标识符和通用号码；500 字上限只适用于工具结果等结构化数据。 */
+  sanitizeText(text: string): string {
+    let value = text;
+    for (const identifier of this.identifiers) {
+      const pattern = new RegExp(
+        `(?<![A-Za-z0-9])${escapeRegExp(identifier.value)}(?![A-Za-z0-9])`,
+        'g',
+      );
+      if (pattern.test(value)) {
+        pattern.lastIndex = 0;
+        value = value.replace(pattern, this.pseudonym(identifier.kind, identifier.value));
+      }
+      pattern.lastIndex = 0;
+    }
+    return value
+      .replace(BEARER_PATTERN, '[redacted-token]')
+      .replace(PHONE_PATTERN, '[redacted-phone]')
+      .replace(ID_CARD_PATTERN, '[redacted-id-card]');
+  }
+
   entryId(value: unknown): string {
     const sanitized = this.sanitize(value).value;
     return `log-${createHash('sha256').update(JSON.stringify(canonical(sanitized))).digest('hex').slice(0, 24)}`;

@@ -13,6 +13,12 @@ import type { CapabilityMcp } from '../src/capabilities/mcp.js';
 import type { ModelConfiguration } from '../src/model/configuration.js';
 import { ProductStore } from '../src/product/store.js';
 import type { AgentSlotRegistry } from '../src/orchestration/agent-slot-registry.js';
+import { createExternalConsultation } from '../src/orchestration/consultation.js';
+import {
+  createInvestigationStateSnapshot,
+  serializeInvestigationState,
+} from '../src/orchestration/investigation-state.js';
+import type { InvestigationPlan } from '../src/orchestration/plan.js';
 import type { ServerSignals } from '../src/orchestration/server-signals.js';
 
 const LOCAL_EVIDENCE_STATE = { entries: [{ id: 'local-source', kind: 'source' }], texts: {} };
@@ -86,12 +92,13 @@ function completedEvent(
   input: DiagnosisRunInput,
   text: string,
   report: DiagnosisReport | null,
+  evidence_state = LOCAL_EVIDENCE_STATE,
 ): Completed {
   return {
     type: 'completed',
     text,
     report,
-    evidence_state: LOCAL_EVIDENCE_STATE,
+    evidence_state,
     messages_state: [
       { role: 'user', content: input.content },
       { role: 'assistant', content: text },
@@ -232,6 +239,62 @@ async function resumeRound(
   return { prepared, result };
 }
 
+async function seedLegacyPending(
+  harness: Harness,
+  content: string,
+  mode: 'server' | 'parallel' | 'local-continuation',
+) {
+  const prepared = await prepareDiagnosisRound({
+    store: harness.store,
+    modelConfiguration: harness.modelConfiguration,
+    conversation: harness.conversation,
+    content,
+    runId: 'run-legacy',
+  });
+  const remotePlan: InvestigationPlan = {
+    mode: mode === 'parallel' ? 'parallel' : 'server',
+    branches: mode === 'parallel' ? ['client', 'server'] : ['server'],
+    remoteSlots: ['compass'],
+    clientSteps: mode === 'parallel' ? ['observe', 'source'] : [],
+    reason: '历史协查记录',
+    correlationReady: true,
+    budget: { maxSeconds: 5, maxRemoteCalls: 2 },
+    maxHandoffRounds: 1,
+  };
+  const initialPlan: InvestigationPlan = mode === 'local-continuation'
+    ? { ...remotePlan, mode: 'local', branches: ['client'], remoteSlots: [], clientSteps: ['observe', 'source'] }
+    : remotePlan;
+  const state = createInvestigationStateSnapshot({
+    originalContent: content,
+    userMessageId: prepared.userMessage.id,
+    plan: initialPlan,
+  });
+  state.currentPlan = remotePlan;
+  if (mode === 'local-continuation') {
+    state.planHistory.push(remotePlan);
+    state.localReport = localReport();
+    state.localText = '本地调查中间结论';
+    state.handoffRoundsUsed = 1;
+    harness.conversation.evidence_state = structuredClone(LOCAL_EVIDENCE_STATE);
+  }
+  const consultation = createExternalConsultation({
+    conversationId: harness.conversation.id,
+    messageId: prepared.assistantMessage.id,
+    runId: 'run-legacy',
+    reason: remotePlan.reason,
+    outboundText: `当前用户问题：${content}`,
+    redact: (text) => text,
+  });
+  state.consultationId = consultation.id;
+  prepared.assistantMessage.content = state.localText;
+  prepared.assistantMessage.status = 'completed';
+  harness.conversation.consultations.push(consultation);
+  harness.conversation.investigation = serializeInvestigationState(state);
+  harness.conversation.run_state = 'waiting_confirmation';
+  await harness.store.saveConversation(harness.conversation);
+  return harness.conversation;
+}
+
 async function archivedCaseCount(directory: string): Promise<number> {
   try {
     return (await readdir(join(directory, 'knowledge-cases'))).length;
@@ -240,34 +303,39 @@ async function archivedCaseCount(directory: string): Promise<number> {
   }
 }
 
-test('显式 server 未确认时零 Slot、零本地分支并持久化等待状态', async () => {
+test('显式 server 自动调用 Slot 并在同一轮完成联合报告', async () => {
   await withHarness(async (harness) => {
     const remote = remoteRegistry();
-    const scripted = scriptedAgent({});
+    const scripted = scriptedAgent({
+      joint: (input) => completedEvent(input, '外部联合结论', jointReport(input), { entries: [], texts: {} }),
+    });
     const events: OrchestrationEvent[] = [];
     const result = await startRound(
       harness, scripted.agent, remote.registry, '只查服务端，云学习接口返回 500，traceId: trace-1', PARALLEL_SIGNALS, events,
     );
-    assert.equal(result.terminal, 'waiting_confirmation');
+    assert.equal(result.terminal, 'completed');
     assert.equal(result.terminalPersisted, true);
-    assert.equal(result.conversation.run_state, 'waiting_confirmation');
+    assert.equal(result.conversation.run_state, 'completed');
     assert.equal(result.assistantMessage.status, 'completed');
-    assert.equal(result.assistantMessage.report, null);
-    assert.equal(result.conversation.consultations[0]?.status, 'pending');
-    assert.equal(scripted.inputs.length, 0);
-    assert.deepEqual(remote.calls, []);
+    assert.equal(result.assistantMessage.report?.summary, '联合调查完成');
+    assert.equal(result.conversation.consultations[0]?.status, 'completed');
+    assert.deepEqual(scripted.inputs.map((input) => input.phase), ['joint']);
+    assert.deepEqual(remote.calls, ['resolve', 'invoke']);
     assert.equal(result.conversation.investigation?.originalContent, '只查服务端，云学习接口返回 500，traceId: trace-1');
     assert.equal(result.conversation.investigation?.userMessageId, result.conversation.messages[0]?.id);
     assert.equal(typeof result.conversation.investigation?.initialPlan, 'object');
-    assert.equal(await archivedCaseCount(harness.directory), 0);
-    assert.deepEqual(events.map((event) => event.type), ['INVESTIGATION_PLAN', 'EXTERNAL_CONSULTATION_REQUIRED']);
+    assert.equal(await archivedCaseCount(harness.directory), 1);
+    assert.equal(events.some((event) => event.type === 'EXTERNAL_CONSULTATION_REQUIRED'), false);
+    assert.equal(events.some((event) => event.type === 'JOINT_ASSESSMENT'), true);
   });
 });
 
-test('Compass 待审批摘要保留请求关联标识但不包含学员编号和电话', async () => {
+test('Compass 自动协查摘要在内网链路下保留用户原文与关联标识', async () => {
   await withHarness(async (harness) => {
     const remote = remoteRegistry();
-    const scripted = scriptedAgent({});
+    const scripted = scriptedAgent({
+      joint: (input) => completedEvent(input, '联合结论', jointReport(input), { entries: [], texts: {} }),
+    });
     const result = await startRound(
       harness,
       scripted.agent,
@@ -277,11 +345,13 @@ test('Compass 待审批摘要保留请求关联标识但不包含学员编号和
     );
     const outbound = result.conversation.consultations[0]?.outbound_text ?? '';
     assert.match(outbound, /trace-fixture/);
-    assert.equal(outbound.includes('student-fixture-001'), false);
-    assert.equal(outbound.includes('+8613800000000'), false);
-    assert.equal(outbound.includes('13800000000'), false);
-    assert.match(outbound, /learner_id:[a-f0-9]{16}/);
-    assert.deepEqual(remote.calls, []);
+    assert.match(outbound, /student-fixture-001/);
+    assert.match(outbound, /\+8613800000000/);
+    assert.deepEqual(remote.calls, ['resolve', 'invoke']);
+    assert.deepEqual(remote.tasks[0], { text: outbound, contextId: undefined });
+    // 持久化后重新读取，外发原文与 digest 必须保持一致，不得被二次伪名化。
+    const reloaded = await harness.store.getConversation(result.conversation.id);
+    assert.equal(reloaded.consultations[0]?.outbound_text, outbound);
   });
 });
 
@@ -304,26 +374,63 @@ test('带服务端特征和 traceId 的新工单仍先执行本地观察，不�
   });
 });
 
-test('初始 local 有源码观测和关联信息时自动接续为 pending，不外发模型 next_action', async () => {
+test('初始 local 有源码观测和关联信息时自动接续远端，不外发模型 next_action', async () => {
   await withHarness(async (harness) => {
     const remote = remoteRegistry();
-    const scripted = scriptedAgent({ local: (input) => completedEvent(input, '本地调查中间结论', localReport()) });
+    const scripted = scriptedAgent({
+      local: (input) => completedEvent(input, '本地调查中间结论', localReport()),
+      joint: (input) => completedEvent(input, '联合最终结论', jointReport(input)),
+    });
     const result = await startRound(harness, scripted.agent, remote.registry, '页面异常，traceId: trace-local');
-    assert.equal(result.terminal, 'waiting_confirmation', result.assistantMessage.error ?? '本地自动接续失败');
+    assert.equal(result.terminal, 'completed', result.assistantMessage.error ?? '本地自动接续失败');
     assert.equal(result.terminalPersisted, true);
     assert.equal(result.assistantMessage.status, 'completed');
-    assert.equal(result.assistantMessage.report, null);
+    assert.equal(result.assistantMessage.report?.summary, '联合调查完成');
     assert.equal(typeof result.conversation.investigation?.localReport, 'object');
     assert.equal(result.conversation.investigation?.currentPlan && (result.conversation.investigation.currentPlan as { mode: string }).mode, 'server');
     const consultation = result.conversation.consultations[0]!;
-    assert.equal(consultation.status, 'pending');
+    assert.equal(consultation.status, 'completed');
     assert.match(consultation.outbound_text, /页面异常/);
     assert.match(consultation.outbound_text, /trace-local/);
     assert.equal(consultation.outbound_text.includes('模型下一步问题不得进入外发正文'), false);
-    assert.deepEqual(remote.calls, []);
-    assert.equal(scripted.inputs.length, 1);
-    assert.equal(await archivedCaseCount(harness.directory), 0);
+    assert.deepEqual(remote.calls, ['resolve', 'invoke']);
+    assert.deepEqual(scripted.inputs.map((input) => input.phase ?? 'local'), ['local', 'joint']);
+    assert.equal(await archivedCaseCount(harness.directory), 1);
   });
+});
+
+test('排行榜实现查询在本地知识不足时自动协查，不要求 traceId 或老师审批', async () => {
+  await withHarness(async (harness) => {
+    const remote = remoteRegistry();
+    const noAnchorReport = DiagnosisReportSchema.parse({
+      verdict: 'insufficient_evidence',
+      summary: '本地知识未覆盖该接口实现，需要外部全栈协查',
+      issue_category: 'interface',
+      task_type: 'implementation',
+      confidence: 0.2,
+      responsibility: 'unknown',
+      next_action: { target: 'external', question: '请核查英语绘本阅读排行榜的前端、H5 与服务端接口实现' },
+      missing_information: ['接口实现与返回示例'],
+      evidence: [],
+    });
+    const scripted = scriptedAgent({
+      local: (input) => completedEvent(input, '本地知识未覆盖该实现', noAnchorReport, { entries: [], texts: {} }),
+      joint: (input) => completedEvent(input, '排行榜接口联合结果', jointReport(input), { entries: [], texts: {} }),
+    });
+    const result = await startRound(
+      harness, scripted.agent, remote.registry, '请查询一下英语绘本阅读排行榜的接口',
+    );
+    assert.equal(result.terminal, 'completed', result.assistantMessage.error ?? '无锚点接续失败');
+    assert.equal(result.terminalPersisted, true);
+    assert.equal(result.conversation.investigation?.currentPlan
+      && (result.conversation.investigation.currentPlan as { mode: string }).mode, 'server');
+    const consultation = result.conversation.consultations[0]!;
+    assert.equal(consultation.status, 'completed');
+    assert.match(consultation.reason, /统一外部全栈 Agent/);
+    assert.match(consultation.outbound_text, /英语绘本阅读排行榜/);
+    assert.deepEqual(remote.calls, ['resolve', 'invoke']);
+    assert.deepEqual(scripted.inputs.map((input) => input.phase ?? 'local'), ['local', 'joint']);
+  }, { consult_compass: false });
 });
 
 test('本地接续批准恢复不重复 local，远端只进入 external_findings，joint 只终态一次', async () => {
@@ -333,9 +440,9 @@ test('本地接续批准恢复不重复 local，远端只进入 external_finding
       local: (input) => completedEvent(input, '本地调查中间结论', localReport()),
       joint: (input) => completedEvent(input, '联合最终结论', jointReport(input)),
     });
-    const waiting = await startRound(harness, scripted.agent, remote.registry, '页面异常，traceId: trace-approved');
-    const evidenceBefore = structuredClone(waiting.conversation.evidence_state);
-    const originalAssistantId = waiting.assistantMessage.id;
+    const waiting = await seedLegacyPending(harness, '页面异常，traceId: trace-approved', 'local-continuation');
+    const evidenceBefore = structuredClone(waiting.evidence_state);
+    const originalAssistantId = waiting.messages.at(-1)!.id;
     let terminalWrites = 0;
     const save = harness.store.saveConversation.bind(harness.store);
     harness.store.saveConversation = async (conversation) => {
@@ -343,18 +450,18 @@ test('本地接续批准恢复不重复 local，远端只进入 external_finding
       return save(conversation);
     };
     const { prepared, result } = await resumeRound(
-      harness, scripted.agent, remote.registry, waiting.conversation, waiting.conversation.consultations[0]!.id, 'approved',
+      harness, scripted.agent, remote.registry, waiting, waiting.consultations[0]!.id, 'approved',
     );
     assert.equal(prepared.runId, 'run-resumed');
     assert.notEqual(prepared.assistantMessage.id, originalAssistantId);
     assert.equal(result.terminal, 'completed');
-    assert.deepEqual(scripted.inputs.map((input) => input.phase ?? 'local'), ['local', 'joint']);
+    assert.deepEqual(scripted.inputs.map((input) => input.phase ?? 'local'), ['joint']);
     assert.deepEqual(remote.calls, ['resolve', 'invoke']);
     assert.equal(result.conversation.external_findings.length, 1);
     assert.deepEqual(result.conversation.evidence_state, evidenceBefore);
     assert.equal(JSON.stringify(result.conversation.evidence_state).includes('远端请求已核查'), false);
-    assert.equal(scripted.inputs[1]?.localReport?.summary, '本地源码观测已保存');
-    assert.equal(scripted.inputs[1]?.externalFindings?.length, 1);
+    assert.equal(scripted.inputs[0]?.localReport?.summary, '本地源码观测已保存');
+    assert.equal(scripted.inputs[0]?.externalFindings?.length, 1);
     assert.equal(result.conversation.messages.filter((message) => message.role === 'user').length, 1);
     assert.equal(result.conversation.messages.filter((message) => message.role === 'assistant').length, 2);
     assert.equal(terminalWrites, 1);
@@ -368,16 +475,16 @@ test('本地接续拒绝恢复保留本地报告和缺口，不重跑本地也�
   await withHarness(async (harness) => {
     const remote = remoteRegistry();
     const scripted = scriptedAgent({ local: (input) => completedEvent(input, '本地调查中间结论', localReport()) });
-    const waiting = await startRound(harness, scripted.agent, remote.registry, '页面异常，traceId: trace-rejected');
+    const waiting = await seedLegacyPending(harness, '页面异常，traceId: trace-rejected', 'local-continuation');
     const { result } = await resumeRound(
-      harness, scripted.agent, remote.registry, waiting.conversation, waiting.conversation.consultations[0]!.id, 'rejected',
+      harness, scripted.agent, remote.registry, waiting, waiting.consultations[0]!.id, 'rejected',
     );
     assert.equal(result.terminal, 'completed');
     assert.equal(result.conversation.consultations[0]?.status, 'rejected');
     assert.equal(result.assistantMessage.report?.summary, '本地源码观测已保存');
     assert.match(result.assistantMessage.content, /本地调查中间结论/);
-    assert.match(result.assistantMessage.content, /未获服务端协查批准/);
-    assert.equal(scripted.inputs.length, 1);
+    assert.match(result.assistantMessage.content, /未获外部协查批准/);
+    assert.equal(scripted.inputs.length, 0);
     assert.deepEqual(remote.calls, []);
     assert.equal(result.conversation.external_findings.length, 0);
     assert.equal(await archivedCaseCount(harness.directory), 1);
@@ -392,8 +499,8 @@ test('初始 parallel 批准后执行本地与远端两分支，保存串行且�
       joint: (input) => completedEvent(input, '并行联合结果', jointReport(input)),
     });
     harness.conversation.evidence_state = LOCAL_LOG_EVIDENCE_STATE;
-    const waiting = await startRound(
-      harness, scripted.agent, remote.registry, '云学习接口返回 500，traceId: trace-parallel', PARALLEL_SIGNALS,
+    const waiting = await seedLegacyPending(
+      harness, '云学习接口返回 500，traceId: trace-parallel', 'parallel',
     );
     assert.equal(scripted.inputs.length, 0);
     let activeSaves = 0;
@@ -413,8 +520,8 @@ test('初始 parallel 批准后执行本地与远端两分支，保存串行且�
     };
     const events: OrchestrationEvent[] = [];
     const { result } = await resumeRound(
-      harness, scripted.agent, remote.registry, waiting.conversation,
-      waiting.conversation.consultations[0]!.id, 'approved', PARALLEL_SIGNALS, events,
+      harness, scripted.agent, remote.registry, waiting,
+      waiting.consultations[0]!.id, 'approved', PARALLEL_SIGNALS, events,
     );
     assert.equal(result.terminal, 'completed');
     assert.deepEqual(scripted.inputs.map((input) => input.phase ?? 'local'), ['local', 'joint']);
@@ -435,19 +542,19 @@ test('初始 parallel 拒绝后只补跑本地分支，不调用 Slot 或 joint'
     const remote = remoteRegistry();
     const scripted = scriptedAgent({ local: (input) => completedEvent(input, '拒绝后的本地结论', localReport('client')) });
     harness.conversation.evidence_state = LOCAL_LOG_EVIDENCE_STATE;
-    const waiting = await startRound(
-      harness, scripted.agent, remote.registry, '云学习接口返回 500，traceId: trace-parallel-rejected', PARALLEL_SIGNALS,
+    const waiting = await seedLegacyPending(
+      harness, '云学习接口返回 500，traceId: trace-parallel-rejected', 'parallel',
     );
     const { result } = await resumeRound(
-      harness, scripted.agent, remote.registry, waiting.conversation,
-      waiting.conversation.consultations[0]!.id, 'rejected', PARALLEL_SIGNALS,
+      harness, scripted.agent, remote.registry, waiting,
+      waiting.consultations[0]!.id, 'rejected', PARALLEL_SIGNALS,
     );
     assert.equal(result.terminal, 'completed');
     assert.equal(result.conversation.consultations[0]?.status, 'rejected');
     assert.deepEqual(scripted.inputs.map((input) => input.phase ?? 'local'), ['local']);
     assert.deepEqual(remote.calls, []);
     assert.equal(result.assistantMessage.report?.summary, '本地源码观测已保存');
-    assert.match(result.text, /未获服务端协查批准/);
+    assert.match(result.text, /未获外部协查批准/);
     assert.equal(result.conversation.external_findings.length, 0);
     assert.equal((result.conversation.investigation?.currentPlan as { mode: string }).mode, 'local');
     assert.equal(await archivedCaseCount(harness.directory), 1);
@@ -476,16 +583,16 @@ test('初始 server 拒绝后不调用 Slot，并由 joint 给出缺口', async 
   await withHarness(async (harness) => {
     const remote = remoteRegistry();
     const scripted = scriptedAgent({ joint: (input) => completedEvent(input, '没有服务端观测', jointReport(input)) });
-    const waiting = await startRound(
-      harness, scripted.agent, remote.registry, '只查服务端，云学习 500，requestId: req-1', PARALLEL_SIGNALS,
+    const waiting = await seedLegacyPending(
+      harness, '只查服务端，云学习 500，requestId: req-1', 'server',
     );
-    assert.equal(waiting.conversation.investigation?.initialPlan && (waiting.conversation.investigation.initialPlan as { mode: string }).mode, 'server');
+    assert.equal(waiting.investigation?.initialPlan && (waiting.investigation.initialPlan as { mode: string }).mode, 'server');
     const { result } = await resumeRound(
-      harness, scripted.agent, remote.registry, waiting.conversation,
-      waiting.conversation.consultations[0]!.id, 'rejected', PARALLEL_SIGNALS,
+      harness, scripted.agent, remote.registry, waiting,
+      waiting.consultations[0]!.id, 'rejected', PARALLEL_SIGNALS,
     );
     assert.equal(result.terminal, 'completed');
-    assert.match(result.text, /未获服务端协查批准/);
+    assert.match(result.text, /未获外部协查批准/);
     assert.equal(result.assistantMessage.report?.joint_assessment?.relation, 'unverified');
     assert.equal(scripted.inputs.length, 1);
     assert.equal(scripted.inputs[0]?.phase, 'joint');
