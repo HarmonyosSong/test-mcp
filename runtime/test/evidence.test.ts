@@ -257,6 +257,27 @@ test('report citations are resolved from the ledger and excerpts must be literal
   })));
 });
 
+test('excerpt 匹配容忍跨行空白与首尾省略号，但不接受篡改内容', () => {
+  const ledger = new EvidenceLedger();
+  const id = read(ledger, 'src/a.ets', 'if (flag) {\n    throw Error("boom");\n}').evidence_refs[0]!.id;
+  // 跨行复制：模型按展示折行引用，空白差异归一后命中。
+  const wrapped = ledger.resolveDraft(draft(id, 'if (flag) {   throw Error("boom");'));
+  assert.equal(wrapped.evidence[0]?.id, id);
+  // 首尾省略号是引用习惯，不是伪造。
+  const ellipsed = ledger.resolveDraft(draft(id, '…throw Error("boom");…'));
+  assert.equal(ellipsed.evidence[0]?.id, id);
+  // 纯省略号没有证明力。
+  assert.throws(
+    () => ledger.resolveDraft(draft(id, '……')),
+    (error: unknown) => error instanceof EvidenceLedgerError && error.code === 'excerpt_mismatch',
+  );
+  // 改动实质内容仍然拒绝。
+  assert.throws(
+    () => ledger.resolveDraft(draft(id, 'throw Error("booms")')),
+    (error: unknown) => error instanceof EvidenceLedgerError && error.code === 'excerpt_mismatch',
+  );
+});
+
 test('positive candidates require source or log observations, never user-only evidence', () => {
   const ledger = new EvidenceLedger({ inputTexts: ['The app returns to the home screen'] });
   const userId = ledger.registerUserTexts()[0]!.id;

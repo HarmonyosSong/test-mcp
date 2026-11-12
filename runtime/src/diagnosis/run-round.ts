@@ -943,12 +943,17 @@ function createAutomaticConsultation(
     correlation.traceId ? `traceId: ${correlation.traceId}` : null,
     correlation.requestId ? `requestId: ${correlation.requestId}` : null,
   ].filter((item): item is string => Boolean(item)).join('\n');
+  // 缺 traceId/requestId 不再阻断外发，但必须在固定摘要里显式声明关联缺口，
+  // 让外部 Agent 按学员标识与时间窗关联，而不是误以为 Runtime 漏传了请求级标识。
+  const correlationSection = correlationText
+    ? `\n关联信息：\n${correlationText}`
+    : '\n关联信息：本次故障缺少 traceId/requestId，请按用户问题中的学员标识与时间窗关联核查。';
   const pending = createExternalConsultation({
     conversationId: conversation.id,
     messageId,
     runId,
     reason: plan.reason,
-    outboundText: `当前用户问题：${content}${correlationText ? `\n关联信息：\n${correlationText}` : ''}`,
+    outboundText: `当前用户问题：${content}${correlationSection}`,
     // Compass 及其模型链路均在内网，外发使用用户原文（入库时已做通用凭证脱敏），不再伪名化学员标识。
     redact: (text) => text,
   });

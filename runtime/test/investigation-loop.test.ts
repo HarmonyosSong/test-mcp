@@ -37,11 +37,12 @@ test('故障证据给出明确外部路由时自动接续，不要求用户再�
   assert.equal(decision.plan.mode, 'server');
   assert.deepEqual(decision.plan.branches, ['server']);
   assert.deepEqual(decision.plan.remoteSlots, ['compass']);
+  assert.equal(decision.plan.externalScope, 'frontend_backend');
   assert.deepEqual(decision.plan.clientSteps, []);
   assert.equal(decision.plan.correlationReady, true);
 });
 
-test('故障自动接续必须有本地观测、关联信息和剩余预算', () => {
+test('故障自动接续必须有本地观测和剩余预算', () => {
   for (const override of [
     { nextAction: '' },
     { hasObservedEvidence: false },
@@ -53,10 +54,14 @@ test('故障自动接续必须有本地观测、关联信息和剩余预算', ()
   ]) {
     assert.equal(decideLocalContinuation(localPlan, input(override)).type, 'finish');
   }
-  assert.equal(
-    decideLocalContinuation(localPlan, input({ correlationReady: false })).type,
-    'needs_user_facts',
-  );
+});
+
+test('缺少请求关联标识不阻断故障外发，关联缺口透传进接续计划', () => {
+  const decision = decideLocalContinuation(localPlan, input({ correlationReady: false }));
+  assert.equal(decision.type, 'continue_external');
+  if (decision.type !== 'continue_external') return;
+  assert.equal(decision.plan.correlationReady, false);
+  assert.equal(decision.plan.mode, 'server');
 });
 
 test('实现查询由统一外部全栈 Agent 接续，不要求本地观测或请求关联标识', () => {
@@ -75,6 +80,7 @@ test('实现查询由统一外部全栈 Agent 接续，不要求本地观测或�
   assert.equal(decision.plan.mode, 'server');
   assert.deepEqual(decision.plan.branches, ['server']);
   assert.deepEqual(decision.plan.remoteSlots, ['compass']);
+  assert.equal(decision.plan.externalScope, 'frontend_backend');
   assert.deepEqual(decision.plan.clientSteps, []);
   assert.equal(decision.plan.correlationReady, false);
   assert.match(decision.plan.reason, /统一外部全栈 Agent/);

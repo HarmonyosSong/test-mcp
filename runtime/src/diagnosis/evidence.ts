@@ -49,6 +49,23 @@ function codepointSlice(value: string, length: number): string {
   return Array.from(value).slice(0, length).join('');
 }
 
+/** 摘录匹配的展示层归一：连续空白折叠为单个空格。反伪造强度不变——非空白内容仍须逐字一致。 */
+function normalizeForExcerptMatch(text: string): string {
+  return text.replace(/\s+/g, ' ');
+}
+
+/** 模型引用片段时习惯在首尾自加省略号；匹配前剥掉，避免展示习惯被误判为伪造。 */
+function normalizeExcerpt(raw: string): string {
+  return raw.trim().replace(/^(?:…|\.\.\.)+/, '').replace(/(?:…|\.\.\.)+$/, '').trim();
+}
+
+/** 空白归一后的连续片段匹配；摘录被剥到为空时没有证明力，视为不匹配。 */
+function excerptMatches(observedText: string, excerpt: string): boolean {
+  const needle = normalizeExcerpt(excerpt);
+  if (!needle) return false;
+  return normalizeForExcerptMatch(observedText).includes(normalizeForExcerptMatch(needle));
+}
+
 // Match Python json.dumps(..., sort_keys=True), whose spaces and Unicode
 // escapes are part of the persisted evidence ID contract.
 function pythonJson(value: unknown): string {
@@ -386,7 +403,7 @@ export class EvidenceLedger {
         }
         throw new EvidenceLedgerError(
           'unknown_evidence_id',
-          `joint_assessment.verified_claims[${claimIndex}] 引用的 ${id} 不在本地证据账本中；consultation、task 和其他外部 ID 不能作为已验证主张的证据。`,
+          `joint_assessment.verified_claims[${claimIndex}] 引用的 ${id} 不在本地证据账本中；consultation、task 和其他外部 ID 不能作为已验证主张的证据。禁止自创可读 ID，只能照抄账本已有 ID。`,
         );
       }
     });
@@ -398,10 +415,10 @@ export class EvidenceLedger {
     for (const citation of draft.evidence) {
       const userText = this.userRefs.get(citation.id);
       if (userText !== undefined) {
-        if (!userText.includes(citation.excerpt.trim())) {
+        if (!excerptMatches(userText, citation.excerpt)) {
           throw new EvidenceLedgerError(
             'excerpt_mismatch',
-            `${citation.id} 是用户输入引用，摘录必须逐字摘自该条用户消息。`,
+            `${citation.id} 是用户输入引用，摘录必须逐字摘自该条用户消息（允许跨行，首尾不要自加省略号）。`,
           );
         }
         resolved.push(EvidenceSchema.parse({
@@ -430,14 +447,14 @@ export class EvidenceLedger {
           .join(', ');
         throw new EvidenceLedgerError(
           'unknown_evidence_id',
-          `${citation.id} 从未被观测。可用 ID(最近 20):${available || '无'}。请照抄清单 ID 或重新观测。`,
+          `${citation.id} 从未被观测。可用 ID(最近 20):${available || '无'}。请照抄清单 ID 或重新观测；禁止自创可读 ID（如 ev-user-语义命名）。`,
         );
       }
       const observedText = this.texts.get(citation.id) ?? observed.excerpt;
-      if (!observedText.includes(citation.excerpt.trim())) {
+      if (!excerptMatches(observedText, citation.excerpt)) {
         throw new EvidenceLedgerError(
           'excerpt_mismatch',
-          `${citation.id} 的摘录必须是观测原文的逐字子串。`,
+          `${citation.id} 的摘录不是该观测原文的连续片段。请从对应工具返回的原文中逐字复制一段（允许跨行，空白差异会被归一，首尾不要自加省略号）；找不到就重新观测。`,
         );
       }
       resolved.push(EvidenceSchema.parse({

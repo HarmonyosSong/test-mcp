@@ -397,6 +397,14 @@ export class LogCenterClient {
       const msg = typeof payload.msg === 'string' ? payload.msg : 'upstream rejected request';
       integrationWarn('logcenter', 'upstream business error', { path, status, code: payload.code, msg });
       if (payload.code === 403) throw new Error(`log_permission_denied: ${msg}`);
+      // SLS 的 key:value 语法只对已建索引的字段生效；上游 ParameterInvalid 翻成可纠正指引，避免模型反复重试同一语法。
+      const invalidKey = /key \(([^)]+)\) is not config as key value config/i.exec(msg)?.[1];
+      if (invalidKey) {
+        throw new Error(
+          `log_query_invalid_key: 该日志库未将 "${invalidKey}" 配置为索引键，key:value 条件对它无效。` +
+          '请改为全文检索（直接写 "短语"，不带 key 前缀）或去掉该条件后重试。',
+        );
+      }
       throw new Error(`log_upstream_error: ${msg}`);
     }
     integrationInfo('logcenter', 'request ok', { path, status, code: payload.code ?? 0 });

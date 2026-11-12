@@ -248,6 +248,44 @@ test('createLogCatalogTools signs and searches with mocked HTTP', async () => {
   assert.equal(requests[0]!.headers['X-Sign-Appid'], 'app-id');
 });
 
+test('SLS 索引键未配置的上游报错被翻译为可纠正指引', async () => {
+  const config = loadRuntimeConfig({
+    HARMONY_AGENT_LOGCENTER_APP_ID: 'app-id',
+    HARMONY_AGENT_LOGCENTER_APP_SECRET: 'app-secret',
+    HARMONY_AGENT_LOGCENTER_BASE_URL: 'https://logcenter.example.test/api',
+    HARMONY_AGENT_LOG_CATALOG: catalogPath,
+  });
+  const tools = await createLogCatalogTools(config, {
+    http: async () => ({
+      status: 200,
+      body: {
+        code: 400,
+        msg: '查询参数错误，请检查检索条件与 SQL 语法 (ErrorCode: ParameterInvalid): key (dev_id) is not config as key value config,if symbol : is  in your log,please wrap : with quotation mark "',
+      },
+    }),
+  });
+  assert.ok(tools);
+  await assert.rejects(
+    () => tools.search_cloud_logs.execute!({
+      vendor: 'aliyun',
+      region: 'cn-beijing',
+      account: '1743276692096170',
+      collection: 'pysy-front-log',
+      topic: 'prod-ios',
+      time: '6h',
+      query: 'dev_id: "stub-device"',
+      size: 40,
+      from: 0,
+    }, {} as never),
+    (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      return message.includes('log_query_invalid_key')
+        && message.includes('"dev_id"')
+        && message.includes('全文检索');
+    },
+  );
+});
+
 test('progress map labels log tools separately from knowledge', () => {
   assert.equal(progressLabelForTool('resolve_log_target'), '正在查询远程日志');
   assert.equal(progressLabelForTool('search_cloud_logs'), '正在查询远程日志');

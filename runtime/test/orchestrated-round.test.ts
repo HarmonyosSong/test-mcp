@@ -399,6 +399,29 @@ test('初始 local 有源码观测和关联信息时自动接续远端，不外�
   });
 });
 
+test('故障诊断缺 traceId 也自动接续外部协查，外发摘要声明关联缺口', async () => {
+  await withHarness(async (harness) => {
+    const remote = remoteRegistry();
+    const scripted = scriptedAgent({
+      local: (input) => completedEvent(input, '本地调查中间结论', localReport()),
+      joint: (input) => completedEvent(input, '联合最终结论', jointReport(input)),
+    });
+    // 老师报障通常只有学员标识和时间窗，没有 traceId/requestId。
+    const result = await startRound(
+      harness, scripted.agent, remote.registry, '学而思HD 绘本页面白屏，学员编号 student-fixture-001，下午两点前后',
+    );
+    assert.equal(result.terminal, 'completed', result.assistantMessage.error ?? '无关联标识接续失败');
+    assert.equal(result.conversation.investigation?.currentPlan
+      && (result.conversation.investigation.currentPlan as { mode: string }).mode, 'server');
+    const consultation = result.conversation.consultations[0]!;
+    assert.equal(consultation.status, 'completed');
+    assert.match(consultation.outbound_text, /绘本页面白屏/);
+    assert.match(consultation.outbound_text, /缺少 traceId\/requestId，请按用户问题中的学员标识与时间窗关联/);
+    assert.deepEqual(remote.calls, ['resolve', 'invoke']);
+    assert.deepEqual(scripted.inputs.map((input) => input.phase ?? 'local'), ['local', 'joint']);
+  });
+});
+
 test('排行榜实现查询在本地知识不足时自动协查，不要求 traceId 或老师审批', async () => {
   await withHarness(async (harness) => {
     const remote = remoteRegistry();

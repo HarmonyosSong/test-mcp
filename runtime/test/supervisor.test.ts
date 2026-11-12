@@ -77,7 +77,7 @@ test('本地报告给出明确服务端路由时自动接续并完成远端分�
   assert.equal(result.budget.remoteCallsUsed, 1);
 });
 
-test('缺少关联信息时请求补充事实，不发起授权或远端调用', async () => {
+test('缺少关联信息时仍按显式路由自动接续外部协查，缺口由外发摘要声明', async () => {
   const { value, calls } = input();
   value.plan.correlationReady = false;
   value.branches.client = branch('client', {
@@ -86,8 +86,9 @@ test('缺少关联信息时请求补充事实，不发起授权或远端调用',
     hasObservedEvidence: true,
   }, calls);
   const result = await new RuntimeSupervisor().run(value);
-  assert.equal(result.status, 'needs_user_facts');
-  assert.deepEqual(calls, ['run:client']);
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(calls, ['run:client', 'approve', 'run:server']);
+  assert.deepEqual(result.planHistory.map((item) => item.mode), ['local', 'server']);
 });
 
 test('实现查询经授权后接续统一外部 Agent，不要求本地观测或关联信息', async () => {

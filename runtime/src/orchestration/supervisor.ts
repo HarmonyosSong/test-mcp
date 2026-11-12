@@ -42,7 +42,7 @@ export type SupervisorRunInput = {
 };
 
 export type SupervisorRunResult = {
-  status: 'completed' | 'failed' | 'cancelled' | 'needs_user_facts';
+  status: 'completed' | 'failed' | 'cancelled';
   results: BranchResult[];
   planHistory: InvestigationPlan[];
   budget: ReturnType<InvestigationBudgetTracker['snapshot']>;
@@ -105,7 +105,6 @@ export class RuntimeSupervisor {
 
     let results: BranchResult[] = [];
     let reason: string | undefined;
-    let needsUserFacts = false;
     try {
       if (input.plan.mode === 'parallel') {
         // 先启动客户端，再让授权与远端分支独立推进，授权等待不阻塞本地调查。
@@ -131,10 +130,7 @@ export class RuntimeSupervisor {
             remoteCallsExhausted: usage.remoteCallsUsed >= input.plan.budget.maxRemoteCalls,
             handoffsExhausted: usage.handoffRoundsUsed >= input.plan.maxHandoffRounds,
           });
-          if (decision.type === 'needs_user_facts') {
-            needsUserFacts = true;
-            reason = decision.reason;
-          } else if (decision.type === 'continue_external' && tracker.tryConsumeHandoff()) {
+          if (decision.type === 'continue_external' && tracker.tryConsumeHandoff()) {
             planHistory.push(decision.plan);
             results.push(await runServer(decision.plan));
           } else if (decision.type === 'finish') {
@@ -147,15 +143,13 @@ export class RuntimeSupervisor {
       parentSignal?.removeEventListener('abort', abortFromParent);
     }
 
-    const status = needsUserFacts
-      ? 'needs_user_facts'
-      : context.abortSignal.aborted
-        ? 'cancelled'
-        : results.some((result) => result.status === 'completed')
+    const status = context.abortSignal.aborted
+      ? 'cancelled'
+      : results.some((result) => result.status === 'completed')
+        ? 'completed'
+        : results.some((result) => result.status === 'skipped')
           ? 'completed'
-          : results.some((result) => result.status === 'skipped')
-            ? 'completed'
-            : 'failed';
+          : 'failed';
     return { status, results, planHistory, budget: tracker.snapshot(), ...(reason ? { reason } : {}) };
   }
 }

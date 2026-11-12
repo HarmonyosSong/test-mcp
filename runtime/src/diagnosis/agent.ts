@@ -574,7 +574,7 @@ function promptFor(
 - 诊断流程只做只读定位和证据收集，不提出修复方案、代码片段、补丁或“改成……”建议。提交报告后的文字总结必须与报告一致，也不得追加修复建议。
 - 不得编造 evidence ID、摘录、文件位置、工具结果或验证结论。
 - 本地 Knowledge MCP 只代表当前助手的本地策展知识。Compass 槽位连接统一外部全栈 Agent，覆盖本项目前端、H5 和服务端；本地调查轮不直连其内部知识、代码或日志，也不要声称已经查询。需要这些能力时，通过结构化 next_action 请求 Supervisor 协查。
-- responsibility 只表示当前证据支持的责任判断，不代表远端根因已验证，也不作为是否协查的路由门槛。需要统一外部全栈 Agent 时，用 next_action={target:'external',question:'明确的下一步调查问题'}；需要用户补充故障事实时 target='user'；无需继续时 next_action=null。项目内规则或实现查询经本地知识检索仍无法可靠回答时，不要只说“知识库没有、请补充信息”：提交 verdict='insufficient_evidence' 和对应 task_type，没有证据时 responsibility 保持 unknown，并给出 target='external' 的明确问题。此类协查不要求本地源码/日志观测或 traceId，也不代表已确认服务端责任；提交结构化路由后由 Runtime 自动执行，不向老师请求技术审批。故障诊断的跨侧调查仍须满足本地观测与请求关联要求。不得自行调用或声称已经调用远端 Agent。
+- responsibility 只表示当前证据支持的责任判断，不代表远端根因已验证，也不作为是否协查的路由门槛。需要统一外部全栈 Agent 时，用 next_action={target:'external',question:'明确的下一步调查问题'}；需要用户补充故障事实时 target='user'；无需继续时 next_action=null。项目内规则或实现查询经本地知识检索仍无法可靠回答时，不要只说“知识库没有、请补充信息”：提交 verdict='insufficient_evidence' 和对应 task_type，没有证据时 responsibility 保持 unknown，并给出 target='external' 的明确问题。此类协查不要求本地源码/日志观测或 traceId，也不代表已确认服务端责任；提交结构化路由后由 Runtime 自动执行，不向老师请求技术审批。故障诊断的跨侧调查须有本地源码或日志观测支撑；缺少 traceId/requestId 时不阻断协查，Runtime 会在外发摘要中声明关联缺口。不得自行调用或声称已经调用远端 Agent。
 ${phase.kind === 'local' && phase.clientSteps?.includes('observe') ? `
 以下客户端观察约束仅适用于 task_type=incident；规则或实现查询不得伪造学员现场，也不要求为了查询接口实现而查询故障日志。
 客户端调查顺序：
@@ -714,7 +714,7 @@ export class DiagnosisAgent {
     });
     const submitReport = createTool({
       id: "submit_diagnosis_report",
-      description: "提交经过证据账本校验的结构化诊断报告。",
+      description: "提交经过证据账本校验的结构化诊断报告。evidence[].id 只能照抄工具返回的 ev- 开头 ID 或「可引用的用户输入」清单中的 ID，禁止自创；excerpt 必须从对应观测原文逐字复制一段连续内容（允许跨行，首尾不要自加省略号）。",
       inputSchema: DiagnosisReportDraftSchema,
       execute: async (draft) => {
         try {
