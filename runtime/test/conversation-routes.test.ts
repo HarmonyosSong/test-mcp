@@ -12,6 +12,7 @@ import { createConversationRoutes } from '../src/http/conversations.js';
 import { ProductStore } from '../src/product/store.js';
 import type { DiagnosisAgent, DiagnosisRunInput } from '../src/diagnosis/agent.js';
 import type { CapabilityMcp } from '../src/capabilities/mcp.js';
+import { RepositoryGitError } from '../src/capabilities/repository.js';
 import type { ModelConfiguration } from '../src/model/configuration.js';
 import { redactSensitiveText } from '../src/security/redaction.js';
 import { InMemoryRunAdmission } from '../src/orchestration/admission.js';
@@ -217,6 +218,56 @@ test('空会话的首条提示词会动态绑定对应平台、形态和版本�
     assert.equal(saved.form_factor, 'pad');
     assert.equal(saved.version, '5.106.5');
     assert.equal(saved.build, '2225');
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('源码版本歧义不阻断用户消息，先进入调查并保留可恢复限制', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mastra-conversation-source-deferred-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  let diagnosisRuns = 0;
+  const routes = createConversationRoutes(
+    store,
+    {
+      async *stream(input: DiagnosisRunInput) {
+        diagnosisRuns += 1;
+        assert.deepEqual(input.conversation.source_limitations, [
+          '源码快照暂未绑定，本轮先查询关联日志；确认产品线、形态或版本后下一轮自动重试。',
+        ]);
+        yield { type: 'completed', text: '已进入日志调查', report: null, evidence_state: {}, messages_state: [], tool_usage: {} };
+      },
+    } as unknown as DiagnosisAgent,
+    { createKnowledgeSession: async () => null } as unknown as CapabilityMcp,
+    { enabled: true, redact: (value: string) => value } as unknown as ModelConfiguration,
+    {
+      createConversationSource: async () => {
+        throw new RepositoryGitError('version_ambiguous: android/latest 命中多个产品线');
+      },
+    },
+  );
+  try {
+    const created = await routes.request('/conversations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: '先查日志' }),
+    });
+    assert.equal(created.status, 201);
+    const conversation = await created.json() as { id: string };
+    const response = await routes.request(`/conversations/${conversation.id}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: '请查 Android 学员编号 233021794099 的问题' }),
+    });
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /RUN_FINISHED/);
+    assert.equal(diagnosisRuns, 1);
+    const saved = await store.getConversation(conversation.id);
+    assert.equal(saved.workspace_path, null);
+    assert.deepEqual(saved.source_limitations, [
+      '源码快照暂未绑定，本轮先查询关联日志；确认产品线、形态或版本后下一轮自动重试。',
+    ]);
   } finally {
     await store.close();
     await rm(directory, { recursive: true, force: true });

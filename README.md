@@ -192,7 +192,7 @@ LogCenter 能力：Catalog 双 source（阿里云 SLS 产品埋点 + 未来云 A
 用户提示词/关联日志 -> 解析端与版本 -> version-registry 选择 ref/commit -> GitLab archive -> 固定快照 -> 只读 MCP 检查
 ```
 
-版本登记表使用 `version-registry/<platform>/<product-line>.yaml`，Runtime 启动时加载并只接受 `verified: true` 的 commit。Web 新建会话不要求预选端、仓库或版本：Runtime 先读取用户提示词中的显式平台、产品线、形态、版本和构建，再使用已关联 LogCenter 事实补齐上下文；如果产品线未写出但平台、版本和形态只命中一条登记范围，也会自动补齐。未提供版本时选择唯一范围内最新已核验版本/构建；上下文不足或冲突时不猜测。随后校验 GitLab commit，物化登记的 shell 与 component/config archive，生成只读组合工作区。缺映射、版本歧义、commit 不符或快照未准备均失败关闭；会话一旦绑定固定 commit，后续不会被远端分支变化影响。详细设计见 [`docs/multi-platform-version-snapshot-design.md`](docs/multi-platform-version-snapshot-design.md)。
+版本登记表使用 `version-registry/<platform>/<product-line>.yaml`，Runtime 启动时加载并只接受 `verified: true` 的 commit。Web 新建会话不要求预选端、仓库或版本：Runtime 先读取用户提示词中的显式平台、产品线、形态、版本和构建，再使用已关联 LogCenter 事实补齐上下文；如果产品线未写出但平台、版本和形态只命中一条登记范围，也会自动补齐。未提供版本时选择唯一范围内最新已核验版本/构建；上下文不足或冲突时不猜测，也不在用户发送消息时直接返回版本错误，有学员编号/uid 时先查询关联日志，仍无法消歧再由助手追问。随后校验 GitLab commit，物化登记的 shell 与 component/config archive，生成只读组合工作区；快照暂未准备时本轮先保留日志调查，确认上下文后下一轮自动重试。会话一旦绑定固定 commit，后续不会被远端分支变化影响。详细设计见 [`docs/multi-platform-version-snapshot-design.md`](docs/multi-platform-version-snapshot-design.md)。
 
 ## 数据迁移
 
