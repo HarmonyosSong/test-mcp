@@ -38,7 +38,8 @@ test('loads safe defaults and exposes health metadata', async () => {
       const failed = await app.request('/api/test-error');
       assert.equal(failed.status, 500);
       assert.equal(JSON.stringify(await failed.json()).includes(secret), false);
-      assert.equal(logged.join(' ').includes(secret), false);
+      // 2026-11-13 起不脱敏：错误日志保留原始内容（含 env 密钥值），HTTP 响应仍为通用文案。
+      assert.equal(logged.join(' ').includes(secret), true);
     } finally {
       console.error = originalConsoleError;
       if (previousSecret === undefined) delete process.env[secretName];
@@ -69,7 +70,7 @@ test('loads safe defaults and exposes health metadata', async () => {
       if (previousSecret === undefined) delete process.env[secretName];
       else process.env[secretName] = previousSecret;
     }
-    assert.equal(logged.join(' ').includes(secret), false);
+    assert.equal(logged.join(' ').includes(secret), true);
 
     const notFound = await app.request(api('/not-a-product-route'), {
       headers: authedGetHeaders(cookie),

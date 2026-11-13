@@ -699,7 +699,7 @@ test('message stream persists completion and emits the stable AG-UI terminal seq
   }
 });
 
-test('逐字符文本流保留 uid/学员编号明文，电话仍脱敏', async () => {
+test('逐字符文本流不脱敏：uid/学员编号与电话均明文保留', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'mastra-stream-privacy-'));
   const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
   const conversation = await store.createConversation();
@@ -741,12 +741,12 @@ test('逐字符文本流保留 uid/学员编号明文，电话仍脱敏', async 
     const streamedText = [...body.matchAll(/event: TEXT_MESSAGE_CONTENT\ndata: (.+)\n/g)]
       .map((match) => (JSON.parse(match[1]!) as { delta: string }).delta).join('');
     assert.equal(streamedText.includes(learnerId), true);
-    assert.equal(streamedText.includes(phone), false);
+    assert.equal(streamedText.includes(phone), true);
     assert.match(streamedText, /继续检查日志/);
     const saved = await store.getConversation(conversation.id);
     const assistant = saved.messages.find((message) => message.role === 'assistant');
     assert.equal(assistant?.content.includes(learnerId), true);
-    assert.equal(assistant?.content.includes(phone), false);
+    assert.equal(assistant?.content.includes(phone), true);
     assert.equal(assistant?.status, 'completed');
     const user = saved.messages.find((message) => message.role === 'user');
     assert.equal(user?.content, inputText);

@@ -752,8 +752,9 @@ export async function createLogCatalogTools(
       observed_platform: observedPlatform,
       observed_product_line: matched.length > 0 ? candidate.product_line : null,
       observed_version: version ? safeText(version) : null,
-      device_ref: device ? privacy.pseudonym('device_id', device) : null,
-      session_ref: session ? privacy.pseudonym('session_id', session) : null,
+      // 不脱敏（2026-11-13 起内网全链路明文）：设备/会话引用直接保留原始值。
+      device_ref: device ? safeText(device) : null,
+      session_ref: session ? safeText(session) : null,
       platform_conflict: matched.length > 0 && platformConflict,
     });
     const fieldsValue = sanitized.value;

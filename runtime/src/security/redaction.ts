@@ -1,12 +1,10 @@
-const SECRET_ENV_NAME = /(key|token|secret|password|credential|authorization)/i;
-
-export function redactSensitiveText(value: string, env: NodeJS.ProcessEnv = process.env): string {
-  let result = value.replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [REDACTED]');
-  for (const [name, secret] of Object.entries(env)) {
-    if (!SECRET_ENV_NAME.test(name) || !secret || secret.length < 4) continue;
-    result = result.split(secret).join('[REDACTED]');
-  }
-  return result.replace(/([?&](?:api[_-]?key|access[_-]?token|token|secret|password)=)[^&#\s]*/gi, '$1[REDACTED]');
+/**
+ * 不脱敏（2026-11-13 用户决定）：全链路内网协作排查，文本一律原样返回，
+ * 包括 Bearer 凭证、URL 密钥参数与环境变量密钥值。
+ * 函数边界保留，便于未来需要时恢复脱敏策略。
+ */
+export function redactSensitiveText(value: string, _env: NodeJS.ProcessEnv = process.env): string {
+  return value;
 }
 
 export function redactRecord<T>(value: T, redact: (text: string) => string): T {

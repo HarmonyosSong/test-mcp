@@ -16,7 +16,7 @@
 | 项目 | 当前说明 |
 | --- | --- |
 | 学员标识、设备/会话发现和 `observed_platform` | 私有上下文和有界发现框架已实现；生产 Catalog 尚未核实完整身份/平台字段 |
-| 远程 SLS 日志证据化 | 目标绑定、身份匹配、脱敏和 `observation_context` 入账已实现；未关联条目不收录 |
+| 远程 SLS 日志证据化 | 目标绑定、身份匹配和 `observation_context` 入账已实现（2026-11-13 起明文不脱敏）；未关联条目不收录 |
 | 平台/版本 → 固定源码快照 | 唯一映射、提示词/日志补齐上下文、后续轮次绑定和本地精确快照选择器已实现；正在运行轮次不热切换 |
 | 多端知识库与端上下文完整产品化 | 仍需 Android/iOS 真实端到端验收 |
 | 代码索引导航 | 由 Repository MCP 可选挂载，不属于 Supervisor 编排依赖；导航结果不能进入 EvidenceLedger |
@@ -34,7 +34,7 @@
 - 会话级防重入：Web 同会话并发返回 409；全局 `RunAdmission` 限制活跃轮次；IM 保留按用户排队语义。
 - `createRoundCapabilitySession`（`capabilities/session.ts`）：按轮挂载知识/仓库/日志工具，统一取消与逆序清理，命名冲突拒绝整个挂载。
 - `AgentSlotRegistry` + `CompassSlot`：真实 Compass 客户端已包装为远端槽位，由 Supervisor 调用；不是模型可直接绕过的自由工具。
-- `EvidenceLedger`：会话级账本，按轮 restore/save；源码、可溯源 hilog 及通过目标/身份关联门禁的脱敏远程日志入账，每条远程日志携带 Runtime 控制的 `observation_context`。
+- `EvidenceLedger`：会话级账本，按轮 restore/save；源码、可溯源 hilog 及通过目标/身份关联门禁的远程日志（明文）入账，每条远程日志携带 Runtime 控制的 `observation_context`。
 - `ClientObservationGate`：绑定源码的客户端分支先观察再读源码；门禁拒绝不污染同参数源码调用的失败缓存。
 
 ## 3. 总体结构
@@ -57,7 +57,7 @@
 
 1. **Supervisor 是确定性编排代码，不是 Agent**。它不调用模型做分派；分流依据结构化输入（问题文本关键词、服务/环境、关联标识、会话端）加显式规则，`reason` 落库可审计。引入模型分流后置，需单独评审。
 2. **客户端调查能力复用**：本地工具执行与证据校验保持同一入口；报告增加初步路由字段和联合阶段提示词（§4.5）。Supervisor 在分支外做 fan-out/fan-in 与自动接续。
-3. **服务端分支=一次受控 Slot 调用**，使用持久化 `ExternalConsultation` 固定脱敏摘要和 digest，由 Runtime 自动授权并在同一轮执行；不允许模型绕过 Supervisor 直接调用叶子能力，也不要求老师审批。
+3. **服务端分支=一次受控 Slot 调用**，使用持久化 `ExternalConsultation` 固定结构摘要和 digest，由 Runtime 自动授权并在同一轮执行；不允许模型绕过 Supervisor 直接调用叶子能力，也不要求老师审批。
 4. **技术路由不让用户决策**：初始 `local` 发现跨侧线索后可自动接续 `server`，远端返回后自动聚合，必要时执行有界 handoff（§4.4）。IT 老师只描述问题和补充故障事实，不需要知道存在另一个 Agent。
 
 ## 4. Supervisor 设计
@@ -111,7 +111,7 @@ interface Branch {
 
 - **ClientBranch**：内部就是现有 `DiagnosisAgent.stream()` 封装；事件经学员隐私边界后传给 SSE 适配层。`clientSteps=['observe','source']` 时由 Runtime 工具门禁保证顺序：知识规则问答可直接结束，但源码读取/搜索必须先完成身份关联日志观察、粘贴 hilog 解析，或进入明确的观察降级。
 - 观察阶段目录 `not_found/not_covered`、空结果、身份未匹配、查询失败或日志能力不可用允许降级，避免能力缺口锁死整轮；降级只开放有条件的源码观察，不代表平台已确认。目录 `ambiguous` 和仅执行 count 不会提前开放源码。门禁错误不污染同一源码调用的失败缓存，观察完成后可按原参数重试。
-- **ServerBranch**：Runtime 为固定脱敏摘要建立自动授权记录后，由 Registry 调用 Slot；任务级 `CancelTask` 随轮次取消传播，没有面向老师的确认等待。
+- **ServerBranch**：Runtime 为固定结构摘要建立自动授权记录后，由 Registry 调用 Slot；任务级 `CancelTask` 随轮次取消传播，没有面向老师的确认等待。
 - 任一侧失败/cancelled 不影响另一侧已完成结果；Supervisor 汇总时保留各自状态。
 
 ### 4.3 聚合与预算
@@ -130,7 +130,7 @@ interface Branch {
   → 已有明确跨侧线索？
       ├─ 否 → 汇总并结束
       └─ 是 → Supervisor 自动创建下一阶段计划 / ExternalConsultation
-              → Runtime 校验固定脱敏摘要并自动授权
+              → Runtime 校验固定结构摘要并自动授权
               → 同一轮执行下一分支
               → 联合汇总；仍有明确缺口且预算足够时有界 handoff
 ```
@@ -176,7 +176,7 @@ interface Branch {
 | ServerBranch | **零接触**：不持有、不读写账本 | `external_findings`（RemoteConclusion） |
 | Supervisor | 只读：聚合时读取证据快照用于汇总展示 | 不新增、不修改证据条目 |
 
-Compass 等远端 Agent 返回的任何文本都不能经任何路径写入账本——没有「把外部结论登记为证据」的工具或 API，这不是提示词约束，是代码层不存在的路径。LogCenter 不是远端 Agent 结论通道；只有其目标已绑定且匹配当前身份的脱敏实际日志条目，才可经 Runtime 观察适配器入账。
+Compass 等远端 Agent 返回的任何文本都不能经任何路径写入账本——没有「把外部结论登记为证据」的工具或 API，这不是提示词约束，是代码层不存在的路径。LogCenter 不是远端 Agent 结论通道；只有其目标已绑定且匹配当前身份的实际日志条目（明文），才可经 Runtime 观察适配器入账。
 
 ### 6.2 联合报告的引用规则
 
@@ -272,7 +272,7 @@ Compass 等远端 Agent 返回的任何文本都不能经任何路径写入账�
 确定性验收（自动化）：
 
 1. 远端未配置或槽位停用 ⇒ Registry 无 compass 可用槽位，计划永远 `local`；新工单即使命中服务端特征并带 traceId，没有本地日志观测也仍先 `local`；已有 `kind=log` 观测且满足其余条件时才可直接 `parallel`。
-2. 新协查自动执行且只发送已保存的固定脱敏 `outbound_text`，不产生用户审批；历史 pending 记录未确认前 mock 端零 HTTP，批准后仍只能发送原摘要。
+2. 新协查自动执行且只发送已保存的固定结构 `outbound_text`，不产生用户审批；历史 pending 记录未确认前 mock 端零 HTTP，批准后仍只能发送原摘要。
 3. 服务端分支失败/取消，客户端已完成事实保留，报告含缺口说明。
 4. 全局闸门：并发达到上限时第 N+1 个 Web 请求得 429 且不持久化消息；终态后槽位释放可再进；`waiting_confirmation` 轮次不占槽位，恢复轮次重新走准入。
 5. 同会话并发仍 409；不同会话并行完成且证据账本互不污染。

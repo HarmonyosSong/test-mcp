@@ -37,9 +37,9 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 2. `createInvestigationPlan()` 以确定性规则生成 `local`、`server` 或 `parallel` 计划。远端计划带有 `externalScope=frontend_backend`，明确 Compass 当前承载的是统一前端、H5 和服务端 Agent；`server` 仅是旧持久化分支名。`clientSteps` 明确客户端是否执行 `observe`、`source`；计划、理由、预算和分支状态随会话保存。
 3. `createRoundCapabilitySession()` 按轮创建知识、仓库和可选日志工具，统一传播 AbortSignal，检查工具冲突，并在结束时取消和逆序清理。学员身份通过 Runtime 私有内存上下文传给日志工具，不进入模型 schema。
 4. 本地分支复用 `DiagnosisAgent`。Runtime 先按用户提示词和已确认日志事实解析源码范围，再绑定 `version-registry` 选出的固定快照；故障诊断绑定源码时执行 `observe → source`：过早源码调用会被 Runtime 拒绝；目录不覆盖、空结果、身份未匹配或查询失败会降级，但不得把降级写成平台确认。
-5. 本地报告通过 `submit_diagnosis_report` 和 EvidenceLedger 校验。源码读取/搜索、可追溯到用户输入的 hilog，以及目标已绑定且匹配当前学员身份的脱敏远程日志可产生观测；知识和 Catalog 永远只是线索。
+5. 本地报告通过 `submit_diagnosis_report` 和 EvidenceLedger 校验。源码读取/搜索、可追溯到用户输入的 hilog，以及目标已绑定且匹配当前学员身份的远程日志（内网明文）可产生观测；知识和 Catalog 永远只是线索。
 6. 本地结构化结果以 `next_action.target=external` 和明确问题表达外部协查；`responsibility` 只表示当前证据的责任判断，不再兼任路由条件。规则与实现查询在本地知识不足时可转统一外部全栈 Agent，不要求源码/日志观测或 traceId；故障诊断仍要求本地观测和请求关联。满足条件后由 Runtime 自动调用，老师不需要审批或理解 Compass；预算、handoff 上限和远端结论隔离规则不变。
-7. 外部调查先创建带固定脱敏摘要和 digest 的 `ExternalConsultation`，由 Runtime 按策略自动授权并在同一轮调用远端、生成联合报告。老师只看到通俗进度和结果；历史 `pending` 记录仍可通过原审批接口兼容恢复，恢复轮次重新走准入，不重复已完成的本地调查。
+7. 外部调查先创建带固定结构摘要和 digest 的 `ExternalConsultation`，由 Runtime 按策略自动授权并在同一轮调用远端、生成联合报告。老师只看到通俗进度和结果；历史 `pending` 记录仍可通过原审批接口兼容恢复，恢复轮次重新走准入，不重复已完成的本地调查。
 8. Compass 经 Agent Slot 调用，支持 Agent Card、JSON-RPC SSE、超时、取消和输出限长。远端结论写入 `external_findings`，不能进入本地 `evidence_refs`。
 9. 联合阶段由培优问题排查主 Agent 根据本地报告与结构化远端结论生成 `joint_assessment`。`verified_claims` 只能引用本地账本证据，外部 task/consultation ID 不能冒充观测。
 10. 工具终态和证据快照先持久化再发送 SSE；最终 completed/failed/cancelled 状态在流结束前保存。启动恢复会修复遗留 streaming，并保留可恢复的 pending 审批。
@@ -66,7 +66,7 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 | 可追溯到用户输入的 hilog 解析 | `EvidenceLedger`，`kind=log` | 可以 |
 | 用户消息 | `ev-user-*` 用户引用 | 只能证明报告现象，不能单独证明技术根因 |
 | Knowledge MCP / Skill / Catalog | 导航与判据线索 | 不可以 |
-| 关联 `search_cloud_logs` / `discover_client_sessions` 条目 | 脱敏后逐条进入 `EvidenceLedger`，携带 Runtime `observation_context` | 目标绑定且身份匹配时可以；未关联条目直接拒绝 |
+| 关联 `search_cloud_logs` / `discover_client_sessions` 条目 | 原文逐条进入 `EvidenceLedger`，携带 Runtime `observation_context` | 目标绑定且身份匹配时可以；未关联条目直接拒绝 |
 | Compass / 其他远端 Agent | `external_findings` | 不能作为本地已验证观测 |
 | 代码索引图节点/边 | Repository MCP 内部导航结果 | 不可以，必须回读同一快照源码 |
 
@@ -87,7 +87,7 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 
 `product_conversations` 保存消息、证据、调查计划、分支状态、协查记录、外部结论和 Slot 审计；`product_snapshots` 保存动态版本登记产生的固定快照元数据。`product_repositories` 仅为旧数据迁移保留，不参与当前源码选择。`.data/knowledge-queries.jsonl` 与 `.data/knowledge-cases/` 是可重建的观测产物，不是对话事实源。
 
-模型配置保存在 owner-only `.data/model-config.json`，不进入产品数据库。通用凭证脱敏之外，Runtime 每轮从用户明确标签构造学员隐私上下文：原始学员编号/电话只在内存中用于授权日志匹配，工具结果、事件、证据和案例归档只保留脱敏文本或本轮伪名。Compass 及其模型链路均在内网，外发为 Runtime 固定结构摘要：用户原文、traceId/requestId 关联信息（缺失时声明关联缺口）、本地已校验证据摘录（含学员标识）、本地判断与具体协查问题；学员标识不伪名化，缺 traceId/requestId 不阻断外发。
+模型配置保存在 owner-only `.data/model-config.json`，不进入产品数据库。2026-11-13 起全链路不脱敏（用户决定，内网协作排查）：学员编号/电话/凭证在工具结果、事件、证据、案例归档和日志中均明文保留；Runtime 每轮仍从用户明确标签构造学员标识上下文，用于日志匹配与 matched_identifiers 观测元数据。Compass 及其模型链路均在内网，外发为 Runtime 固定结构摘要：用户原文、traceId/requestId 关联信息（缺失时声明关联缺口）、本地已校验证据摘录（含学员标识）、本地判断与具体协查问题；学员标识不伪名化，缺 traceId/requestId 不阻断外发。
 
 ## 7. 当前能力状态
 
@@ -97,7 +97,7 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 | Supervisor、自动跨侧、预算和取消 | 已实现并有离线/恢复测试 |
 | Compass Agent Slot、自动协查和联合报告 | 已接入；真实 Compass A2A 已做过受控联调，对端按统一外部全栈 Agent 使用 |
 | 多用户会话隔离与全局并发闸门 | 单进程已实现 |
-| LogCenter Catalog/SLS 四工具 | 目标绑定、身份发现、脱敏和关联入账框架已实现；真实生产字段覆盖仍待验收 |
+| LogCenter Catalog/SLS 四工具 | 目标绑定、身份发现、观测和关联入账框架已实现；真实生产字段覆盖仍待验收 |
 | 学员日志 → 平台确认 → 日志证据 | 合成 mock 链路已实现；真实学员与 HarmonyOS/具体业务字段尚未联调 |
 | Android/iOS/HarmonyOS 精确版本快照选择 | 登记表加载、精确选择、GitLab archive 物化、多仓组合挂载、提示词/日志上下文补齐和后续轮次绑定已实现；正在运行轮次不热切换 |
 | Repository MCP 内部代码导航 | 可选挂载 `search_code_symbols`、`get_code_outline`、`trace_code_path`；未配置时保留原工具，失败时明确报错并引导文本搜索。真实鸿蒙工程的导航与回读已做冒烟验证，三端精度仍待验收 |

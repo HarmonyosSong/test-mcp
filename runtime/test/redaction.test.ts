@@ -3,14 +3,14 @@ import test from 'node:test';
 
 import { redactRecord, redactRecordInPlace, redactSensitiveText } from '../src/security/redaction.js';
 
-test('redacts bearer headers, secret query parameters, and configured secret environment values', () => {
+test('不脱敏：Bearer、密钥参数与环境变量密钥值全部原样保留', () => {
   const result = redactSensitiveText(
     'Authorization: Bearer opaque-token api_key=opaque-token other=ok opaque-token',
     { SERVICE_ACCESS_TOKEN: 'opaque-token' },
   );
-  assert.equal(result.includes('opaque-token'), false);
-  assert.match(result, /Bearer \[REDACTED\]/);
-  assert.match(result, /api_key=\[REDACTED\]/);
+  assert.equal(result.includes('opaque-token'), true);
+  assert.match(result, /Bearer opaque-token/);
+  assert.match(result, /api_key=opaque-token/);
   assert.match(result, /other=ok/);
 });
 

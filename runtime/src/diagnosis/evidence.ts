@@ -420,7 +420,7 @@ export class EvidenceLedger {
           source: `logcenter:${name}`,
           location,
           excerpt: codepointSlice(text, 2_000),
-          supports: '已绑定目标并匹配当前用户标识的脱敏远程日志；因果关系仍需判断',
+          supports: '已绑定目标并匹配当前用户标识的远程日志（内网明文，不脱敏）；因果关系仍需判断',
           observation_context: context,
         });
         if (!this.add(evidence, text)) {

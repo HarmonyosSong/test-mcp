@@ -201,7 +201,8 @@ function redactConversationForPersistence(
   conversation: ConversationRecord,
   redact: (text: string) => string,
 ): ConversationRecord {
-  // 用户原文仍由会话所有者保存，后续轮次身份识别依赖它；其他运行时产物统一脱敏。
+  // 用户原文仍由会话所有者保存，后续轮次身份识别依赖它；2026-11-13 起 redact 为透传（内网不脱敏），
+  // redactRecordInPlace 实际不再改写内容，保留调用以维持持久化边界。
   const originals = new Map(conversation.messages.map((message) => [message.id, message.content]));
   // 外发摘要与用户原文同级（内网全链路），持久化保留实际发送的原文，保持与 digest 一致。
   const outboundOriginals = new Map(conversation.consultations.map((item) => [item.id, item.outbound_text]));
@@ -1023,7 +1024,7 @@ function createAutomaticConsultation(
     runId,
     reason: plan.reason,
     outboundText: sections.join('\n\n'),
-    // Compass 及其模型链路均在内网，外发使用用户原文（入库时已做通用凭证脱敏），不再伪名化学员标识。
+    // Compass 及其模型链路均在内网，外发使用用户原文，学员标识与凭证均不伪名化、不脱敏。
     redact: (text) => text,
   });
   // approved 在这里表示 Runtime 已按固定摘要策略自动授权，不代表老师执行过审批。

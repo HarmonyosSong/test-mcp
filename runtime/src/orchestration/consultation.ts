@@ -44,7 +44,8 @@ export function createExternalConsultation(input: {
   if (!Number.isInteger(ttlMs) || ttlMs <= 0) throw new Error('consultation ttlMs must be positive');
   const outboundText = input.redact(input.outboundText).trim();
   if (!outboundText) {
-    throw new ExternalConsultationError('redaction_failed', '外发内容脱敏后为空');
+    // 错误码保持兼容；2026-11-13 起 redact 为透传（不脱敏），此处仅防空文本。
+    throw new ExternalConsultationError('redaction_failed', '外发内容为空');
   }
   const timestamp = now.toISOString();
   return {

@@ -22,7 +22,7 @@ function pending() {
   });
 }
 
-test('确认前不能发送，批准后只能发送固定脱敏文本', () => {
+test('确认前不能发送，批准后只能发送固定外发文本', () => {
   const consultation = pending();
   assert.equal(consultation.status, 'pending');
   assert.equal(consultation.attachment_items.length, 0);

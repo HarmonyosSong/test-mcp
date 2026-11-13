@@ -34,7 +34,7 @@ test('多条用户消息按字段合并，同一身份字段以最近一次明�
   ]), identity);
 });
 
-test('脱敏时 uid/learner 明文保留，电话与凭证仍脱敏，匹配事实照记', () => {
+test('不脱敏：全部内容明文保留，匹配事实照记', () => {
   const privacy = new ClientLogPrivacy(logIdentifiers, Buffer.alloc(32, 7));
   const result = privacy.sanitize({
     uid: identity.learnerId,
@@ -49,12 +49,11 @@ test('脱敏时 uid/learner 明文保留，电话与凭证仍脱敏，匹配事�
   ]);
   const serialized = JSON.stringify(result.value);
   assert.equal(serialized.includes(identity.learnerId), true);
-  assert.equal(serialized.includes('13800000000'), false);
-  assert.equal(serialized.includes('13900000000'), false);
-  assert.equal(serialized.includes('fixture-secret'), false);
-  assert.equal(serialized.includes('fixture-token'), false);
+  assert.equal(serialized.includes('13800000000'), true);
+  assert.equal(serialized.includes('13900000000'), true);
+  assert.equal(serialized.includes('fixture-secret'), true);
+  assert.equal(serialized.includes('fixture-token'), true);
   assert.equal(/learner_id:[a-f0-9]{16}/.test(serialized), false);
-  assert.match(serialized, /redacted-phone/);
 });
 
 test('日志条目 ID 对同一 uid 稳定，uid 明文仍可出现在条目内容中', () => {
@@ -67,7 +66,7 @@ test('日志条目 ID 对同一 uid 稳定，uid 明文仍可出现在条目内�
   assert.match(first, /^log-[a-f0-9]{24}$/);
 });
 
-test('跨文本增量拆分时 uid 明文保留，电话仍脱敏', () => {
+test('跨文本增量拆分时 uid 与电话均明文保留', () => {
   const input = `学员编号: ${identity.learnerId}; 联系电话: 13800000000`;
   const privacy = createClientLogPrivacy([input], false);
   const redact = Object.assign(
@@ -83,15 +82,6 @@ test('跨文本增量拆分时 uid 明文保留，电话仍脱敏', () => {
   actual += stream.flush();
   assert.equal(actual, expected);
   assert.equal(actual.includes(identity.learnerId), true);
-  assert.equal(actual.includes('13800000000'), false);
+  assert.equal(actual.includes('13800000000'), true);
   assert.equal(actual.endsWith('尾部'), true);
-});
-
-test('不同轮次密钥不能关联同一身份伪名', () => {
-  const first = new ClientLogPrivacy(logIdentifiers, Buffer.alloc(32, 1));
-  const second = new ClientLogPrivacy(logIdentifiers, Buffer.alloc(32, 2));
-  assert.notEqual(
-    first.pseudonym('learner_id', identity.learnerId),
-    second.pseudonym('learner_id', identity.learnerId),
-  );
 });
