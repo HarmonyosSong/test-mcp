@@ -349,6 +349,81 @@ test('progress map labels log tools separately from knowledge', () => {
   assert.equal(progressLabelForTool('search_knowledge'), '正在查阅知识库');
 });
 
+test('学员编号在查日志前转为 uid，并强制写入 query', async () => {
+  const fuzzyQueries: string[] = [];
+  const cloudQueries: string[] = [];
+  const config = loadRuntimeConfig({
+    HARMONY_AGENT_LOGCENTER_APP_ID: 'app-id',
+    HARMONY_AGENT_LOGCENTER_APP_SECRET: 'app-secret',
+    HARMONY_AGENT_LOGCENTER_BASE_URL: 'https://logcenter.example.test/api',
+    HARMONY_AGENT_LOG_CATALOG: catalogPath,
+    HARMONY_AGENT_UCENTER_BASE_URL: 'https://ucenter.example.test',
+  });
+  const tools = await createLogCatalogTools(config, {
+    correlation: {
+      sourceText: '学员编号: 233021794099',
+      identifiers: { learner_id: '233021794099' },
+      learnerIdSource: 'card',
+    },
+    fetchImpl: async () => new Response(JSON.stringify({
+      rlt: true,
+      data: { id: 17524748, card: '233021794099' },
+    }), { status: 200 }),
+    http: async ({ url }) => {
+      if (url.includes('skill/cloud/') && url.includes('/search')) {
+        const query = new URL(url).searchParams.get('query');
+        if (query) cloudQueries.push(query);
+        return {
+          status: 200,
+          body: { code: 0, data: { total: 3, elapsed_millisecond: 2, logs: [], progress: 'Complete' } },
+        };
+      }
+      if (url.includes('skill/cloud/') && url.includes('/count')) {
+        return { status: 200, body: { code: 0, data: { total: 999999, elapsed_millisecond: 1 } } };
+      }
+      if (url.includes('skill/search/time') || (url.includes('skill/search') && !url.includes('skill/cloud/'))) {
+        const fuzzy = new URL(url).searchParams.get('fuzzy_query');
+        if (fuzzy) fuzzyQueries.push(fuzzy);
+        return { status: 200, body: { code: 0, total: 0, data: { data: [] } } };
+      }
+      return { status: 200, body: { code: 0, data: {} } };
+    },
+  });
+  assert.ok(tools);
+  const counted = await tools.count_cloud_logs.execute!({
+    vendor: 'aliyun',
+    region: 'cn-beijing',
+    account: '1743276692096170',
+    collection: 'pysy-front-log',
+    topic: 'prod-ios',
+    time: '1h',
+    query: 'appid: "log-har-001-prod"',
+  }, {} as never) as { total: number; filtered?: boolean; query?: string };
+  assert.equal(counted.total, 3);
+  assert.equal(counted.filtered, true);
+  assert.match(counted.query ?? '', /uid: "17524748"/);
+  await tools.count_logs.execute!({
+    service_id: 6111,
+    time: '1h',
+    query: 'uid:233021794099',
+  }, {} as never);
+  await tools.query_logs.execute!({
+    service_id: 6111,
+    time: '1h',
+    query: 'level:ERROR',
+    page: 1,
+    size: 10,
+  }, {} as never);
+  assert.deepEqual(cloudQueries, [
+    '(appid: "log-har-001-prod") AND uid: "17524748"',
+  ]);
+  assert.deepEqual(fuzzyQueries, [
+    'uid: "17524748"',
+    '(level:ERROR) AND uid: "17524748"',
+  ]);
+});
+
+
 for (const mode of ['cancel', 'timeout'] as const) {
   test(`log requests stop on round ${mode}`, { timeout: 5_000 }, async () => {
     let markRequested!: () => void;

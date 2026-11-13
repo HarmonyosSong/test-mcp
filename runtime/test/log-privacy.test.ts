@@ -10,13 +10,17 @@ import { ClientLogPrivacy } from '../src/security/log-privacy.js';
 import { createClientLogPrivacy, redactClientText } from '../src/security/client-context.js';
 import { createStreamRedactor } from '../src/security/stream-redaction.js';
 
-const identity = { learnerId: 'student-fixture-001', phone: '+8613800000000' };
+const identity = {
+  learnerId: 'student-fixture-001',
+  learnerIdSource: 'card' as const,
+  phone: '+8613800000000',
+};
 const logIdentifiers = { learner_id: identity.learnerId, phone: identity.phone };
 
 test('只提取带明确标签的学员身份，忽略工单中的普通数字', () => {
   assert.deepEqual(
     extractClientIdentity('学员编号：student-fixture-001，联系电话：138-0000-0000，版本 7.105.0'),
-    { learnerId: 'student-fixture-001', phone: '13800000000' },
+    { learnerId: 'student-fixture-001', learnerIdSource: 'card', phone: '13800000000' },
   );
   assert.deepEqual(extractClientIdentity('构建号 20261104210942，联系电话待补充'), {});
   assert.equal(hasClientIdentity({}), false);
@@ -30,7 +34,7 @@ test('多条用户消息按字段合并，同一身份字段以最近一次明�
   ]), identity);
 });
 
-test('脱敏前完成身份匹配，结果只保留匹配事实和伪名', () => {
+test('脱敏时 uid/learner 明文保留，电话与凭证仍脱敏，匹配事实照记', () => {
   const privacy = new ClientLogPrivacy(logIdentifiers, Buffer.alloc(32, 7));
   const result = privacy.sanitize({
     uid: identity.learnerId,
@@ -44,16 +48,16 @@ test('脱敏前完成身份匹配，结果只保留匹配事实和伪名', () =>
     { kind: 'phone', matched: true },
   ]);
   const serialized = JSON.stringify(result.value);
-  assert.equal(serialized.includes(identity.learnerId), false);
+  assert.equal(serialized.includes(identity.learnerId), true);
   assert.equal(serialized.includes('13800000000'), false);
   assert.equal(serialized.includes('13900000000'), false);
   assert.equal(serialized.includes('fixture-secret'), false);
   assert.equal(serialized.includes('fixture-token'), false);
-  assert.match(serialized, /learner_id:[a-f0-9]{16}/);
+  assert.equal(/learner_id:[a-f0-9]{16}/.test(serialized), false);
   assert.match(serialized, /redacted-phone/);
 });
 
-test('日志条目 ID 基于脱敏内容，不包含原始身份', () => {
+test('日志条目 ID 对同一 uid 稳定，uid 明文仍可出现在条目内容中', () => {
   const privacy = new ClientLogPrivacy(logIdentifiers, Buffer.alloc(32, 9));
   const first = privacy.entryId({ uid: identity.learnerId, message: 'failed' });
   const repeated = privacy.entryId({ message: 'failed', uid: identity.learnerId });
@@ -61,10 +65,9 @@ test('日志条目 ID 基于脱敏内容，不包含原始身份', () => {
   assert.equal(first, repeated);
   assert.notEqual(first, changed);
   assert.match(first, /^log-[a-f0-9]{24}$/);
-  assert.equal(first.includes(identity.learnerId), false);
 });
 
-test('跨文本增量拆分标识时仍按完整文本脱敏，并保留尾部顺序', () => {
+test('跨文本增量拆分时 uid 明文保留，电话仍脱敏', () => {
   const input = `学员编号: ${identity.learnerId}; 联系电话: 13800000000`;
   const privacy = createClientLogPrivacy([input], false);
   const redact = Object.assign(
@@ -79,7 +82,7 @@ test('跨文本增量拆分标识时仍按完整文本脱敏，并保留尾部�
   }
   actual += stream.flush();
   assert.equal(actual, expected);
-  assert.equal(actual.includes(identity.learnerId), false);
+  assert.equal(actual.includes(identity.learnerId), true);
   assert.equal(actual.includes('13800000000'), false);
   assert.equal(actual.endsWith('尾部'), true);
 });

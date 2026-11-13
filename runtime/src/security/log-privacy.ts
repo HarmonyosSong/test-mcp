@@ -55,10 +55,11 @@ export class ClientLogPrivacy {
     };
   }
 
-  /** 助手回复、外发摘要等长文本只脱敏标识符和通用号码；500 字上限只适用于工具结果等结构化数据。 */
+  /** 助手回复、外发摘要等长文本：电话等仍脱敏；learner/uid 明文保留，避免伪名和真实 uid 混淆。 */
   sanitizeText(text: string): string {
     let value = text;
     for (const identifier of this.identifiers) {
+      if (identifier.kind === 'learner_id') continue;
       const pattern = new RegExp(
         `(?<![A-Za-z0-9])${escapeRegExp(identifier.value)}(?![A-Za-z0-9])`,
         'g',
@@ -80,10 +81,11 @@ export class ClientLogPrivacy {
     return `log-${createHash('sha256').update(JSON.stringify(canonical(sanitized))).digest('hex').slice(0, 24)}`;
   }
 
-  /** 流式文本只暂扣敏感值前缀及可能未完成的通用号码，不延迟普通文本。 */
+  /** 流式文本只暂扣需脱敏标识的前缀及可能未完成的通用号码；uid/learner_id 明文不暂扣。 */
   sensitiveSuffixLength(text: string): number {
     let length = 0;
     for (const identifier of this.identifiers) {
+      if (identifier.kind === 'learner_id') continue;
       const limit = Math.min(identifier.value.length, text.length);
       for (let size = 1; size <= limit; size += 1) {
         if (text.endsWith(identifier.value.slice(0, size))) length = Math.max(length, size);
@@ -94,12 +96,15 @@ export class ClientLogPrivacy {
     return Math.max(length, phoneSuffix, idCardSuffix);
   }
 
+  private isLearnerIdentityKey(keyName: string): boolean {
+    return /^(?:uid|user_?id|student_?id|learner_?id)$/i.test(keyName);
+  }
+
   private walk(value: unknown, keyName: string, matched: Set<LogIdentifierKind>, depth: number): unknown {
     if (depth > 12) return '[truncated-depth]';
     if (SECRET_KEY.test(keyName)) return '[redacted]';
     if (typeof value === 'string') {
       let text = value;
-      let replacedIdentifier = false;
       for (const identifier of this.identifiers) {
         const pattern = new RegExp(
           `(?<![A-Za-z0-9])${escapeRegExp(identifier.value)}(?![A-Za-z0-9])`,
@@ -107,13 +112,21 @@ export class ClientLogPrivacy {
         );
         if (pattern.test(text)) {
           matched.add(identifier.kind);
-          replacedIdentifier = true;
           pattern.lastIndex = 0;
-          text = text.replace(pattern, this.pseudonym(identifier.kind, identifier.value));
+          // learner/uid 明文保留；电话等仍替换为伪名。
+          if (identifier.kind !== 'learner_id') {
+            text = text.replace(pattern, this.pseudonym(identifier.kind, identifier.value));
+          }
         }
         pattern.lastIndex = 0;
       }
-      if (IDENTITY_KEY.test(keyName) && !replacedIdentifier) {
+      if (this.isLearnerIdentityKey(keyName)) {
+        for (const identifier of this.identifiers) {
+          if (identifier.kind === 'learner_id' && identifier.value === text) matched.add('learner_id');
+        }
+        return text.length > 500 ? `${text.slice(0, 500)}…` : text;
+      }
+      if (IDENTITY_KEY.test(keyName)) {
         const kind = keyName.toLowerCase().replace(/[^a-z]/g, '_');
         return this.pseudonym(kind, value);
       }
@@ -128,6 +141,8 @@ export class ClientLogPrivacy {
       for (const identifier of this.identifiers) {
         if (identifier.value === raw) matched.add(identifier.kind);
       }
+      // uid 等学员身份字段保持数字明文，避免和伪名混淆。
+      if (this.isLearnerIdentityKey(keyName)) return value;
       return this.pseudonym(keyName.toLowerCase().replace(/[^a-z]/g, '_'), raw);
     }
     if (Array.isArray(value)) {
