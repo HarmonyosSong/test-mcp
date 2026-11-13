@@ -158,7 +158,7 @@
       <section class="diagram-section" id="architecture" aria-labelledby="diagram-title">
         <div class="diagram-heading">
           <h2 id="diagram-title">整体流程</h2>
-          <span>第一张看任务分派与结果汇总，第二张看本地知识和代码索引如何配合</span>
+          <span>第一张看任务分派与结果汇总，第二张看知识索引、动态源码、日志和外部 Agent 如何协同</span>
         </div>
         <div class="diagram-grid">
           <article class="diagram-card">
@@ -172,11 +172,11 @@
           </article>
           <article class="diagram-card">
             <div class="diagram-card-header">
-              <h3>02 · 本地知识与代码索引的使用流程</h3>
-              <p>本地知识提供业务链路和代码入口，Repository MCP 内部代码图提供关系，最后回读源码</p>
+              <h3>02 · 知识、动态源码与外部 Agent 架构</h3>
+              <p>业务知识提供索引，LogCenter 补齐现场事实，Repository MCP 绑定固定快照，A2A 接入统一全栈 Agent</p>
             </div>
             <div class="diagram-frame">
-              <img src="diagrams/02-knowledge-architecture.svg" alt="客户端 Agent 使用本地知识与 Repository MCP 内部代码导航，回读源码后登记证据。" />
+              <img src="diagrams/02-knowledge-architecture.svg" alt="业务文档经人工筛选进入本地 Knowledge MCP；客户端 Runtime 结合提示词和 UCenter 到 LogCenter 的身份关联事实，动态绑定固定源码快照，并通过 Agent Slot 和 A2A 接入统一前端、H5、服务端 Agent；本地证据和外部结论分开保存后生成报告。" />
             </div>
           </article>
         </div>
@@ -203,7 +203,7 @@
               <article class="info tone-teal"><h3>调查过程可见</h3><p>展示工具开始、结束、耗时和结果摘要，用户能看到 Agent 当前在查什么。</p></article>
               <article class="info tone-green"><h3>结论可以复核</h3><p>报告关联实际读取的源码或日志，同时保留未确认判断和信息缺口。</p></article>
             </div>
-            <p>当前主要服务 HarmonyOS 客户端。后续多端接入沿用同一个 <code>ClientDiagnosisAgent</code>，通过端上下文、Skill、知识排序和仓库配置处理差异，避免每个端重复建设一套诊断系统。</p>
+            <p>当前由同一个 <code>ClientDiagnosisAgent</code> 统一处理 HarmonyOS、Android 和 iOS 客户端问题，通过端上下文、Skill、知识排序和动态源码快照处理差异，避免每个端重复建设一套诊断系统。</p>
           </section>
 
           <section class="section" id="runtime">
@@ -293,16 +293,18 @@
 
           <section class="section" id="knowledge">
             <h2>4. 知识与代码协同</h2>
-            <p>项目将业务知识和代码结构查询分开处理。本地知识帮助 Agent 理解用户说法，Repository MCP 内部代码图帮助 Agent 查看组件与函数关系，Repository MCP 提供最终需要核对的源码。</p>
+            <p>项目将业务知识、现场事实和代码取证分开处理。本地知识是人工筛选后的业务索引，帮助 Agent 把用户说法映射到业务链路；LogCenter 通过“学员编号 → UCenter → UID”查询现场日志；Repository MCP 再根据提示词和已确认事实绑定对应端、产品线、版本与固定源码快照。</p>
             <table>
               <thead><tr><th>能力</th><th>适合处理的问题</th><th>在诊断中的作用</th></tr></thead>
               <tbody>
                 <tr><td>本地 Knowledge MCP</td><td>“付款没有让签合同”可能对应哪条业务链路？</td><td>返回候选原因、区分判据和代码入口。</td></tr>
+                <tr><td>UCenter + LogCenter</td><td>这个学员实际使用什么端、产品线和版本？</td><td>先把学员编号转换为 UID，再查询并关联现场日志，补齐动态绑定上下文。</td></tr>
                 <tr><td>Repository MCP 内部代码图</td><td>这个组件在哪里定义，和哪些函数有关？</td><td>提供定义位置、文件和相邻代码关系。</td></tr>
-                <tr><td>Repository MCP</td><td>当前版本的实际实现是什么？</td><td>读取绑定快照中的源码，形成可引用观测。</td></tr>
+                <tr><td>Repository MCP</td><td>当前端和版本的实际实现是什么？</td><td>从 version registry 绑定固定快照，读取源码形成可引用观测。</td></tr>
+                <tr><td>Agent Slot / A2A</td><td>问题还涉及 H5 或服务端实现怎么办？</td><td>调用统一外部前端、H5、服务端 Agent；远端结论保存为 <code>external_findings</code>。</td></tr>
               </tbody>
             </table>
-            <p>两条入口可以衔接：业务现象先查本地知识，再沿代码入口查图或读源码；已经有明确组件或函数时可以直接查图。位置足够明确时也可以直接读源码，不要求每次诊断都经过全部工具。</p>
+            <p>Runtime 不要求用户预选仓库或版本：业务现象先查本地知识，提示词和已确认的 LogCenter 事实共同决定动态源码绑定；已经有明确组件或函数时可以直接查 Repository MCP。若问题同时涉及客户端和服务端，统一通过 Agent Slot / A2A 协查。知识、代码图和外部结论都是线索或独立结果，只有本地实际读取的源码和关联日志才能进入 <code>EvidenceLedger</code>。</p>
 
             <h3>4.1 本地知识的积累方式</h3>
             <p>知识条目记录用户别名、业务域、适用端、来源和人工验证日期。每条事实只有一个规范入口，跨域关联使用稳定 ID。业务域和适用端用于排序，不作硬过滤，保留跨域召回和全局回退。</p>
@@ -341,7 +343,7 @@
               <li><strong>固定契约：</strong>每个插槽实现同一套约定——Agent Card（能力自描述）、任务/结果 Schema、鉴权、取消、预算和输出限制。</li>
               <li><strong>可插拔：</strong>新增远端 Agent = 新增一个适配器并注册到 Slot Registry，Runtime Core 和诊断主流程不变。</li>
               <li><strong>知识与工具不越界：</strong>远端 Agent 使用自己的知识、代码和日志；客户端不复制远端知识，也不直连远端 Knowledge MCP。</li>
-              <li><strong>信任边界固定：</strong>外发内容只有 Runtime 生成的固定脱敏摘要，由代码硬门控自动执行，老师无需审批；远端返回按不可信外部输入处理，结论单独保存，不进入本地证据账本。</li>
+              <li><strong>信任边界固定：</strong>外发内容只有 Runtime 生成的用户原文和具体协查问题，由代码硬门控自动执行，老师无需审批；远端返回按不可信外部输入处理，以未验证候选线索单独展示，不进入本地证据账本。</li>
             </ul>
             <p>这样 Runtime Core 保持稳定，远端能力以槽位形式扩展；证据规则和数据边界不随接入方增多而稀释。</p>
 

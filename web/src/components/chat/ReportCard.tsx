@@ -5,9 +5,7 @@ import {
   CircleHelp,
   ClipboardCheck,
   FileSearch,
-  Gauge,
   MapPin,
-  SearchCheck,
   ShieldAlert,
 } from 'lucide-react';
 import { severityLabel } from '../../format';
@@ -27,7 +25,6 @@ function percent(value: number): number {
 
 /** 嵌入聊天消息的结构化诊断报告卡片：已通过服务端证据校验。 */
 export function ReportCard({ report }: { report: DiagnosticReport }) {
-  const externalClaims = report.joint_assessment?.unverified_claims ?? [];
   return (
     <div className={`report-card verdict-border-${report.verdict}`} aria-label="诊断报告">
       <section className="diagnosis-summary">
@@ -36,10 +33,6 @@ export function ReportCard({ report }: { report: DiagnosticReport }) {
             <ShieldAlert size={14} />
             {severityLabel(report.severity)}风险
           </span>
-          <span className="confidence-value">
-            <Gauge size={14} />
-            置信度 {percent(report.confidence)}%
-          </span>
           <span className={`verdict-badge verdict-${report.verdict}`}>
             {VERDICT_LABELS[report.verdict]}
           </span>
@@ -47,9 +40,6 @@ export function ReportCard({ report }: { report: DiagnosticReport }) {
         <h3>诊断结论</h3>
         <p>{report.summary}</p>
         <span className="issue-category">{report.issue_category}</span>
-        <div className="confidence-track" aria-label={`置信度 ${percent(report.confidence)}%`}>
-          <span style={{ width: `${percent(report.confidence)}%` }} />
-        </div>
       </section>
 
       {report.likely_location && (
@@ -85,51 +75,6 @@ export function ReportCard({ report }: { report: DiagnosticReport }) {
                     ))}
                   </div>
                 )}
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {(externalClaims.length > 0 || (report.external_findings?.length ?? 0) > 0) && (
-        <section className="report-section missing-information">
-          <div className="report-section-title">
-            <AlertTriangle size={16} />
-            <h3>外部候选原因（未验证）</h3>
-          </div>
-          <ul>
-            {externalClaims.map((item, index) => (
-              <li key={`unverified-${index}`}>{item}</li>
-            ))}
-            {externalClaims.length === 0 && report.external_findings?.map((finding, index) => (
-              <li key={`external-${finding.consultation_id}-${index}`}>
-                <strong>外部 Agent：</strong>{finding.text}
-                {finding.truncated ? '（远端输出不完整）' : ''}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {report.evidence.length > 0 && (
-        <section className="report-section">
-          <div className="report-section-title">
-            <SearchCheck size={16} />
-            <h3>关键证据</h3>
-            <span>{report.evidence.length}</span>
-          </div>
-          <div className="evidence-list">
-            {report.evidence.map((evidence, index) => (
-              <article className="evidence-row" key={`${evidence.source}-${index}`}>
-                <div className="evidence-source-row">
-                  <strong>{evidence.source}</strong>
-                  <code>{evidence.id}</code>
-                </div>
-                {evidence.location && (
-                  <span className="evidence-location">{evidence.location}</span>
-                )}
-                <p>{evidence.excerpt}</p>
-                <small>{evidence.supports}</small>
               </article>
             ))}
           </div>

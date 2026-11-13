@@ -6,7 +6,7 @@ import type { DiagnosisAgent } from '../../diagnosis/agent.js';
 import { runDiagnosisRound, type RunDiagnosisRoundOptions } from '../../diagnosis/run-round.js';
 import type { ModelConfiguration } from '../../model/configuration.js';
 import type { ProductStore } from '../../product/store.js';
-import type { ConversationRecord } from '../../domain/schemas.js';
+import type { ConversationRecord, DiagnosisReport } from '../../domain/schemas.js';
 import { IM_MESSAGE_LIMIT, YachCli } from './cli.js';
 import { buildGroupDiagnosisContent, summarizeGroupHistory } from './history.js';
 import { yachHistory, yachInbound, yachInboundSkipped, yachOutbound } from './log.js';
@@ -30,6 +30,62 @@ function truncateReply(text: string, workbenchUrl: string): string {
   }
   const budget = Math.max(0, IM_MESSAGE_LIMIT - suffix.length - 20);
   return `${text.slice(0, budget).trimEnd()}\n\n…（已截断）${suffix}`;
+}
+
+const VERDICT_LABELS: Record<DiagnosisReport['verdict'], string> = {
+  located: '已定位',
+  probable: '可能定位',
+  insufficient_evidence: '证据不足',
+  tool_error: '工具异常',
+};
+
+const RESPONSIBILITY_LABELS: Record<NonNullable<DiagnosisReport['responsibility']>, string> = {
+  client: '客户端',
+  server: '服务端',
+  shared: '跨侧共同影响',
+  unknown: '暂无法确认',
+};
+
+function clipSummary(value: string, max = 900): string {
+  const chars = Array.from(value.trim());
+  return chars.length <= max ? value.trim() : `${chars.slice(0, max).join('')}…`;
+}
+
+/** 只用最终结构化报告生成 IM 正文，避免把协查前的模型草稿发给知音楼。 */
+export function formatYachFinalReply(
+  report: DiagnosisReport | null | undefined,
+  fallback: string,
+  workbenchUrl: string,
+): string {
+  if (!report) return truncateReply(fallback, workbenchUrl);
+
+  const lines = ['**最终诊断结论**', clipSummary(report.summary)];
+  lines.push('', `- 判定：${VERDICT_LABELS[report.verdict]}`);
+  lines.push(`- 责任范围：${RESPONSIBILITY_LABELS[report.responsibility ?? 'unknown']}`);
+  if (report.likely_location) lines.push(`- 位置：${report.likely_location}`);
+
+  if (report.root_cause_candidates.length > 0) {
+    lines.push('', '**已验证或本地支持的候选**');
+    for (const candidate of report.root_cause_candidates.slice(0, 3)) {
+      lines.push(`- ${clipSummary(candidate.title, 180)}：${clipSummary(candidate.explanation, 420)}`);
+    }
+  }
+
+  const remoteCandidates = report.joint_assessment?.unverified_claims.length
+    ? report.joint_assessment.unverified_claims
+    : report.external_findings?.map((finding) => `仅来自远端 Agent 报告：${finding.text}`) ?? [];
+  if (remoteCandidates.length > 0) {
+    lines.push('', '**外部候选原因（未验证）**');
+    for (const candidate of remoteCandidates.slice(0, 3)) lines.push(`- ${clipSummary(candidate, 700)}`);
+  }
+
+  const gaps = [...report.missing_information, ...(report.joint_assessment?.next_actions ?? [])];
+  if (gaps.length > 0) {
+    lines.push('', '**仍需补充**');
+    for (const gap of gaps.slice(0, 4)) lines.push(`- ${clipSummary(gap, 300)}`);
+  }
+  lines.push('', `完整报告请打开工作台：${workbenchUrl}`);
+  return truncateReply(lines.join('\n'), workbenchUrl);
 }
 
 export interface YachChannelDeps {
@@ -309,6 +365,8 @@ export class YachChannel {
             if (sawText) return;
             sawText = true;
           }
+          // 本地分支可能在 A2A 联合阶段前完成；不能让进度卡提前宣布整轮诊断结束。
+          if (streamEvent.type === 'completed' || streamEvent.type === 'failed') return;
           progress.onStreamEvent(streamEvent);
         },
       });
@@ -317,11 +375,35 @@ export class YachChannel {
         await progress.finish('已取消');
         return;
       }
+      progress.onStreamEvent(result.terminal === 'completed'
+        ? {
+          type: 'completed',
+          text: result.text,
+          report: result.assistantMessage.report,
+          evidence_state: result.conversation.evidence_state,
+          messages_state: result.conversation.messages_state,
+          input_tokens: result.assistantMessage.input_tokens ?? null,
+          output_tokens: result.assistantMessage.output_tokens ?? null,
+          tool_usage: {},
+        }
+        : {
+          type: 'failed',
+          error: result.assistantMessage.error || '诊断失败',
+          failure_category: 'runtime_error',
+          evidence_state: result.conversation.evidence_state,
+          input_tokens: result.assistantMessage.input_tokens ?? null,
+          output_tokens: result.assistantMessage.output_tokens ?? null,
+          tool_usage: {},
+        });
       await progress.finish(result.terminal === 'completed' ? '诊断完成' : '诊断失败');
       const body = result.terminal === 'completed'
-        ? (result.text || '诊断完成，但没有生成正文。')
+        ? formatYachFinalReply(
+          result.assistantMessage.report,
+          '诊断已完成，但未生成最终结构化报告，请打开工作台查看详情。',
+          this.workbenchUrl(),
+        )
         : (result.assistantMessage.error || '诊断失败，请稍后重试或打开网页工作台。');
-      await this.reply(event, truncateReply(body, this.workbenchUrl()));
+      await this.reply(event, body);
     } catch (error) {
       if (abort.signal.aborted) {
         await progress.finish('已取消');
