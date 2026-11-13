@@ -125,6 +125,25 @@ test('设备发现无结果或降级时不伪装成成功观察', async () => {
   }
 });
 
+test('lookup_learner 成功不算完成现场观察；失败才降级放行', async () => {
+  const pending = new ClientObservationGate(['observe', 'source'], true);
+  const ok = pending.wrap('lookup_learner', executable(async () => ({
+    status: 'ok',
+    learner: { uid: '1', card: '184010299547' },
+  })));
+  await ok.execute!({ learner_id: '184010299547' }, {});
+  assert.equal(pending.observationStatus, 'pending');
+
+  const degraded = new ClientObservationGate(['observe', 'source'], true);
+  const miss = degraded.wrap('lookup_learner', executable(async () => ({
+    status: 'not_found',
+    learner: null,
+  })));
+  await miss.execute!({ learner_id: '184010299547' }, {});
+  assert.equal(degraded.observationStatus, 'degraded');
+  assert.equal(degraded.sourceAllowed, true);
+});
+
 test('旧调用和日志能力不可用保持兼容，不增加虚假的门禁', async () => {
   for (const gate of [
     new ClientObservationGate(undefined, true),

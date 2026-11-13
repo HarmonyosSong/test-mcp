@@ -4,10 +4,13 @@ import test from 'node:test';
 import {
   UcenterClient,
   applyResolvedUidQuery,
+  createLearnerLookupTools,
   looksLikeLearnerCard,
+  lookupLearnerByCard,
   resolveLearnerUid,
 } from '../src/capabilities/ucenter.js';
 import { extractClientIdentity } from '../src/orchestration/client-identity.js';
+import { loadRuntimeConfig } from '../src/config.js';
 
 test('学员编号标签记为 card，uid 标签记为 uid', () => {
   assert.deepEqual(extractClientIdentity('学员编号：233021794099'), {
@@ -127,4 +130,62 @@ test('applyResolvedUidQuery fulltext 用短语注入 uid（cloudlearn）', () =>
     applyResolvedUidQuery('"log-eagle-0016-prod" AND uid: "bad"', '5570040', 'fulltext'),
     '("log-eagle-0016-prod") AND "5570040"',
   );
+});
+
+test('lookupLearnerByCard：编号查档案；短 uid / 非法输入拒绝', async () => {
+  const client = new UcenterClient({
+    baseUrl: 'https://ucenter.example.test',
+    fetchImpl: async () => new Response(JSON.stringify({
+      rlt: true,
+      data: {
+        id: 5570040,
+        card: '184010299547',
+        username: '小萝卜',
+        gradeName: '二年级',
+        areaCode: '010',
+        studentId: 'sid-1',
+      },
+    }), { status: 200 }),
+  });
+  const ok = await lookupLearnerByCard(client, '184010299547');
+  assert.equal(ok.status, 'ok');
+  assert.equal(ok.learner?.uid, '5570040');
+  assert.equal(ok.learner?.username, '小萝卜');
+  assert.equal(ok.learner?.gradeName, '二年级');
+
+  const invalid = await lookupLearnerByCard(client, '5570040');
+  assert.equal(invalid.status, 'invalid_request');
+  assert.equal(invalid.learner, null);
+
+  const missing = new UcenterClient({
+    baseUrl: 'https://ucenter.example.test',
+    fetchImpl: async () => new Response(JSON.stringify({
+      rlt: false,
+      message: 'ucenter 未找到该学员',
+      data: null,
+    }), { status: 200 }),
+  });
+  const notFound = await lookupLearnerByCard(missing, '184010299547');
+  assert.equal(notFound.status, 'not_found');
+});
+
+test('createLearnerLookupTools 挂载 lookup_learner 并可执行', async () => {
+  const tools = createLearnerLookupTools(
+    loadRuntimeConfig({
+      HARMONY_AGENT_UCENTER_BASE_URL: 'https://ucenter.example.test',
+    }),
+    {
+      fetchImpl: async () => new Response(JSON.stringify({
+        rlt: true,
+        data: { id: 1, card: '184010299547', username: '测' },
+      }), { status: 200 }),
+    },
+  );
+  assert.ok(tools?.lookup_learner);
+  const result = await tools!.lookup_learner.execute!(
+    { learner_id: '184010299547' },
+    {} as never,
+  );
+  assert.equal(result.status, 'ok');
+  assert.equal(result.learner?.uid, '1');
 });

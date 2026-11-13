@@ -189,13 +189,17 @@ test('round factory keeps unconfigured logs absent and does not expose configure
       HARMONY_AGENT_LOGCENTER_APP_ID: configured ? 'test-app' : '',
       HARMONY_AGENT_LOGCENTER_APP_SECRET: configured ? 'test-secret' : '',
       HARMONY_AGENT_LOGCENTER_BASE_URL: 'https://unused.example.test/api',
+      HARMONY_AGENT_UCENTER_BASE_URL: 'https://ucenter.example.test',
     }));
     provider.createKnowledgeSession = async () => null;
     const session = await createRoundCapabilitySession(provider, {
       conversationId: 'conv-1', messageId: 'msg-1', runId: 'run-1', workspacePath: null,
     });
     try {
-      assert.deepEqual(Object.keys(session.toolsets), configured ? ['log_catalog'] : []);
+      assert.deepEqual(Object.keys(session.toolsets).sort(), configured
+        ? ['learner', 'log_catalog']
+        : ['learner']);
+      assert.deepEqual(Object.keys(session.toolsets.learner!), ['lookup_learner']);
       if (configured) {
         assert.deepEqual(Object.keys(session.toolsets.log_catalog!), [
           'resolve_log_target',

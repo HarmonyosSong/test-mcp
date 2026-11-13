@@ -119,6 +119,14 @@ export function createRoundCapabilitySession(provider: CapabilityMcp, context: C
     });
   }
   registrations.push({
+    id: 'learner',
+    optional: true,
+    create: async ({ abortSignal }) => {
+      const session = await provider.createLearnerLookupTools?.({ abortSignal });
+      return session ? { toolsets: { learner: session.tools } } : null;
+    },
+  });
+  registrations.push({
     id: 'log_catalog',
     optional: true,
     create: async ({ abortSignal, logCorrelation }) => {

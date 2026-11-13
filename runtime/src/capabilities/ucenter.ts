@@ -1,3 +1,7 @@
+import { createTool } from '@mastra/core/tools';
+import { z } from 'zod';
+
+import type { RuntimeConfig } from '../config.js';
 import type { ClientIdentity } from '../orchestration/client-identity.js';
 import { integrationInfo, integrationWarn } from '../observability/integration-log.js';
 
@@ -10,6 +14,12 @@ export type UcenterUser = {
   username?: string;
   areaCode?: string;
   gradeName?: string;
+};
+
+export type LearnerLookupResult = {
+  status: 'ok' | 'not_found' | 'invalid_request' | 'error';
+  learner: UcenterUser | null;
+  message?: string;
 };
 
 export type UcenterClientOptions = {
@@ -151,4 +161,68 @@ export function createUcenterClient(config: {
     timeoutMs: config.ucenterTimeoutMs,
     fetchImpl,
   });
+}
+
+/** 显式查学员档案（card → UCenter）；不返回手机号等额外 PII。 */
+export async function lookupLearnerByCard(
+  client: UcenterClient,
+  learnerId: string,
+  signal?: AbortSignal,
+): Promise<LearnerLookupResult> {
+  const trimmed = learnerId.trim();
+  if (!trimmed) {
+    return { status: 'invalid_request', learner: null, message: 'learner_id 不能为空' };
+  }
+  if (!looksLikeLearnerCard(trimmed)) {
+    return {
+      status: 'invalid_request',
+      learner: null,
+      message: '当前仅支持用学员编号(card，8–20 位纯数字)查询档案；日志 uid 请直接用于查日志，不要当档案主键',
+    };
+  }
+  try {
+    const learner = await client.getUserByCard(trimmed, signal);
+    integrationInfo('ucenter', 'lookup_learner ok', { card: learner.card, uid: learner.uid });
+    return { status: 'ok', learner };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    integrationWarn('ucenter', 'lookup_learner failed', { card: trimmed, error: message });
+    if (/未找到|not found|空 data|HTTP 404/i.test(message)) {
+      return { status: 'not_found', learner: null, message };
+    }
+    return { status: 'error', learner: null, message };
+  }
+}
+
+export type LearnerLookupToolset = {
+  lookup_learner: ReturnType<typeof createTool>;
+};
+
+export function createLearnerLookupTools(
+  config: Pick<RuntimeConfig, 'ucenterBaseUrl' | 'ucenterTimeoutMs'>,
+  options?: { fetchImpl?: typeof fetch; abortSignal?: AbortSignal },
+): LearnerLookupToolset | null {
+  const client = createUcenterClient(config, options?.fetchImpl);
+  if (!client) {
+    integrationWarn('ucenter', 'lookup_learner not mounted: base URL missing', {});
+    return null;
+  }
+  integrationInfo('ucenter', 'lookup_learner mounted', {
+    baseUrl: config.ucenterBaseUrl.replace(/\/+$/, ''),
+  });
+  return {
+    lookup_learner: createTool({
+      id: 'lookup_learner',
+      description:
+        '按学员编号(card)查询学员档案（uid、姓名、年级等）。用户问“查用户信息/学员信息”时调用；'
+        + '不要用 resolve_log_target。仅接受学员编号，不接受日志 uid。不返回手机号。',
+      inputSchema: z.object({
+        learner_id: z.string().min(1).describe('学员编号 card（8–20 位纯数字）'),
+      }),
+      execute: async (input) => {
+        options?.abortSignal?.throwIfAborted();
+        return lookupLearnerByCard(client, input.learner_id, options?.abortSignal);
+      },
+    }),
+  };
 }

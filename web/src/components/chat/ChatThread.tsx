@@ -21,6 +21,7 @@ import type {
 } from '../../types';
 import { ChatComposer } from './ChatComposer';
 import { ConsultationCard } from './ConsultationCard';
+import { MarkdownContent } from './MarkdownContent';
 import { ReportCard } from './ReportCard';
 import { ToolStepCard } from './ToolStepCard';
 
@@ -124,7 +125,11 @@ function AssistantMessage({
           ))}
         </div>
       )}
-      {message.content && <div className="chat-bubble">{message.content}</div>}
+      {message.content && (
+        <div className="chat-bubble">
+          <MarkdownContent content={message.content} />
+        </div>
+      )}
       {message.report && <ReportCard report={message.report} />}
       {message.status === 'streaming' && live && !message.content && (
         <div className="chat-bubble chat-thinking">正在思考…</div>

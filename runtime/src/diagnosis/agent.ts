@@ -79,7 +79,7 @@ const REUSABLE_TOOLS = new Set([
   "query_logs",
 ]);
 
-const LOG_CATALOG_INSTRUCTIONS = `When remote log catalog tools are available, load the use-log-catalog Skill before calling them. Resolve via resolve_log_target first; use candidate fields, suggested_query, and query_style from catalog—never invent account/collection/topic/service_id. source=aliyun_sls → count_cloud_logs/search_cloud_logs (Harmony/iOS may share prod-ios); source=logcenter → count_logs/query_logs. Prefer count before search/query. query_style=fulltext (e.g. prod-cloudlearn): use quoted phrases like "log-eagle-0016-prod", never appid:/uid: KV. query_style=kv: appid: filters OK. Runtime injects uid per query_style. time accepts 1h, 昨天, 2026-11-11 07:00到07:40, or YYYY-MM-DD HH:MM:SS~…—use absolute windows for incidents. If ambiguous with multi_end=true, follow h5_first_then_ua. Other ambiguous → clarify once. Incident lookup needs uid. Card→uid via UCenter; never put card in uid filters or retry after learner_uid_unresolved. Remote hits are optional helpers, not ledger evidence in this phase. Do not replace pasted hilog or source evidence with catalog routing alone.`;
+const LOG_CATALOG_INSTRUCTIONS = `When remote log catalog tools are available, load the use-log-catalog Skill before calling them. Resolve via resolve_log_target first; use candidate fields, suggested_query, and query_style from catalog—never invent account/collection/topic/service_id. source=aliyun_sls → count_cloud_logs/search_cloud_logs (Harmony/iOS may share prod-ios); source=logcenter → count_logs/query_logs. Prefer count before search/query. query_style=fulltext (e.g. prod-cloudlearn): use quoted phrases like "log-eagle-0016-prod", never appid:/uid: KV. query_style=kv: appid: filters OK. Runtime injects uid per query_style. time accepts 1h, 昨天, 2026-11-11 07:00到07:40, or YYYY-MM-DD HH:MM:SS~…—use absolute windows for incidents. If ambiguous with multi_end=true, follow h5_first_then_ua. Other ambiguous → clarify once. Incident lookup needs uid. Present learner profile via lookup_learner (card only). Card→uid via UCenter for log filters; never put card in uid filters or retry after learner_uid_unresolved. Remote hits are optional helpers, not ledger evidence in this phase. Do not replace pasted hilog or source evidence with catalog routing alone.`;
 
 function stableValue(value: unknown): unknown {
   if (value === undefined) return ["undefined"];
@@ -572,7 +572,7 @@ function promptFor(
 
 取证顺序：
 - 先判定 task_type：rule=产品规则/支持范围，implementation=功能或接口实现说明，incident=线上故障，无法判断为 unknown。实现与规则先本地知识；故障先现场观察再源码。知识只是线索，不能代替实现核对或本次故障现场证据。
-- 有学员编号/uid 时：先完整呈现已查到的学员信息，再按问题关键词选择日志目标并查询。云学习前端日志走本地日志工具；服务端或其他非本地日志在 next_action.question 中明确请委派查询。
+- 用户问「查用户信息/学员信息」或有学员编号时：先调用 lookup_learner（学员编号 card），在回复中完整呈现档案（uid、姓名、年级等）；不要用 resolve_log_target 查档案。再按问题关键词选择日志目标并查询。云学习前端日志走本地日志工具；服务端或其他非本地日志在 next_action.question 中明确请委派查询。
 - 推理涉及前端或服务端、且本地证据不足时：立刻提交结构化报告并设 next_action={target:'external',question:'写清要前端代码 / 服务端代码 / 服务端日志的哪一块、已知学员与时间窗、本地已确认事实'}；不要硬猜。委派也取不到时如实 insufficient_evidence 并列缺口。只有规则解答不需要外部实现调查时才直接结束。查无规则时不得凭常识断言。
 - 需要用户补充故障事实时 next_action.target='user'；无需继续时 next_action=null。responsibility 只描述当前证据下的责任判断，不是是否协查的门槛。提交路由后由 Runtime 自动执行外协，不向老师要技术审批；缺少 traceId/requestId 不阻断，外发摘要会声明关联缺口。不得自行调用或声称已调用远端 Agent。
 
@@ -588,7 +588,7 @@ function promptFor(
 ${phase.kind === 'local' && phase.clientSteps?.includes('observe') ? `
 以下客户端观察约束仅适用于 task_type=incident；规则或实现查询不得伪造学员现场，也不要求为了查询接口实现而查询故障日志。
 客户端调查顺序：
-- 故障定位先 observe：有学员/请求标识时先 discover_client_sessions，并在回复中完整呈现学员信息；再用业务词 resolve_log_target 后 count/search。云学习前端日志用本地工具；服务端等其它日志走委派。用户粘贴的 hilog 也属现场观察。知识不能替代现场观察。
+- 故障定位先 observe：有学员编号时先 lookup_learner 并完整呈现学员信息；再用业务词 resolve_log_target 后 count/search。云学习前端日志用本地工具；服务端等其它日志走委派。用户粘贴的 hilog 也属现场观察。知识不能替代现场观察。
 - ${phase.clientSteps.includes('source') ? 'observe 完成后才进入 source 阶段。Runtime 会拒绝过早的源码工具调用；目录不覆盖、查询失败或空结果时允许降级检查源码，但必须在 limitations 中保留现场日志缺口。' : '当前没有绑定源码快照，不要声称已核对源码。'}
 - 用户或老师报告的系统只是 reported_platform，不是 observed_platform。只有匹配到本次学员/设备/会话的日志或设备事实时，才能确认实际平台。
 - 现场指向的平台与当前绑定源码快照不一致时，不得用错误端的仓库解释；把对应平台固定版本源码列为缺口或走正确绑定后再读。

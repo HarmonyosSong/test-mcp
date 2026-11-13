@@ -11,6 +11,7 @@ import { IM_MESSAGE_LIMIT, YachCli } from './cli.js';
 import { buildGroupDiagnosisContent, summarizeGroupHistory } from './history.js';
 import { yachHistory, yachInbound, yachInboundSkipped, yachOutbound } from './log.js';
 import { InvalidYachEvent, parseYachEvent, peekWorkCode, type YachEvent } from './parse.js';
+import { YachProgressCard } from './progress.js';
 
 const DEDUPE_LIMIT = 4096;
 const DEDUPE_TTL_MS = 15 * 60 * 1000;
@@ -284,14 +285,11 @@ export class YachChannel {
     }
 
     const conversation = await this.resolveConversation(session, event, false);
+    const progress = new YachProgressCard(this.cli, event);
     const abort = new AbortController();
     session.abort = abort;
     const content = await this.diagnosisContent(event);
-    try {
-      await this.reply(event, '已收到，正在诊断…');
-    } catch {
-      // non-blocking ack
-    }
+    let sawText = false;
     try {
       const result = await runDiagnosisRound({
         store: this.deps.store,
@@ -306,14 +304,30 @@ export class YachChannel {
           caseArchiveDir: this.deps.config.caseArchiveDir,
           ...this.deps.diagnosisOptions,
         },
+        onEvent: (streamEvent) => {
+          if (streamEvent.type === 'text') {
+            if (sawText) return;
+            sawText = true;
+          }
+          progress.onStreamEvent(streamEvent);
+        },
       });
-      if (abort.signal.aborted) return;
+      // /stop 已发确认；取消时只关进度卡，不再发终态正文。
+      if (abort.signal.aborted) {
+        await progress.finish('已取消');
+        return;
+      }
+      await progress.finish(result.terminal === 'completed' ? '诊断完成' : '诊断失败');
       const body = result.terminal === 'completed'
         ? (result.text || '诊断完成，但没有生成正文。')
         : (result.assistantMessage.error || '诊断失败，请稍后重试或打开网页工作台。');
       await this.reply(event, truncateReply(body, this.workbenchUrl()));
     } catch (error) {
-      if (abort.signal.aborted) return;
+      if (abort.signal.aborted) {
+        await progress.finish('已取消');
+        return;
+      }
+      await progress.finish('诊断失败');
       const message = error instanceof Error ? error.message : '诊断运行失败';
       try {
         await this.reply(event, truncateReply(`诊断失败：${message}`, this.workbenchUrl()));

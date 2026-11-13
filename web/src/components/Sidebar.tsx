@@ -46,7 +46,7 @@ export function Sidebar({
           <ScanSearch size={18} strokeWidth={2} />
         </span>
         <strong>
-          <Typewriter text="鸿蒙诊断工作台" />
+          <Typewriter text="学而思App诊断工作台" />
         </strong>
       </div>
 

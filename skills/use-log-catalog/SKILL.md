@@ -44,7 +44,7 @@ root-cause proof in this phase.
 学员编号（`card`）不是 LogCenter 的 `uid`，不能直接作为日志过滤条件。Runtime 会在本轮工具挂载时完成固定链路：
 
 ```text
-学员编号/card -> UCenter getUserByCard -> uid -> Runtime 强制加入日志 query -> LogCenter
+学员编号/card -> `lookup_learner`（展示档案）/ Runtime UCenter getUserByCard -> uid -> 强制加入日志 query -> LogCenter
 ```
 
 - `count_cloud_logs`、`search_cloud_logs`、`count_logs`、`query_logs` 只能使用 Runtime 转换后的 uid；模型不得手写学员编号、猜测 uid 或覆盖 Runtime 注入的条件。

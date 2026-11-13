@@ -5,4 +5,14 @@ export { parseYachEvent, InvalidYachEvent } from './parse.js';
 export type { YachEvent } from './parse.js';
 export { summarizeGroupHistory, buildGroupDiagnosisContent } from './history.js';
 export { previewText } from './log.js';
-export { progressLabelForTool, progressLabelForStreamEvent } from './progress-map.js';
+export {
+  progressLabelForTool,
+  progressLabelForStreamEvent,
+  progressStepForTool,
+  PROGRESS_STEPS,
+  createProgressChecklist,
+  applyProgressEvent,
+  renderProgressChecklist,
+} from './progress-map.js';
+export { YachProgressCard } from './progress.js';
+export type { YachCardApi } from './progress.js';

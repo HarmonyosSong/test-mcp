@@ -40,6 +40,7 @@ test('maps tool names to medium progress labels', () => {
   assert.equal(progressLabelForTool('search_knowledge'), '正在查阅知识库');
   assert.equal(progressLabelForTool('repository_read_file'), '正在读取代码证据');
   assert.equal(progressLabelForTool('resolve_log_target'), '正在查询远程日志');
+  assert.equal(progressLabelForTool('lookup_learner'), '正在查询学员信息');
   assert.equal(progressLabelForTool('other_tool'), '正在收集证据');
 });
 
@@ -186,6 +187,31 @@ test('YachCli sendMarkdown and history use injected runner', async () => {
   assert.ok(calls.some((args) => args.includes('--group-id') && args.includes('64134877732')));
   assert.ok(calls.some((args) => args.includes('--start-time') && args.includes('--end-time')));
   assert.ok(IM_MESSAGE_LIMIT > 0);
+
+  const cardCli = new YachCli({
+    cliPath: 'yach-cli',
+    appKey: 'k',
+    appSecret: 's',
+    runCommand: async (args) => {
+      calls.push(args);
+      if (args[0] === 'config') return { stdout: '{"ok":true}', stderr: '', code: 0 };
+      if (args[0] === 'api' && args[2] === '/openapi/v2/msg_card/create') {
+        return { stdout: '{"ok":true,"data":{"code":200,"obj":{"msg_id":"card-9"}}}', stderr: '', code: 0 };
+      }
+      if (args[0] === 'api' && args[2] === '/openapi/v2/msg_content/push') {
+        return { stdout: '{"ok":true,"data":{"code":200,"obj":{}}}', stderr: '', code: 0 };
+      }
+      if (args[0] === 'api' && args[2] === '/openapi/v2/msg_card/close') {
+        return { stdout: '{"ok":true,"data":{"code":200,"obj":{}}}', stderr: '', code: 0 };
+      }
+      return { stdout: '{"ok":false}', stderr: '', code: 1 };
+    },
+  });
+  const cardId = await cardCli.createCard({ toId: 'user-1', conversationType: '1' });
+  assert.equal(cardId, 'card-9');
+  await cardCli.pushCard(cardId, 'hello card');
+  await cardCli.closeCard(cardId);
+  assert.ok(calls.some((args) => args[0] === 'api' && args.includes('/openapi/v2/msg_card/create')));
 
   await assert.rejects(
     () => new YachCli({

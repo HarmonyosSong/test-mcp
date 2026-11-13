@@ -47,7 +47,7 @@ export class ClientObservationGate {
       execute: async (args: Record<string, unknown>, context: unknown) => {
         if (SOURCE_TOOLS.has(name) && !this.sourceAllowed) {
           throw new Error(
-            'client_observation_required: 请先执行 discover_client_sessions，或按用户原文执行 resolve_log_target 后查询日志；'
+            'client_observation_required: 请先执行 lookup_learner，或按用户原文执行 resolve_log_target 后查询日志；'
             + '目录不覆盖、空结果、身份未匹配或查询失败后可以降级检查源码，但必须保留“实际平台尚未由现场日志确认”的限制。',
           );
         }
@@ -64,6 +64,12 @@ export class ClientObservationGate {
             const correlated = typeof result === 'object' && result !== null
               && 'observation_status' in result && result.observation_status === 'correlated';
             this.status = correlated ? 'completed' : 'degraded';
+          } else if (name === 'lookup_learner' && this.status === 'pending') {
+            // 档案查询不等于现场日志观察：成功仍保持 pending，等 resolve/search；失败才降级放行。
+            const status = typeof result === 'object' && result !== null && 'status' in result
+              ? result.status
+              : undefined;
+            if (status && status !== 'ok') this.status = 'degraded';
           } else if (name === 'discover_client_sessions' && this.status === 'pending') {
             const resolved = typeof result === 'object' && result !== null
               && 'status' in result && result.status === 'resolved'
@@ -74,7 +80,7 @@ export class ClientObservationGate {
           }
           return result;
         } catch (error) {
-          if (['resolve_log_target', 'search_cloud_logs', 'query_logs', 'discover_client_sessions', 'parse_hilog'].includes(name)
+          if (['resolve_log_target', 'search_cloud_logs', 'query_logs', 'lookup_learner', 'discover_client_sessions', 'parse_hilog'].includes(name)
               && this.status === 'pending') {
             this.status = 'degraded';
           }

@@ -171,6 +171,58 @@ export class YachCli {
     }
   }
 
+  /** OpenAPI via yach-cli（进度卡 create/push/close；凭证由 config init 管理）。 */
+  async apiPost(path: string, body: Record<string, unknown>): Promise<JsonObject> {
+    await this.ensureConfigured();
+    const result = await this.runCommand([
+      'api',
+      'POST',
+      path,
+      '--body',
+      JSON.stringify(body),
+    ], { timeoutMs: 20_000 });
+    const payload = parseCliJson(result.stdout || result.stderr);
+    if (payload.ok === false) {
+      const err = payload.error;
+      const hint = err && typeof err === 'object' && typeof (err as JsonObject).message === 'string'
+        ? String((err as JsonObject).message)
+        : 'yach-cli api failed';
+      throw new YachCliError(hint);
+    }
+    const data = (payload.data ?? payload) as JsonObject;
+    if (typeof data.code === 'number' && data.code !== 200) {
+      const msg = typeof data.msg === 'string' && data.msg ? data.msg : `platform code ${data.code}`;
+      throw new YachCliError(msg);
+    }
+    return data;
+  }
+
+  async createCard(target: YachSendTarget): Promise<string> {
+    const data = await this.apiPost('/openapi/v2/msg_card/create', {
+      to_id: target.toId,
+      session_type: Number(target.conversationType),
+    });
+    const obj = data.obj;
+    const value = obj && typeof obj === 'object' ? (obj as JsonObject).msg_id : undefined;
+    if ((typeof value !== 'string' && typeof value !== 'number') || !String(value)) {
+      throw new YachCliError('Yach card response invalid');
+    }
+    return String(value);
+  }
+
+  async pushCard(cardId: string, content: string): Promise<void> {
+    await this.apiPost('/openapi/v2/msg_content/push', {
+      msg_id: cardId,
+      msg_content: content,
+    });
+  }
+
+  async closeCard(cardId: string): Promise<void> {
+    await this.apiPost('/openapi/v2/msg_card/close', {
+      msg_id: cardId,
+    });
+  }
+
   async groupHistory(groupId: string): Promise<unknown[]> {
     await this.ensureConfigured();
     const end = Math.floor(Date.now() / 1000);
