@@ -33,13 +33,13 @@ const PARALLEL_SIGNALS: ServerSignals = {
 
 async function withHarness(
   run: (harness: Harness) => Promise<void>,
-  conversationInput: { workspace_path?: string | null; consult_compass?: boolean } = {},
+  conversationInput: { workspace_path?: string | null; consult_compass?: boolean; sourceUnavailable?: boolean } = {},
 ): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'orchestrated-round-'));
   const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
   try {
     const conversation = await store.createConversation({
-      workspace_path: conversationInput.workspace_path ?? '/fixture',
+      workspace_path: conversationInput.sourceUnavailable ? null : conversationInput.workspace_path ?? '/fixture',
       consult_compass: conversationInput.consult_compass ?? true,
     });
     await run({
@@ -173,7 +173,12 @@ function remoteRegistry(remoteText = '远端请求已核查') {
   return { registry, calls, tasks };
 }
 
-function options(harness: Harness, registry: AgentSlotRegistry, signals = EMPTY_SIGNALS) {
+function options(
+  harness: Harness,
+  registry: AgentSlotRegistry,
+  signals = EMPTY_SIGNALS,
+  extra: Record<string, unknown> = {},
+) {
   return {
     knowledgeQueryLog: join(harness.directory, 'knowledge-queries.jsonl'),
     caseArchiveDir: join(harness.directory, 'knowledge-cases'),
@@ -181,6 +186,7 @@ function options(harness: Harness, registry: AgentSlotRegistry, signals = EMPTY_
     slotRegistry: registry,
     compassAvailable: true,
     investigationBudget: { maxSeconds: 5, maxRemoteCalls: 2 },
+    ...extra,
   };
 }
 
@@ -191,6 +197,7 @@ async function startRound(
   content: string,
   signals = EMPTY_SIGNALS,
   events: OrchestrationEvent[] = [],
+  extra: Record<string, unknown> = {},
 ) {
   return runDiagnosisRound({
     store: harness.store,
@@ -200,7 +207,7 @@ async function startRound(
     conversation: harness.conversation,
     content,
     runId: 'run-initial',
-    options: options(harness, registry, signals),
+    options: options(harness, registry, signals, extra),
     onOrchestrationEvent: (event) => { events.push(event); },
   });
 }
@@ -611,6 +618,104 @@ test('无需跨侧的 orchestrated local 保持原有完成行为', async () => 
     assert.equal(result.conversation.consultations.length, 0);
     assert.equal(await archivedCaseCount(harness.directory), 1);
   });
+});
+
+test('关联日志补齐端版本后自动绑定源码并继续 source 阶段', async () => {
+  await withHarness(async (harness) => {
+    const { registry } = remoteRegistry();
+    const sourceCalls: Array<Record<string, unknown>> = [];
+    const repositorySessions: Array<string | null | undefined> = [];
+    harness.capabilities.createRepositorySession = (async (_conversationId: string, workspacePath: string) => {
+      repositorySessions.push(workspacePath);
+      return { toolsets: {}, client: { disconnect: async () => undefined } };
+    }) as typeof harness.capabilities.createRepositorySession;
+    const observation = {
+      environment: 'prod',
+      storage_alias: 'aliyun',
+      account: 'account',
+      collection: 'collection',
+      store_id: 'prod-cloudlearn',
+      topic: 'prod-cloudlearn',
+      appid: 'log-eagle-0016-prod',
+      query: '"log-eagle-0016-prod" AND "learner-1"',
+      start: 1_762_000_000,
+      end: 1_762_003_600,
+      page: 0,
+      entry_id: 'log-0123456789abcdef01234567',
+      redaction_version: 'client-log-v1',
+      matched_identifiers: [{ kind: 'learner_id' as const, matched: true as const }],
+      matched_error_features: [],
+      service_binding: { status: 'confirmed' as const, method: 'observed_client_session' as const },
+      observed_platform: 'ios' as const,
+      observed_form_factor: 'pad' as const,
+      observed_product_line: 'xuejiayun' as const,
+      observed_version: '5.105.0',
+      device_ref: null,
+      session_ref: null,
+      platform_conflict: false,
+    };
+    const evidenceState = {
+      entries: [{
+        id: 'ev-observed-log',
+        kind: 'log',
+        source: 'logcenter:search_cloud_logs',
+        location: 'logcenter://prod/prod-cloudlearn/app#log-0123456789abcdef01234567',
+        excerpt: 'player warning',
+        supports: '关联的播放器日志',
+        observation_context: observation,
+      }],
+      texts: { 'ev-observed-log': 'player warning' },
+    };
+    const report = localReport('client');
+    const { agent, inputs } = scriptedAgent({
+      local: (input, index) => completedEvent(
+        input,
+        index === 0 ? '日志调查完成' : '已完成源码续查',
+        report,
+        evidenceState,
+      ),
+    });
+    const result = await startRound(harness, agent, registry, '音频播放中断', EMPTY_SIGNALS, [], {
+      createConversationSource: async (scope: Record<string, unknown>) => {
+        sourceCalls.push(scope);
+        return {
+          workspace_path: '/bound/ios',
+          repository_id: 'ios-shell',
+          repository_name: 'iOS shell',
+          requested_ref: 'ios-5.106',
+          resolved_commit: 'a'.repeat(40),
+          source_repositories: [{
+            repository_id: 'ios-shell',
+            repository_name: 'iOS shell',
+            requested_ref: 'ios-5.106',
+            resolved_commit: 'a'.repeat(40),
+            role: 'shell' as const,
+            mount_path: '',
+          }],
+          source_completeness: 'partial' as const,
+          source_limitations: ['现场版本 5.105.0 未登记，使用 5.106.0 近邻对照'],
+          platform: 'ios' as const,
+          product_line: 'xuejiayun' as const,
+          form_factor: 'pad' as const,
+          version: '5.106.0',
+          build: '1',
+        };
+      },
+    });
+    assert.equal(result.terminal, 'completed');
+    assert.equal(inputs.length, 2);
+    assert.equal(inputs[0]?.phase, 'local');
+    assert.equal(inputs[1]?.phase, 'source');
+    assert.equal(inputs[1]?.conversation.workspace_path, '/bound/ios');
+    assert.deepEqual(repositorySessions, ['/bound/ios']);
+    assert.deepEqual(sourceCalls.map(({ signal: _signal, ...scope }) => scope), [{
+      platform: 'ios',
+      productLine: 'xuejiayun',
+      formFactor: 'pad',
+      version: '5.105.0',
+      build: null,
+    }]);
+  }, { sourceUnavailable: true });
 });
 
 test('初始 server 拒绝后不调用 Slot，并由 joint 给出缺口', async () => {

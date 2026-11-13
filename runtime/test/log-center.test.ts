@@ -367,6 +367,59 @@ test('LogCenter 返回带关联上下文的观测，供证据账本和版本绑�
   assert.equal(result.entries[0]?.observation_context.observed_version, '7.106.5');
 });
 
+test('H5 埋点从关联 UA 补齐 iOS/iPad/云学习版本，而不是沿用目录默认端', async () => {
+  const config = loadRuntimeConfig({
+    HARMONY_AGENT_LOGCENTER_APP_ID: 'app-id',
+    HARMONY_AGENT_LOGCENTER_APP_SECRET: 'app-secret',
+    HARMONY_AGENT_LOGCENTER_BASE_URL: 'https://logcenter.example.test/api',
+  });
+  const catalog: LogCatalog = {
+    version: 3,
+    vendor: 'aliyun',
+    defaults: { region: 'cn-beijing', account: 'account', collection: 'collection', time: '1h' },
+    stores: [{ id: 'prod-cloudlearn', topic: 'prod-cloudlearn', env: 'prod', description: '', notes: [] }],
+    targets: [{
+      id: 'cloudlearn-h5',
+      source: 'aliyun_sls',
+      log_kind: 'product_event',
+      platform: 'h5',
+      client_form: 'h5',
+      product_line: 'xueersi',
+      store_ref: 'prod-cloudlearn',
+      aliases: ['磨耳朵'],
+      description: '',
+      notes: [],
+      key_fields: ['uid'],
+      businesses: [],
+      suggested_query: 'appid: "cloudlearn-h5"',
+      monitor_types: {},
+      identity_fields: { learner_id: ['uid'], phone: [], trace_id: [], request_id: [] },
+    }],
+  };
+  const ua = 'Mozilla/5.0 (iPad; CPU OS 18_7 like Mac OS X) XESIPS/5.105.0/YunXueXi_iPad_iOS';
+  const tools = await createLogCatalogTools(config, {
+    catalog,
+    correlation: { identifiers: { learner_id: 'learner-1' }, sourceText: '磨耳朵' },
+    http: async ({ url }) => url.includes('/search')
+      ? { status: 200, body: { code: 0, data: { total: 1, logs: [{ uid: 'learner-1', ua, rsd: ua }] } } }
+      : { status: 200, body: { code: 0, data: { total: 1 } } },
+  });
+  assert.ok(tools);
+  const result = await tools.search_cloud_logs.execute!({
+    vendor: 'aliyun', region: 'cn-beijing', account: 'account', collection: 'collection',
+    topic: 'prod-cloudlearn', query: 'appid: "cloudlearn-h5"', time: '15m', size: 10, from: 0,
+  }, {} as never) as { entries: Array<{ observation_context: {
+    observed_platform: string;
+    observed_form_factor: string;
+    observed_product_line: string | null;
+    observed_version: string | null;
+  } }> };
+  assert.equal(result.entries[0]?.observation_context.observed_platform, 'ios');
+  assert.equal(result.entries[0]?.observation_context.observed_form_factor, 'pad');
+  assert.equal(result.entries[0]?.observation_context.observed_product_line, 'xuejiayun');
+  assert.equal(result.entries[0]?.observation_context.observed_version, '5.105.0');
+});
+
 test('SLS 索引键未配置的上游报错被翻译为可纠正指引', async () => {
   const config = loadRuntimeConfig({
     HARMONY_AGENT_LOGCENTER_APP_ID: 'app-id',

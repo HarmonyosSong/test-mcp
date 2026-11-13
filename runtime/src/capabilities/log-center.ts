@@ -569,6 +569,32 @@ function textField(entry: unknown, paths: readonly string[] | undefined): string
   return null;
 }
 
+function inferredClientVersion(entry: unknown): string | null {
+  const text = ['ua', 'rsd', 'version'].flatMap((path) => fieldValues(entry, path))
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ');
+  return text.match(/(?:XES(?:IPS|PyIOS)|version)[\/=\s]+(\d+\.\d+\.\d+(?:\.\d+)?)/i)?.[1] ?? null;
+}
+
+function inferredClientFormFactor(entry: unknown): 'phone' | 'pad' | 'universal' | 'unknown' {
+  const text = ['ua', 'rsd'].flatMap((path) => fieldValues(entry, path))
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLocaleLowerCase();
+  if (/ipad|\bhd\b|tablet/.test(text)) return 'pad';
+  if (/iphone|android|phone/.test(text)) return 'phone';
+  return 'unknown';
+}
+
+function inferredClientProductLine(entry: unknown): 'xueersi' | 'xuejiayun' | null {
+  const text = ['ua', 'rsd', 'bundleName'].flatMap((path) => fieldValues(entry, path))
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ');
+  if (/YunXueXi|xuejiayun|学家云/i.test(text)) return 'xuejiayun';
+  if (/xueersi|学而思/i.test(text)) return 'xueersi';
+  return null;
+}
+
 function parsePlatform(value: string, configured: Record<string, 'harmony' | 'android' | 'ios'>): 'harmony' | 'android' | 'ios' | null {
   const exact = configured[value] ?? configured[value.trim().toLocaleLowerCase()];
   if (exact) return exact;
@@ -934,7 +960,9 @@ export async function createLogCatalogTools(
     const matched = sanitized.matched_identifiers;
     const target = catalog.targets.find((item) => item.id === candidate.target_id);
     const fields: ObservationFields | undefined = target?.observation_fields;
-    const rawPlatforms = (fields?.platform ?? [])
+    // H5 埋点的 catalog target 是 platform=h5，但其 UA/rsd 仍携带真实宿主端。
+    // 保留 target 的路由语义，同时从观测行补齐源码绑定所需的客户端端信息。
+    const rawPlatforms = [...(fields?.platform ?? []), 'ua', 'rsd']
       .flatMap((path) => fieldValues(raw, path))
       .filter((value): value is string | number => typeof value === 'string' || typeof value === 'number')
       .map(String);
@@ -951,7 +979,9 @@ export async function createLogCatalogTools(
       timestamp,
       entry: raw,
     });
-    const version = matched.length > 0 ? textField(raw, fields?.version) : null;
+    const version = matched.length > 0
+      ? textField(raw, fields?.version) ?? inferredClientVersion(raw)
+      : null;
     const device = textField(raw, fields?.device);
     const session = textField(raw, fields?.session);
     const observationContext = LogObservationContextSchema.parse({
@@ -975,7 +1005,10 @@ export async function createLogCatalogTools(
         method: matched.length > 0 ? 'observed_client_session' : null,
       },
       observed_platform: observedPlatform,
-      observed_product_line: matched.length > 0 ? candidate.product_line : null,
+      observed_form_factor: inferredClientFormFactor(raw),
+      observed_product_line: matched.length > 0
+        ? inferredClientProductLine(raw) ?? candidate.product_line
+        : null,
       observed_version: version ? safeText(version) : null,
       // 不脱敏（2026-11-13 起内网全链路明文）：设备/会话引用直接保留原始值。
       device_ref: device ? safeText(device) : null,

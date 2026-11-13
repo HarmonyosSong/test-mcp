@@ -9,6 +9,7 @@ import type {
 import type { CapabilityMcp } from '../capabilities/mcp.js';
 import type { LogToolCorrelation } from '../capabilities/log-center.js';
 import { createRoundCapabilitySession, type CapabilitySession } from '../capabilities/session.js';
+import { resolvePromptSourceContext } from '../capabilities/prompt-version-context.js';
 import type { ModelConfiguration } from '../model/configuration.js';
 import type { ProductStore } from '../product/store.js';
 import { redactRecord, redactRecordInPlace, redactSensitiveText } from '../security/redaction.js';
@@ -108,6 +109,15 @@ export interface RunDiagnosisRoundOptions {
   slotRegistry?: AgentSlotRegistry;
   compassAvailable?: boolean;
   investigationBudget?: InvestigationBudget;
+  /** Bind a read-only source snapshot after logs reveal the real client/version. */
+  createConversationSource?: (input: {
+    platform: Exclude<ConversationRecord['platform'], null>;
+    productLine: ConversationRecord['product_line'];
+    formFactor: ConversationRecord['form_factor'];
+    version: ConversationRecord['version'];
+    build: ConversationRecord['build'];
+    signal?: AbortSignal;
+  }) => Promise<Partial<Pick<ConversationRecord, 'workspace_path' | 'repository_id' | 'repository_name' | 'requested_ref' | 'resolved_commit' | 'source_repositories' | 'source_completeness' | 'source_limitations' | 'platform' | 'product_line' | 'form_factor' | 'version' | 'build'>>>;
 }
 
 export type ConsultationResumeDecision = 'approved' | 'rejected' | 'expired';
@@ -480,6 +490,7 @@ async function runOrchestratedDiagnosisRound(
   let streamedText = '';
   let localCompleted: CompletedEvent | undefined;
   let localFailed: FailedEvent | undefined;
+  let sourceContinuation = false;
 
   const emit = async (event: OrchestrationEvent) => {
     await onOrchestrationEvent?.(redactRecord(event, redact));
@@ -566,7 +577,7 @@ async function runOrchestratedDiagnosisRound(
   };
 
   const consumeAgentStream = async (
-    phase: 'local' | 'joint',
+    phase: 'local' | 'source' | 'joint',
     final: boolean,
     signal: AbortSignal | undefined,
     toolsets: CapabilitySession['toolsets'],
@@ -587,8 +598,8 @@ async function runOrchestratedDiagnosisRound(
       toolsets,
       abortSignal: signal,
       phase,
-      clientSteps: phase === 'local' ? clientSteps : [],
-      localReport: phase === 'joint' ? state?.localReport ?? null : undefined,
+      clientSteps: phase === 'joint' ? [] : clientSteps,
+      localReport: phase === 'joint' || phase === 'source' ? state?.localReport ?? null : undefined,
       externalFindings: phase === 'joint' ? conversation.external_findings : undefined,
       messageId: assistantMessage.id,
     })) {
@@ -698,7 +709,14 @@ async function runOrchestratedDiagnosisRound(
   });
 
   const clientBranch = observedBranch('client', {
-    run: (plan, context) => consumeAgentStream('local', false, context.abortSignal, capabilitySession!.toolsets, '', plan.clientSteps),
+    run: (plan, context) => consumeAgentStream(
+      sourceContinuation ? 'source' : 'local',
+      false,
+      context.abortSignal,
+      capabilitySession!.toolsets,
+      '',
+      sourceContinuation ? [] : plan.clientSteps,
+    ),
     cancel: async () => undefined,
   });
 
@@ -800,6 +818,39 @@ async function runOrchestratedDiagnosisRound(
     else await consumeAgentStream('joint', true, abortSignal, capabilitySession.toolsets);
   };
 
+  const bindObservedSource = async (): Promise<boolean> => {
+    if (conversation.workspace_path || !options.createConversationSource || !localCompleted?.evidence_state) {
+      return false;
+    }
+    try {
+      const scope = resolvePromptSourceContext(content, {
+        ...conversation,
+        evidence_state: localCompleted.evidence_state,
+      });
+      if (!scope?.platform) return false;
+      const source = await options.createConversationSource({
+        platform: scope.platform,
+        productLine: scope.productLine,
+        formFactor: scope.formFactor,
+        version: scope.version,
+        build: scope.build,
+        signal: abortSignal,
+      });
+      Object.assign(conversation, source);
+      conversation.source_limitations = source.source_limitations ?? [];
+      conversation.updated_at = new Date().toISOString();
+      await saveConversation(conversation);
+      return Boolean(conversation.workspace_path);
+    } catch (error) {
+      conversation.source_limitations = [
+        `已从关联日志识别${conversation.platform ?? '客户端'}${conversation.version ? ` ${conversation.version}` : ''}，但源码快照绑定失败：${error instanceof Error ? error.message : '未知错误'}。`,
+      ];
+      conversation.updated_at = new Date().toISOString();
+      await saveConversation(conversation);
+      return false;
+    }
+  };
+
   try {
     let plan: InvestigationPlan;
     let correlation: CorrelationContext;
@@ -858,10 +909,39 @@ async function runOrchestratedDiagnosisRound(
       if (plan.mode !== 'local') {
         await runExternalAndJoint(plan);
       } else {
-        const result = await executeSupervisor(plan, false);
+        let result = await executeSupervisor(plan, false);
         if (result.status === 'cancelled') {
           await finishCancelledOrFailed(result);
         } else if (localCompleted) {
+          // 首轮日志观察可能才暴露真实端/版本；绑定后立即补跑 source 阶段，
+          // 避免把“首轮开始前没有快照”误报成“本次授权范围没有源码”。
+          if (await bindObservedSource()) {
+            sourceContinuation = true;
+            plan = { ...plan, clientSteps: ['observe', 'source'], reason: `${plan.reason}；日志已补齐源码范围，继续核对对应客户端实现` };
+            state.currentPlan = plan;
+            appendPlanHistory(state, plan);
+            await emit({ type: 'INVESTIGATION_PLAN', runId, plan, resumed: false });
+            await capabilitySession.close().catch(() => undefined);
+            capabilitySession = await createRoundCapabilitySession(capabilities, {
+              conversationId: conversation.id,
+              messageId: assistantMessage.id,
+              runId,
+              workspacePath: conversation.workspace_path,
+              repositoryId: conversation.repository_id ?? null,
+              resolvedCommit: conversation.resolved_commit ?? null,
+              logCorrelation: buildRoundLogCorrelation(conversation, content),
+              abortSignal,
+            });
+            result = await executeSupervisor(plan, false);
+          }
+          if (result.status === 'cancelled') {
+            await finishCancelledOrFailed(result);
+            return roundResult(conversation, assistantMessage, runId, terminal, terminalPersisted, text);
+          }
+          if (!localCompleted) {
+            await finishCancelledOrFailed(result);
+            return roundResult(conversation, assistantMessage, runId, terminal, terminalPersisted, text);
+          }
           const report = localCompleted.report;
           const decision = decideLocalContinuation(plan, {
             responsibility: report?.responsibility ?? 'unknown',

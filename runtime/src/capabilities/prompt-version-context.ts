@@ -121,7 +121,7 @@ export function resolvePromptSourceContext(
     : firstDetected(previousMessages, detectVersion);
   const platform = currentPlatform ?? observed.platform ?? historyPlatform ?? conversation.platform;
   const productLine = currentProductLine ?? observed.productLine ?? historyProductLine ?? conversation.product_line;
-  const formFactor = currentFormFactor ?? historyFormFactor ?? conversation.form_factor;
+  const formFactor = currentFormFactor ?? observed.formFactor ?? historyFormFactor ?? conversation.form_factor;
   // Do not carry a Harmony/iOS log version into an explicit Android request
   // (or the reverse); the registry will choose the latest verified build.
   const observedVersion = observed.platform && platform && observed.platform !== platform
@@ -165,10 +165,11 @@ function firstDetected<T>(messages: readonly string[], detector: (content: strin
 function observedLogContext(value: ConversationRecord['evidence_state']): {
   platform: ClientPlatform | null;
   productLine: ClientProductLine | null;
+  formFactor: ClientFormFactor | null;
   version: string | null;
 } {
   const rawEntries = value.entries;
-  if (!Array.isArray(rawEntries)) return { platform: null, productLine: null, version: null };
+  if (!Array.isArray(rawEntries)) return { platform: null, productLine: null, formFactor: null, version: null };
   const contexts = rawEntries.flatMap((entry) => {
     if (!entry || typeof entry !== 'object' || !('observation_context' in entry)) return [];
     const parsed = LogObservationContextSchema.safeParse(entry.observation_context);
@@ -199,9 +200,16 @@ function observedLogContext(value: ConversationRecord['evidence_state']): {
   if (versions.length > 1) {
     throw new PromptVersionContextError(`LogCenter 关联日志的版本存在歧义：${versions.join('、')}`);
   }
+  const formFactors = [...new Set(contexts
+    .map((context) => context.observed_form_factor)
+    .filter((formFactor): formFactor is ClientFormFactor => formFactor !== 'unknown'))];
+  if (formFactors.length > 1) {
+    throw new PromptVersionContextError(`LogCenter 关联日志的端形态存在歧义：${formFactors.join('、')}`);
+  }
   return {
     platform: platforms[0] ?? null,
     productLine: productLines[0] ?? null,
+    formFactor: formFactors[0] ?? null,
     version: versions[0] ?? null,
   };
 }

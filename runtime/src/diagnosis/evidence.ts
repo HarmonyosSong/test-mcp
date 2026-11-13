@@ -44,6 +44,8 @@ const DEFAULTS = {
   maxCurrentTurnBytes: 4 * 1024 * 1024,
 } as const;
 
+type EvidenceReference = Omit<Evidence, 'excerpt' | 'supports'> & Partial<Pick<Evidence, 'excerpt' | 'supports'>>;
+
 function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
@@ -62,11 +64,22 @@ function normalizeExcerpt(raw: string): string {
   return raw.trim().replace(/^(?:…|\.\.\.)+/, '').replace(/(?:…|\.\.\.)+$/, '').trim();
 }
 
+/** 日志正文通常是 JSON.stringify 后的字符串；模型引用嵌套 JSON 时会省略转义反斜杠。 */
+function normalizeJsonEscapes(text: string): string {
+  return text.replace(/\\(["'])/g, '$1');
+}
+
 /** 空白归一后的连续片段匹配；摘录被剥到为空时没有证明力，视为不匹配。 */
 function excerptMatches(observedText: string, excerpt: string): boolean {
   const needle = normalizeExcerpt(excerpt);
   if (!needle) return false;
-  return normalizeForExcerptMatch(observedText).includes(normalizeForExcerptMatch(needle));
+  const observedVariants = [observedText, normalizeJsonEscapes(observedText)];
+  const needleVariants = [needle, normalizeJsonEscapes(needle)];
+  return observedVariants.some((observedVariant) =>
+    needleVariants.some((needleVariant) =>
+      normalizeForExcerptMatch(observedVariant).includes(normalizeForExcerptMatch(needleVariant)),
+    ),
+  );
 }
 
 // Match Python json.dumps(..., sort_keys=True), whose spaces and Unicode
@@ -129,6 +142,8 @@ export class EvidenceLedger {
   readonly texts = new Map<string, string>();
   readonly inputTexts: string[];
   readonly userRefs = new Map<string, string>();
+  /** Remote log entry IDs are presentation IDs; resolve them only when observed in this ledger. */
+  readonly evidenceAliases = new Map<string, string>();
   readonly evicted = new Map<string, string>();
   readonly currentTurnIds = new Set<string>();
   currentTurnBytes = 0;
@@ -188,6 +203,7 @@ export class EvidenceLedger {
 
     this.entries.set(evidence.id, evidence);
     this.texts.set(evidence.id, body);
+    this.registerEvidenceAliases(evidence);
     if (this.evicted.delete(evidence.id)) this.restoredCount += 1;
     if (!isCurrentTurn) {
       this.currentTurnIds.add(evidence.id);
@@ -256,6 +272,7 @@ export class EvidenceLedger {
     }
     for (const [id, evidence] of ledger.entries) {
       if (!ledger.texts.has(id)) ledger.texts.set(id, evidence.excerpt);
+      ledger.registerEvidenceAliases(evidence);
     }
     if (isRecord(snapshot.evicted)) {
       for (const [id, location] of Object.entries(snapshot.evicted)) {
@@ -295,7 +312,7 @@ export class EvidenceLedger {
       rows = Array.isArray(result) ? result : [result];
     }
 
-    const evidenceRefs: Array<Omit<Evidence, 'excerpt' | 'supports'>> = [];
+    const evidenceRefs: EvidenceReference[] = [];
     let capacityReached = false;
     let sourcePathsRejected = 0;
     for (const row of rows) {
@@ -379,7 +396,7 @@ export class EvidenceLedger {
         : [];
     if (!Array.isArray(rows)) return { evidence_refs: [], result };
 
-    const evidenceRefs: Array<Omit<Evidence, 'excerpt' | 'supports'>> = [];
+    const evidenceRefs: EvidenceReference[] = [];
     let rejected = 0;
     let capacityReached = false;
     for (const row of rows) {
@@ -427,7 +444,9 @@ export class EvidenceLedger {
           capacityReached = true;
           break;
         }
-        const { excerpt: _excerpt, supports: _supports, ...reference } = evidence;
+        // Keep the exact serialized observation beside the ID. This avoids making
+        // the model reconstruct nested JSON from the surrounding result payload.
+        const reference = { ...evidence };
         evidenceRefs.push(reference);
       } catch {
         rejected += 1;
@@ -482,6 +501,21 @@ export class EvidenceLedger {
     }
   }
 
+  private registerEvidenceAliases(evidence: Evidence): void {
+    if (evidence.kind !== 'log' || !evidence.observation_context) return;
+    const entryId = evidence.observation_context.entry_id;
+    const aliases = [
+      entryId,
+      `ev-${entryId.slice('log-'.length)}`,
+      evidence.location?.split('#').at(-1) ?? '',
+    ];
+    for (const alias of aliases) {
+      if (alias && alias !== evidence.id && !this.evidenceAliases.has(alias)) {
+        this.evidenceAliases.set(alias, evidence.id);
+      }
+    }
+  }
+
   private validateVerifiedClaims(report: DiagnosisReport): void {
     report.joint_assessment?.verified_claims.forEach((claim, claimIndex) => {
       for (const id of claim.evidence_ids) {
@@ -502,9 +536,31 @@ export class EvidenceLedger {
   }
 
   resolveDraft(rawDraft: DiagnosisReportDraft | unknown): DiagnosisReport {
-    const draft = DiagnosisReportDraftSchema.parse(rawDraft);
+    const canonicalId = (id: string): string => this.evidenceAliases.get(id) ?? id;
+    const aliasesResolved = isRecord(rawDraft) ? {
+      ...rawDraft,
+      evidence: Array.isArray(rawDraft.evidence)
+        ? rawDraft.evidence.map((item) => isRecord(item) && typeof item.id === 'string'
+          ? { ...item, id: canonicalId(item.id) }
+          : item)
+        : rawDraft.evidence,
+      root_cause_candidates: Array.isArray(rawDraft.root_cause_candidates)
+        ? rawDraft.root_cause_candidates.map((item) => isRecord(item) && Array.isArray(item.evidence_ids)
+          ? { ...item, evidence_ids: item.evidence_ids.map((id) => typeof id === 'string' ? canonicalId(id) : id) }
+          : item)
+        : rawDraft.root_cause_candidates,
+      joint_assessment: isRecord(rawDraft.joint_assessment) && Array.isArray(rawDraft.joint_assessment.verified_claims)
+        ? {
+            ...rawDraft.joint_assessment,
+            verified_claims: rawDraft.joint_assessment.verified_claims.map((item) => isRecord(item) && Array.isArray(item.evidence_ids)
+              ? { ...item, evidence_ids: item.evidence_ids.map((id) => typeof id === 'string' ? canonicalId(id) : id) }
+              : item),
+          }
+        : rawDraft.joint_assessment,
+    } : rawDraft;
+    const canonicalDraft = DiagnosisReportDraftSchema.parse(aliasesResolved);
     const resolved: Evidence[] = [];
-    for (const citation of draft.evidence) {
+    for (const citation of canonicalDraft.evidence) {
       const userText = this.userRefs.get(citation.id);
       if (userText !== undefined) {
         if (!excerptMatches(userText, citation.excerpt)) {
@@ -562,7 +618,7 @@ export class EvidenceLedger {
       }));
     }
 
-    const report = DiagnosisReportSchema.parse({ ...draft, evidence: resolved });
+    const report = DiagnosisReportSchema.parse({ ...canonicalDraft, evidence: resolved });
     const byId = new Map(report.evidence.map((item) => [item.id, item]));
     for (const candidate of report.root_cause_candidates) {
       for (const id of candidate.evidence_ids) {

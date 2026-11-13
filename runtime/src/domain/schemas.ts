@@ -95,6 +95,7 @@ export const LogObservationContextSchema = z.strictObject({
     method: z.enum(['user_selected', 'observed_client_session']).nullable(),
   }),
   observed_platform: z.enum(['harmony', 'android', 'ios', 'unknown']),
+  observed_form_factor: z.enum(['phone', 'pad', 'universal', 'unknown']).optional().default('unknown'),
   // Older evidence snapshots omit the product line; LogCenter may supply it
   // when the user's prompt only names a platform.
   observed_product_line: ClientProductLineSchema.nullable().optional().default(null),

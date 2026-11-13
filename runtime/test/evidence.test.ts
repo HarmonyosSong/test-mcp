@@ -546,6 +546,36 @@ test('correlated remote logs enter the ledger once per entry and survive citatio
   assert.equal(restored.entries.get(id)?.observation_context?.entry_id, 'log-0123456789abcdef01234567');
 });
 
+test('remote log citations accept nested JSON text and resolve observed log-entry aliases', () => {
+  const nested = '"stage":"timeout","stageDesc":"fixture stalled","nativePayload":"{\\"action\\":\\"timeUpdateCallback\\"}"';
+  const ledger = new EvidenceLedger();
+  const captured = ledger.capture('search_cloud_logs', {}, {
+    entries: [remoteEntry({ excerpt: `{"exception":"{\\"${nested}"}` })],
+  }) as { evidence_refs: Array<{ id: string; observation_context: { entry_id: string } }> };
+  const reference = captured.evidence_refs[0]!;
+  const entryId = reference.observation_context.entry_id;
+  const report = ledger.resolveDraft(draft(reference.id, nested, {
+    root_cause_candidates: [{
+      title: 'fixture candidate',
+      explanation: 'Observed nested log payload.',
+      confidence: 0.5,
+      evidence_ids: [entryId],
+    }],
+  }));
+  assert.equal(report.evidence[0]?.id, reference.id);
+  assert.deepEqual(report.root_cause_candidates[0]?.evidence_ids, [reference.id]);
+});
+
+test('remote log citation references expose the exact observed excerpt', () => {
+  const ledger = new EvidenceLedger();
+  const result = ledger.capture('search_cloud_logs', {}, {
+    entries: [remoteEntry()],
+  }) as { evidence_refs: Array<{ id: string; excerpt: string; supports: string }> };
+  const reference = result.evidence_refs[0]!;
+  assert.equal(reference.excerpt, 'Error fixture failure; learner=learner_id:abc123');
+  assert.equal(reference.supports.length > 0, true);
+});
+
 test('unmatched remote logs and forged contexts are not admitted as evidence', () => {
   const ledger = new EvidenceLedger();
   const unmatched = remoteEntry({

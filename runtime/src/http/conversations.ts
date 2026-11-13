@@ -141,6 +141,7 @@ export function createConversationRoutes(
               slotRegistry: options.slotRegistry,
               compassAvailable: options.compassAvailable,
               investigationBudget: options.investigationBudget,
+              createConversationSource: options.createConversationSource,
             },
             onPrepared: ({ assistantMessage, runId: preparedRunId, conversation: prepared }) => {
               runId = preparedRunId;
