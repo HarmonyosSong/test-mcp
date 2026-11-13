@@ -374,7 +374,7 @@ test('带服务端特征和 traceId 的新工单仍先执行本地观察，不�
   });
 });
 
-test('初始 local 有源码观测和关联信息时自动接续远端，不外发模型 next_action', async () => {
+test('初始 local 有源码观测和关联信息时自动接续远端，外发含本地证据、判断与具体协查问题', async () => {
   await withHarness(async (harness) => {
     const remote = remoteRegistry();
     const scripted = scriptedAgent({
@@ -390,10 +390,15 @@ test('初始 local 有源码观测和关联信息时自动接续远端，不外�
     assert.equal(result.conversation.investigation?.currentPlan && (result.conversation.investigation.currentPlan as { mode: string }).mode, 'server');
     const consultation = result.conversation.consultations[0]!;
     assert.equal(consultation.status, 'completed');
+    // 外发边界：用户原文 + 关联信息 + 本地证据（含学员标识）+ 本地判断 + 具体协查问题。
     assert.match(consultation.outbound_text, /页面异常/);
     assert.match(consultation.outbound_text, /trace-local/);
-    assert.equal(consultation.outbound_text.includes('模型下一步问题不得进入外发正文'), false);
+    assert.match(consultation.outbound_text, /本地调查证据/);
+    assert.match(consultation.outbound_text, /throw new Error\("local"\)/);
+    assert.match(consultation.outbound_text, /本地判断/);
+    assert.match(consultation.outbound_text, /模型下一步问题不得进入外发正文/);
     assert.deepEqual(remote.calls, ['resolve', 'invoke']);
+    assert.deepEqual(remote.tasks[0], { text: consultation.outbound_text, contextId: undefined });
     assert.deepEqual(scripted.inputs.map((input) => input.phase ?? 'local'), ['local', 'joint']);
     assert.equal(await archivedCaseCount(harness.directory), 1);
   });

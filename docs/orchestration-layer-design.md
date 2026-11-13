@@ -138,9 +138,9 @@ interface Branch {
 这是 Runtime 控制的**有界状态流转**，不是两个 Agent 自由聊天。自动接续必须同时满足：
 
 1. 触发依据是校验通过的结构化结果：`next_action.target=external` 和明确的下一步调查问题决定外部协查；`responsibility` 只表达当前证据的责任判断，不再兼任路由条件。Supervisor 不自行阅读自由文本猜测路由。
-2. 故障诊断需要足够的本地观测和请求关联信息；关联信息可以来自本地日志，不必要求用户提供，不足时才向老师追问故障事实。`task_type=rule/implementation` 的项目内规则与实现查询在本地知识不足时可请求外部协查，不要求源码/日志观测或 traceId/requestId，也不据此推断服务端责任。
+2. 故障诊断需要足够的本地观测；缺少 traceId/requestId 时不阻断协查，由外发摘要显式声明关联缺口，请外部 Agent 按学员标识与时间窗关联。`task_type=rule/implementation` 的项目内规则与实现查询在本地知识不足时可请求外部协查，不要求源码/日志观测或 traceId/requestId，也不据此推断服务端责任。
 3. 全局预算、远端调用次数和 `maxHandoffRounds` 均未耗尽，远端槽位可用，且用户没有限定只查某一侧。
-4. 外发内容只能是 Runtime 从当前用户问题生成的固定脱敏摘要，digest、附件空列表和 Slot 参数由代码校验；模型不能改写。自动调用不向老师展示技术审批，也不允许两个 Agent 自由互发。
+4. 外发内容只能是 Runtime 按固定结构组装的摘要：用户原文 + 关联信息（缺口声明）+ 本地已校验证据摘录 + 本地判断 + 具体协查问题；digest、附件空列表和 Slot 参数由代码校验。模型不能改写结构，进入外发的模型产出仅限账本已校验的报告字段。自动调用不向老师展示技术审批，也不允许两个 Agent 自由互发。
 
 本地初始计划升级为接续服务端调查时，当前计划更新为 `server`，`reason` 记录本地路由依据，初始计划和变更原因保留在 `investigation` 中。远端失败不会丢弃本地事实，loop 以已有结果和缺口说明收尾。
 
@@ -280,7 +280,7 @@ Compass 等远端 Agent 返回的任何文本都不能经任何路径写入账�
 7. 并行执行期间服务端分支对账本零写入；`waiting_confirmation` 暂停与恢复轮次前后账本状态一致，恢复后新证据追加而非覆盖。
 8. 本地取消 ⇒ `CancelTask` 到达 mock 端；远端状态未知记 `unknown`，不伪造。
 9. 预算到期 ⇒ 远端收到 `CancelTask`，半截结论标 `truncated`，本地分支照常收尾；联合阶段缺失时 `joint_assessment` 为 `null`。
-10. 初始 `local` 且本地校验后的 `next_action.target=external`、任务类型和预算满足条件 ⇒ Supervisor 自动创建外部协查、更新计划，并在同一轮执行远端与联合阶段，无需用户选择技术路径或审批，handoff 不超过上限。规则/实现查询不要求 traceId；故障诊断缺少本地观测或关联信息时不得自动跨侧，用户限定只查客户端或远端不可用时不外发。
+10. 初始 `local` 且本地校验后的 `next_action.target=external`、任务类型和预算满足条件 ⇒ Supervisor 自动创建外部协查、更新计划，并在同一轮执行远端与联合阶段，无需用户选择技术路径或审批，handoff 不超过上限。规则/实现查询不要求 traceId；故障诊断缺少本地观测时不得自动跨侧，缺 traceId/requestId 不阻断（外发摘要声明关联缺口），用户限定只查客户端或远端不可用时不外发。
 11. 契约测试：旧前端忽略 `INVESTIGATION_PLAN` / `BRANCH_STATUS` / `JOINT_ASSESSMENT` 后行为不变。
 12. `observe → source` 门禁：过早源码调用被拒绝；身份匹配的关联日志观察、粘贴 hilog 解析、目录不覆盖、空结果、身份未匹配或查询失败后按状态放行或降级；歧义解析和 count 不放行；降级不得被写成平台确认；跨侧计划切换与恢复时 `clientSteps` 保持一致。
 

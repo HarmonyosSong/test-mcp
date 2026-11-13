@@ -87,7 +87,7 @@ Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 
 
 `product_conversations` 保存消息、证据、调查计划、分支状态、协查记录、外部结论和 Slot 审计；`product_snapshots` 保存动态版本登记产生的固定快照元数据。`product_repositories` 仅为旧数据迁移保留，不参与当前源码选择。`.data/knowledge-queries.jsonl` 与 `.data/knowledge-cases/` 是可重建的观测产物，不是对话事实源。
 
-模型配置保存在 owner-only `.data/model-config.json`，不进入产品数据库。通用凭证脱敏之外，Runtime 每轮从用户明确标签构造学员隐私上下文：原始学员编号/电话只在内存中用于授权日志匹配，工具结果、事件、证据和案例归档只保留脱敏文本或本轮伪名。Compass 及其模型链路均在内网，默认外发使用用户原文与 traceId/requestId 关联信息，学员标识不伪名化、也不参与 Compass `correlationReady`。
+模型配置保存在 owner-only `.data/model-config.json`，不进入产品数据库。通用凭证脱敏之外，Runtime 每轮从用户明确标签构造学员隐私上下文：原始学员编号/电话只在内存中用于授权日志匹配，工具结果、事件、证据和案例归档只保留脱敏文本或本轮伪名。Compass 及其模型链路均在内网，外发为 Runtime 固定结构摘要：用户原文、traceId/requestId 关联信息（缺失时声明关联缺口）、本地已校验证据摘录（含学员标识）、本地判断与具体协查问题；学员标识不伪名化，缺 traceId/requestId 不阻断外发。
 
 ## 7. 当前能力状态
 
