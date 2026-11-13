@@ -37,7 +37,7 @@ test('archives terminal diagnosis cases idempotently and appends correlated outc
   }
 });
 
-test('案例归档应用与会话一致的学员隐私脱敏', async () => {
+test('案例归档脱敏与会话一致：uid 明文保留、电话脱敏', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'mastra-observability-privacy-'));
   const input = '学员编号: student-fixture-001; 联系电话: +8613800000000; 页面打不开';
   const conversation = ConversationRecordSchema.parse({
@@ -55,7 +55,8 @@ test('案例归档应用与会话一致的学员隐私脱敏', async () => {
       (text) => redactClientText(privacy, text),
     );
     const archived = await readFile(path, 'utf8');
-    assert.equal(archived.includes('student-fixture-001'), false);
+    // 新约定：uid/learner_id 明文保留（便于日志关联），电话仍脱敏。
+    assert.equal(archived.includes('student-fixture-001'), true);
     assert.equal(archived.includes('+8613800000000'), false);
     assert.equal(archived.includes('13800000000'), false);
     assert.match(archived, /页面打不开/);

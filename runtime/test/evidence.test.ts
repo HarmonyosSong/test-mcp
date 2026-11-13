@@ -168,7 +168,7 @@ test('pasted logs require exact user-provided log text and retain line provenanc
   assert.equal(captured.evidence_refs[0]?.location, 'pasted-hilog:2');
 });
 
-test('粘贴日志入账前脱敏，证据 ID 和快照不保留原始学员标识', () => {
+test('粘贴日志入账：uid 明文保留、电话脱敏，证据 ID 由内容哈希生成', () => {
   const learnerId = 'student-fixture-001';
   const log = `Error uid=${learnerId} phone=+8613800000000`;
   const privacy = new ClientLogPrivacy({ learner_id: learnerId }, Buffer.alloc(32, 3));
@@ -177,10 +177,13 @@ test('粘贴日志入账前脱敏，证据 ID 和快照不保留原始学员标�
     error_lines: [{ line: 1, excerpt: log }],
   }) as { evidence_refs: Array<{ id: string }> };
   const serialized = JSON.stringify(ledger.snapshot());
-  assert.equal(serialized.includes(learnerId), false);
+  // 新约定：uid/learner_id 明文保留（避免伪名与真实 uid 混淆、便于日志关联），电话仍脱敏。
+  assert.equal(serialized.includes(learnerId), true);
   assert.equal(serialized.includes('13800000000'), false);
+  assert.equal(captured.evidence_refs[0]!.id.includes(learnerId), false);
   const excerpt = ledger.entries.get(captured.evidence_refs[0]!.id)?.excerpt ?? '';
-  assert.match(excerpt, /learner_id:[a-f0-9]{16}/);
+  assert.match(excerpt, /student-fixture-001/);
+  assert.match(excerpt, /\[redacted-phone\]/);
 });
 
 test('current-turn evidence survives the soft cap and protection resets after restore', () => {

@@ -240,7 +240,7 @@ test('本地知识未命中时可提交实现查询的外部协查报告，主 A
   assert.doesNotMatch(prompts, /云学习服务端 Agent/);
 });
 
-test('工具事件不会持久化模型复述的原始学员标识', async () => {
+test('工具事件：uid 明文保留，电话与凭证仍脱敏', async () => {
   const rawQuery = 'uid=student-fixture-001 phone=+8613800000000';
   const { diagnosis } = await setup([
     { tool: 'lookup_issue', args: { query: rawQuery } },
@@ -256,11 +256,11 @@ test('工具事件不会持久化模型复述的原始学员标识', async () =>
     toolsets: { knowledge: { lookup_issue: lookup } },
   });
   const serialized = JSON.stringify(events.filter((event) => event.type === 'tool-start' || event.type === 'tool-end'));
-  assert.equal(serialized.includes('student-fixture-001'), false);
+  // 新约定：uid/learner_id 明文保留（便于日志关联），电话与 Bearer 凭证仍脱敏。
+  assert.equal(serialized.includes('student-fixture-001'), true);
   assert.equal(serialized.includes('+8613800000000'), false);
   assert.equal(serialized.includes('13800000000'), false);
   assert.equal(serialized.includes('fixture-secret-token'), false);
-  assert.match(serialized, /learner_id:[a-f0-9]{16}/);
 });
 
 test('invalid report tool input is paired as failed and a corrected report can complete', async () => {
