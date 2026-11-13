@@ -150,7 +150,7 @@ function scriptedAgent(handlers: {
   return { agent, inputs };
 }
 
-function remoteRegistry() {
+function remoteRegistry(remoteText = '远端请求已核查') {
   const calls: string[] = [];
   const tasks: unknown[] = [];
   const registry = {
@@ -162,7 +162,7 @@ function remoteRegistry() {
       calls.push('invoke');
       tasks.push(task);
       return {
-        data: { text: '远端请求已核查', taskId: 'task-1', contextId: 'context-1', state: 'TASK_STATE_COMPLETED' },
+        data: { text: remoteText, taskId: 'task-1', contextId: 'context-1', state: 'TASK_STATE_COMPLETED' },
         truncated: false,
         limitations: ['仅覆盖当前请求'],
         audit: { slotId: 'compass', taskId: 'task-1', state: 'TASK_STATE_COMPLETED', durationMs: 2, truncated: false },
@@ -374,7 +374,7 @@ test('带服务端特征和 traceId 的新工单仍先执行本地观察，不�
   });
 });
 
-test('初始 local 有源码观测和关联信息时自动接续远端，外发含本地证据、判断与具体协查问题', async () => {
+test('初始 local 有源码观测时自动接续远端，外发仅含用户原文和协查问题', async () => {
   await withHarness(async (harness) => {
     const remote = remoteRegistry();
     const scripted = scriptedAgent({
@@ -390,13 +390,14 @@ test('初始 local 有源码观测和关联信息时自动接续远端，外发�
     assert.equal(result.conversation.investigation?.currentPlan && (result.conversation.investigation.currentPlan as { mode: string }).mode, 'server');
     const consultation = result.conversation.consultations[0]!;
     assert.equal(consultation.status, 'completed');
-    // 外发边界：用户原文 + 关联信息 + 本地证据（含学员标识）+ 本地判断 + 具体协查问题。
+    // 外发只包含用户原文和具体协查问题。
     assert.match(consultation.outbound_text, /页面异常/);
-    assert.match(consultation.outbound_text, /trace-local/);
-    assert.match(consultation.outbound_text, /本地调查证据/);
-    assert.match(consultation.outbound_text, /throw new Error\("local"\)/);
-    assert.match(consultation.outbound_text, /本地判断/);
+    assert.match(consultation.outbound_text, /请协查的问题/);
     assert.match(consultation.outbound_text, /模型下一步问题不得进入外发正文/);
+    assert.doesNotMatch(consultation.outbound_text, /本地调查证据|throw new Error|本地判断|仍缺信息/);
+    assert.deepEqual(consultation.outbound_text.split('\n\n').map((section) => section.split('：')[0]), [
+      '用户问题原文', '请协查的问题',
+    ]);
     assert.deepEqual(remote.calls, ['resolve', 'invoke']);
     assert.deepEqual(remote.tasks[0], { text: consultation.outbound_text, contextId: undefined });
     assert.deepEqual(scripted.inputs.map((input) => input.phase ?? 'local'), ['local', 'joint']);
@@ -404,7 +405,7 @@ test('初始 local 有源码观测和关联信息时自动接续远端，外发�
   });
 });
 
-test('故障诊断缺 traceId 也自动接续外部协查，外发摘要声明关联缺口', async () => {
+test('故障诊断缺 traceId 也自动接续外部协查，外发仅保留原文和协查问题', async () => {
   await withHarness(async (harness) => {
     const remote = remoteRegistry();
     const scripted = scriptedAgent({
@@ -421,15 +422,16 @@ test('故障诊断缺 traceId 也自动接续外部协查，外发摘要声明�
     const consultation = result.conversation.consultations[0]!;
     assert.equal(consultation.status, 'completed');
     assert.match(consultation.outbound_text, /绘本页面白屏/);
-    assert.match(consultation.outbound_text, /缺少 traceId\/requestId，请按用户问题中的学员标识与时间窗关联/);
+    assert.match(consultation.outbound_text, /请协查的问题/);
+    assert.doesNotMatch(consultation.outbound_text, /关联信息|本地判断|本地调查证据/);
     assert.deepEqual(remote.calls, ['resolve', 'invoke']);
     assert.deepEqual(scripted.inputs.map((input) => input.phase ?? 'local'), ['local', 'joint']);
   });
 });
 
-test('排行榜实现查询在本地知识不足时自动协查，不要求 traceId 或老师审批', async () => {
+test('实现查询在本地无知识命中时自动协查，外部答案作为未验证线索呈现', async () => {
   await withHarness(async (harness) => {
-    const remote = remoteRegistry();
+    const remote = remoteRegistry('书籍解锁状态由权益接口返回；免费章节可直接阅读，付费章节需购买后解锁。');
     const noAnchorReport = DiagnosisReportSchema.parse({
       verdict: 'insufficient_evidence',
       summary: '本地知识未覆盖该接口实现，需要外部全栈协查',
@@ -456,6 +458,10 @@ test('排行榜实现查询在本地知识不足时自动协查，不要求 trac
     assert.equal(consultation.status, 'completed');
     assert.match(consultation.reason, /统一外部全栈 Agent/);
     assert.match(consultation.outbound_text, /英语绘本阅读排行榜/);
+    assert.deepEqual(result.assistantMessage.report?.joint_assessment?.unverified_claims, [
+      '仅来自远端 Agent 报告：书籍解锁状态由权益接口返回；免费章节可直接阅读，付费章节需购买后解锁。',
+    ]);
+    assert.equal(result.assistantMessage.report?.evidence.length, 0);
     assert.deepEqual(remote.calls, ['resolve', 'invoke']);
     assert.deepEqual(scripted.inputs.map((input) => input.phase ?? 'local'), ['local', 'joint']);
   }, { consult_compass: false });

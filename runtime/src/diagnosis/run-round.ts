@@ -785,10 +785,10 @@ async function runOrchestratedDiagnosisRound(
     }
   };
 
-  const runExternalAndJoint = async (currentPlan: InvestigationPlan, correlation: CorrelationContext) => {
+  const runExternalAndJoint = async (currentPlan: InvestigationPlan) => {
     if (!state || !capabilitySession) throw new Error('外部协查前缺少调查状态或能力会话');
     const consultation = createAutomaticConsultation(
-      conversation, assistantMessage.id, runId, currentPlan, content, correlation, state.localReport ?? null,
+      conversation, assistantMessage.id, runId, currentPlan, content, state.localReport ?? null,
     );
     state.consultationId = consultation.id;
     upsertConsultation(conversation, consultation);
@@ -856,7 +856,7 @@ async function runOrchestratedDiagnosisRound(
 
     if (!input.resume) {
       if (plan.mode !== 'local') {
-        await runExternalAndJoint(plan, correlation);
+        await runExternalAndJoint(plan);
       } else {
         const result = await executeSupervisor(plan, false);
         if (result.status === 'cancelled') {
@@ -881,7 +881,7 @@ async function runOrchestratedDiagnosisRound(
             appendPlanHistory(state, decision.plan);
             plan = decision.plan;
             await emit({ type: 'INVESTIGATION_PLAN', runId, plan, resumed: false });
-            await runExternalAndJoint(plan, correlation);
+            await runExternalAndJoint(plan);
           } else {
             await complete(localCompleted);
           }
@@ -941,11 +941,9 @@ function externalInvestigationQuestion(report: DiagnosisReport | null | undefine
     : undefined;
 }
 
-// 外发内容限长：用户原文逐条/总量、证据条数/摘录长度，防止超长会话挤占外发预算。
+// 外发内容限长：只带用户原文和明确协查问题，避免重复传送本地推理噪声。
 const OUTBOUND_USER_MESSAGE_MAX = 2_000;
 const OUTBOUND_USER_TOTAL_MAX = 8_000;
-const OUTBOUND_EVIDENCE_MAX_ITEMS = 10;
-const OUTBOUND_EVIDENCE_EXCERPT_MAX = 800;
 
 function clipCodepoints(text: string, max: number): string {
   const chars = Array.from(text);
@@ -958,19 +956,8 @@ function createAutomaticConsultation(
   runId: string,
   plan: InvestigationPlan,
   content: string,
-  correlation: CorrelationContext,
   localReport: DiagnosisReport | null,
 ): ExternalConsultation {
-  const correlationText = [
-    correlation.traceId ? `traceId: ${correlation.traceId}` : null,
-    correlation.requestId ? `requestId: ${correlation.requestId}` : null,
-  ].filter((item): item is string => Boolean(item)).join('\n');
-  // 缺 traceId/requestId 不再阻断外发，但必须在固定摘要里显式声明关联缺口，
-  // 让外部 Agent 按学员标识与时间窗关联，而不是误以为 Runtime 漏传了请求级标识。
-  const correlationSection = correlationText
-    ? `关联信息：\n${correlationText}`
-    : '关联信息：本次故障缺少 traceId/requestId，请按用户问题中的学员标识与时间窗关联核查。';
-
   // 外部 Agent 需要完整的问题描述：本会话全部用户消息原文（老师常分多条补充细节），逐条与总量限长。
   const userMessages = conversation.messages
     .filter((message) => message.role === 'user' && message.content.trim())
@@ -987,36 +974,10 @@ function createAutomaticConsultation(
   }
   const sections = [
     `用户问题原文：\n${userLines.join('\n') || clipCodepoints(content, OUTBOUND_USER_MESSAGE_MAX)}`,
-    correlationSection,
   ];
 
-  // 本地排查的证据、判断和具体协查问题一并外发（含学员标识等观测事实；Compass 全链路内网，已确认不伪名化）。
-  if (localReport) {
-    const evidenceLines = localReport.evidence
-      .slice(0, OUTBOUND_EVIDENCE_MAX_ITEMS)
-      .map((item) =>
-        `- [${item.kind}] ${item.location ?? 'unknown'}：${clipCodepoints(item.excerpt, OUTBOUND_EVIDENCE_EXCERPT_MAX)}\n  支持点：${clipCodepoints(item.supports, 200)}`);
-    if (evidenceLines.length > 0) {
-      const omitted = localReport.evidence.length - evidenceLines.length;
-      sections.push(
-        `本地调查证据（来自本次工具观测）：\n${evidenceLines.join('\n')}${omitted > 0 ? `\n…（另 ${omitted} 条证据未包含）` : ''}`,
-      );
-    }
-    const judgment = [
-      `结论摘要：${clipCodepoints(localReport.summary, 600)}`,
-      `责任判断：${localReport.responsibility}（未经远端验证）`,
-      localReport.likely_location ? `疑似位置：${localReport.likely_location}` : null,
-      localReport.root_cause_candidates.length > 0
-        ? `根因候选：${localReport.root_cause_candidates.map((item) => `${item.title}（置信度 ${item.confidence}）`).join('；')}`
-        : null,
-      localReport.missing_information.length > 0
-        ? `仍缺信息：${localReport.missing_information.join('；')}`
-        : null,
-    ].filter((item): item is string => Boolean(item));
-    sections.push(`本地判断（未经远端验证，供参考）：\n${judgment.join('\n')}`);
-    const question = externalInvestigationQuestion(localReport);
-    if (question) sections.push(`请协查的问题：\n${clipCodepoints(question, 1_000)}`);
-  }
+  const question = externalInvestigationQuestion(localReport);
+  sections.push(`请协查的问题：\n${clipCodepoints(question ?? content, 1_000)}`);
 
   const pending = createExternalConsultation({
     conversationId: conversation.id,

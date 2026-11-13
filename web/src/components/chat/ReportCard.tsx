@@ -27,6 +27,7 @@ function percent(value: number): number {
 
 /** 嵌入聊天消息的结构化诊断报告卡片：已通过服务端证据校验。 */
 export function ReportCard({ report }: { report: DiagnosticReport }) {
+  const externalClaims = report.joint_assessment?.unverified_claims ?? [];
   return (
     <div className={`report-card verdict-border-${report.verdict}`} aria-label="诊断报告">
       <section className="diagnosis-summary">
@@ -87,6 +88,26 @@ export function ReportCard({ report }: { report: DiagnosticReport }) {
               </article>
             ))}
           </div>
+        </section>
+      )}
+
+      {(externalClaims.length > 0 || (report.external_findings?.length ?? 0) > 0) && (
+        <section className="report-section missing-information">
+          <div className="report-section-title">
+            <AlertTriangle size={16} />
+            <h3>外部候选原因（未验证）</h3>
+          </div>
+          <ul>
+            {externalClaims.map((item, index) => (
+              <li key={`unverified-${index}`}>{item}</li>
+            ))}
+            {externalClaims.length === 0 && report.external_findings?.map((finding, index) => (
+              <li key={`external-${finding.consultation_id}-${index}`}>
+                <strong>外部 Agent：</strong>{finding.text}
+                {finding.truncated ? '（远端输出不完整）' : ''}
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
