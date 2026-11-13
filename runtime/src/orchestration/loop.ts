@@ -24,9 +24,8 @@ export type LocalContinuationDecision =
 /**
  * 本地报告校验通过后，根据显式 next_action 决定是否请求统一外部全栈 Agent。
  * responsibility 只描述当前证据的责任判断，不再兼任路由条件。
- * 规则和实现查询不要求故障关联标识；故障诊断要求本地观测，但缺少 traceId/requestId
- * 不再阻断外发——IT 老师通常拿不到请求级标识，关联缺口由外发摘要显式声明，
- * 由外部 Agent 按学员标识与时间窗关联（查不到本身也是有效结论）。
+ * 本地观测不再作为跨侧外发门槛：前端/服务端证据常需委派获取；缺少 traceId/requestId
+ * 也不阻断外发——关联缺口由外发摘要显式声明，由外部 Agent 按学员标识与时间窗关联。
  */
 export function decideLocalContinuation(
   current: InvestigationPlan,
@@ -49,10 +48,6 @@ export function decideLocalContinuation(
   }
 
   const informationLookup = input.taskType === 'rule' || input.taskType === 'implementation';
-  if (!informationLookup && !input.hasObservedEvidence) {
-    return { type: 'finish', reason: '故障跨侧路由没有本地源码或日志观测支撑，保留为未验证线索' };
-  }
-
   return {
     type: 'continue_external',
     plan: {

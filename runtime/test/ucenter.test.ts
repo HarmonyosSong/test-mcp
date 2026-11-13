@@ -116,3 +116,15 @@ test('applyResolvedUidQuery 强制带上转换后的 uid，并替换错误 uid �
   );
   assert.equal(applyResolvedUidQuery('message:quiz', undefined), 'message:quiz');
 });
+
+test('applyResolvedUidQuery fulltext 用短语注入 uid（cloudlearn）', () => {
+  assert.equal(applyResolvedUidQuery(undefined, '5570040', 'fulltext'), '"5570040"');
+  assert.equal(
+    applyResolvedUidQuery('"log-eagle-0016-prod"', '5570040', 'fulltext'),
+    '("log-eagle-0016-prod") AND "5570040"',
+  );
+  assert.equal(
+    applyResolvedUidQuery('"log-eagle-0016-prod" AND uid: "bad"', '5570040', 'fulltext'),
+    '("log-eagle-0016-prod") AND "5570040"',
+  );
+});

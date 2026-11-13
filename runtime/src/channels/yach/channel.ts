@@ -3,7 +3,7 @@
 import type { RuntimeConfig } from '../../config.js';
 import type { CapabilityMcp } from '../../capabilities/mcp.js';
 import type { DiagnosisAgent } from '../../diagnosis/agent.js';
-import { runDiagnosisRound } from '../../diagnosis/run-round.js';
+import { runDiagnosisRound, type RunDiagnosisRoundOptions } from '../../diagnosis/run-round.js';
 import type { ModelConfiguration } from '../../model/configuration.js';
 import type { ProductStore } from '../../product/store.js';
 import type { ConversationRecord } from '../../domain/schemas.js';
@@ -37,6 +37,8 @@ export interface YachChannelDeps {
   diagnosisAgent: DiagnosisAgent;
   capabilities: CapabilityMcp;
   modelConfiguration: ModelConfiguration;
+  /** 与网页诊断共用：缺省时 IM 会走 legacy 路径，无法自动 Compass A2A。 */
+  diagnosisOptions?: RunDiagnosisRoundOptions;
 }
 
 export class YachChannel {
@@ -302,6 +304,7 @@ export class YachChannel {
         options: {
           knowledgeQueryLog: this.deps.config.knowledgeQueryLog,
           caseArchiveDir: this.deps.config.caseArchiveDir,
+          ...this.deps.diagnosisOptions,
         },
       });
       if (abort.signal.aborted) return;

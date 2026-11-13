@@ -6,11 +6,15 @@ import test from 'node:test';
 
 import { SpanType } from '@mastra/core/observability';
 
-import { ConversationSpanFileExporter } from '../src/observability/conversation-span-file-exporter.js';
+import {
+  ConversationSpanFileExporter,
+  conversationObservabilityDirName,
+} from '../src/observability/conversation-span-file-exporter.js';
 
 test('writes step-oriented flow JSON and drops processor/mapping/chunk noise', async () => {
   const root = await mkdtemp(join(tmpdir(), 'obs-conv-'));
   const exporter = new ConversationSpanFileExporter(root);
+  const convDir = conversationObservabilityDirName('conv-demo');
 
   const meta = {
     conversation_id: 'conv-demo',
@@ -128,7 +132,8 @@ test('writes step-oriented flow JSON and drops processor/mapping/chunk noise', a
     },
   } as never);
 
-  const tracesDir = join(root, 'conversations', 'conv-demo', 'traces');
+  assert.match(convDir, /^\d{4}-\d{2}-\d{2}_conv-demo$/);
+  const tracesDir = join(root, 'conversations', convDir, 'traces');
   const files = await readdir(tracesDir);
   assert.equal(files.length, 1);
   assert.match(files[0]!, /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_[a-zA-Z0-9._-]+\.json$/);
@@ -213,9 +218,10 @@ test('keeps long tool output by default (no 500-char truncation)', async () => {
     },
   } as never);
 
-  const file = (await readdir(join(root, 'conversations', 'conv-full', 'traces')))[0]!;
+  const fullDir = conversationObservabilityDirName('conv-full');
+  const file = (await readdir(join(root, 'conversations', fullDir, 'traces')))[0]!;
   const body = JSON.parse(
-    await readFile(join(root, 'conversations', 'conv-full', 'traces', file), 'utf8'),
+    await readFile(join(root, 'conversations', fullDir, 'traces', file), 'utf8'),
   ) as { steps: Array<{ tools: Array<{ output_preview?: string }> }> };
   const output = body.steps[0]?.tools[0]?.output_preview ?? '';
   assert.match(output, /命中详情/);

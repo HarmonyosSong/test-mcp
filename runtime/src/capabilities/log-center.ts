@@ -20,6 +20,7 @@ import {
   createUcenterClient,
   looksLikeLearnerCard,
   resolveLearnerUid,
+  type LogQueryStyle,
 } from './ucenter.js';
 
 export const LOGCENTER_DEFAULT_BASE_URL = 'https://logcenter-api.tal.com/api';
@@ -154,6 +155,8 @@ export type LogTargetCandidate = {
   app_clientid: string | null;
   product_line: z.infer<typeof ClientProductLineSchema> | null;
   suggested_query: string;
+  /** How Runtime/agent should filter appid/uid on this SLS target. */
+  query_style: LogQueryStyle;
   key_fields: string[];
   monitor_types: Record<string, string>;
   notes: string[];
@@ -172,7 +175,36 @@ type ClientLogObservation = {
 export type ResolveLogTargetResult = {
   status: 'resolved' | 'ambiguous' | 'not_found';
   candidates: LogTargetCandidate[];
+  /** Same-feature multi-end (SLS h5 + client), not a pick-one conflict. */
+  multi_end?: true;
+  strategy?: 'h5_first_then_ua';
+  preferred_first?: LogTargetCandidate[];
+  next_after_ua?: LogTargetCandidate[];
+  requires_uid?: true;
+  guidance?: string;
 };
+
+const MULTI_END_GUIDANCE =
+  '非冲突：同一功能的 H5 与客户端埋点。先确认 uid，再查 preferred_first（H5），从命中读 ua/OS/bundle 定端后，再查 next_after_ua 对应客户端。';
+
+/** SLS multi-hit with both h5 and non-h5 → same feature, combine-query strategy. */
+export function attachMultiEndStrategy(
+  candidates: LogTargetCandidate[],
+): Pick<ResolveLogTargetResult, 'multi_end' | 'strategy' | 'preferred_first' | 'next_after_ua' | 'requires_uid' | 'guidance'> | null {
+  if (candidates.length < 2) return null;
+  if (!candidates.every((c) => c.source === 'aliyun_sls')) return null;
+  const preferred_first = candidates.filter((c) => c.platform === 'h5');
+  const next_after_ua = candidates.filter((c) => c.platform !== 'h5');
+  if (preferred_first.length === 0 || next_after_ua.length === 0) return null;
+  return {
+    multi_end: true,
+    strategy: 'h5_first_then_ua',
+    preferred_first,
+    next_after_ua,
+    requires_uid: true,
+    guidance: MULTI_END_GUIDANCE,
+  };
+}
 
 type AliasHit = {
   target: LogTarget;
@@ -199,7 +231,35 @@ function bestAliasScore(query: string, aliases: string[], base: number): number 
   return Math.max(0, ...aliases.map((alias) => aliasScore(query, alias, base)));
 }
 
-function buildSlsSuggestedQuery(appid: string, match: Record<string, string>): string {
+const FULLTEXT_QUERY_NOTES = new Set(['use_fulltext_or_where', 'appid_not_sql_groupable']);
+
+export function slsQueryStyleFromNotes(notes: readonly string[]): LogQueryStyle {
+  return notes.some((note) => FULLTEXT_QUERY_NOTES.has(note)) ? 'fulltext' : 'kv';
+}
+
+/** Resolve SLS query dialect from store/topic notes (cloudlearn → fulltext). */
+export function resolveSlsQueryStyle(catalog: LogCatalog, topic: string): LogQueryStyle {
+  const store = catalog.stores.find((item) => item.id === topic || item.topic === topic);
+  if (!store) return 'kv';
+  const targetNotes = catalog.targets
+    .filter((target) => target.source === 'aliyun_sls' && target.store_ref === store.id)
+    .flatMap((target) => target.notes);
+  return slsQueryStyleFromNotes([...store.notes, ...targetNotes]);
+}
+
+function buildSlsSuggestedQuery(
+  appid: string,
+  match: Record<string, string>,
+  style: LogQueryStyle,
+): string {
+  if (style === 'fulltext') {
+    const parts = [`"${appid}"`];
+    for (const value of Object.values(match)) {
+      if (!value) continue;
+      parts.push(`"${value}"`);
+    }
+    return parts.join(' and ');
+  }
   const parts = [`appid: "${appid}"`];
   for (const [key, value] of Object.entries(match)) {
     if (!value) continue;
@@ -235,12 +295,15 @@ function toCandidate(catalog: LogCatalog, hit: AliasHit): LogTargetCandidate {
       app_clientid: target.app_clientid ?? null,
       product_line: target.product_line ?? null,
       suggested_query: target.suggested_query || '*',
+      query_style: 'kv',
       key_fields: target.key_fields,
       monitor_types: target.monitor_types,
       notes: target.notes,
     };
   }
   const store = resolveStore(catalog, target.store_ref);
+  const notes = [...target.notes, ...(store?.notes ?? [])];
+  const queryStyle = slsQueryStyleFromNotes(notes);
   return {
     source: target.source,
     log_kind: target.log_kind,
@@ -258,10 +321,11 @@ function toCandidate(catalog: LogCatalog, hit: AliasHit): LogTargetCandidate {
     service_id: null,
     app_clientid: null,
     product_line: target.product_line ?? null,
-    suggested_query: target.suggested_query || buildSlsSuggestedQuery(target.id, match),
+    suggested_query: target.suggested_query || buildSlsSuggestedQuery(target.id, match, queryStyle),
+    query_style: queryStyle,
     key_fields: target.key_fields,
     monitor_types: {},
-    notes: [...target.notes, ...(store?.notes ?? [])],
+    notes,
   };
 }
 
@@ -304,24 +368,140 @@ export function resolveLogTarget(catalog: LogCatalog, query: string): ResolveLog
 
   if (unique.length === 0) return { status: 'not_found', candidates: [] };
   if (unique.length === 1) return { status: 'resolved', candidates: [toCandidate(catalog, unique[0]!)] };
-  return { status: 'ambiguous', candidates: unique.map((hit) => toCandidate(catalog, hit)) };
+  const candidates = unique.map((hit) => toCandidate(catalog, hit));
+  const multiEnd = attachMultiEndStrategy(candidates);
+  return multiEnd
+    ? { status: 'ambiguous', candidates, ...multiEnd }
+    : { status: 'ambiguous', candidates };
 }
 
+function localParts(ms: number): { y: number; m: number; d: number; H: number; M: number; S: number } {
+  const date = new Date(ms);
+  return {
+    y: date.getFullYear(),
+    m: date.getMonth() + 1,
+    d: date.getDate(),
+    H: date.getHours(),
+    M: date.getMinutes(),
+    S: date.getSeconds(),
+  };
+}
+
+function localSeconds(y: number, m: number, d: number, H = 0, M = 0, S = 0): number {
+  return Math.floor(new Date(y, m - 1, d, H, M, S).getTime() / 1000);
+}
+
+/**
+ * Align with logcenterskill parse_time_range: relative, 今天/昨天, YYYY-MM-DD,
+ * day+slot, and agent-style `YYYY-MM-DD HH:MM:SS~YYYY-MM-DD HH:MM:SS`.
+ */
 export function parseTimeRangeSeconds(time: string, nowMs = Date.now()): { start: number; end: number } {
-  const raw = time.trim().toLowerCase();
-  const end = Math.floor(nowMs / 1000);
-  const match = raw.match(/^(\d+)\s*(m|min|mins|minute|minutes|h|hour|hours|d|day|days|w|week|weeks)$/);
-  if (!match) throw new Error(`log_invalid_request: unsupported time range "${time}"`);
-  const amount = Number(match[1]);
-  const unit = match[2]!;
-  const minutes = ['h', 'hour', 'hours'].includes(unit)
-    ? amount * 60
-    : ['d', 'day', 'days'].includes(unit)
-      ? amount * 60 * 24
-      : ['w', 'week', 'weeks'].includes(unit)
-        ? amount * 60 * 24 * 7
-        : amount;
-  return { start: end - minutes * 60, end };
+  const original = time.trim();
+  if (!original) throw new Error(`log_invalid_request: unsupported time range "${time}"`);
+  const now = localParts(nowMs);
+  const endNow = Math.floor(nowMs / 1000);
+
+  // Absolute window with ~ (agent often emits seconds): 2026-11-11 07:00:00~2026-11-11 07:40:00
+  const tilde = original.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*[~～]\s*(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/,
+  );
+  if (tilde) {
+    return {
+      start: localSeconds(+tilde[1]!, +tilde[2]!, +tilde[3]!, +tilde[4]!, +tilde[5]!, +(tilde[6] ?? 0)),
+      end: localSeconds(+tilde[7]!, +tilde[8]!, +tilde[9]!, +tilde[10]!, +tilde[11]!, +(tilde[12] ?? 0)),
+    };
+  }
+
+  // 今天/昨天/前天 HH:MM到HH:MM
+  const daySlot = original.match(
+    /^(今天|昨天|前天|today|yesterday)\s*(\d{1,2}):(\d{2})\s*(?:到|至|-)\s*(\d{1,2}):(\d{2})$/i,
+  );
+  if (daySlot) {
+    const label = daySlot[1]!.toLowerCase();
+    let base = new Date(nowMs);
+    if (label === '昨天' || label === 'yesterday') base = new Date(nowMs - 86_400_000);
+    if (label === '前天') base = new Date(nowMs - 2 * 86_400_000);
+    const p = localParts(base.getTime());
+    return {
+      start: localSeconds(p.y, p.m, p.d, +daySlot[2]!, +daySlot[3]!),
+      end: localSeconds(p.y, p.m, p.d, +daySlot[4]!, +daySlot[5]!),
+    };
+  }
+
+  // YYYY-MM-DD HH:MM到HH:MM (optional seconds omitted)
+  const dateSlot = original.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*(?:到|至|-)\s*(\d{1,2}):(\d{2})(?::\d{2})?$/,
+  );
+  if (dateSlot) {
+    return {
+      start: localSeconds(+dateSlot[1]!, +dateSlot[2]!, +dateSlot[3]!, +dateSlot[4]!, +dateSlot[5]!),
+      end: localSeconds(+dateSlot[1]!, +dateSlot[2]!, +dateSlot[3]!, +dateSlot[6]!, +dateSlot[7]!),
+    };
+  }
+
+  const raw = original.toLowerCase();
+
+  // Relative: 15m / 1h / 3d / 1w
+  const relative = raw.match(/^(\d+)\s*(m|min|mins|minute|minutes|h|hour|hours|d|day|days|w|week|weeks)$/);
+  if (relative) {
+    const amount = Number(relative[1]);
+    const unit = relative[2]!;
+    const minutes = ['h', 'hour', 'hours'].includes(unit)
+      ? amount * 60
+      : ['d', 'day', 'days'].includes(unit)
+        ? amount * 60 * 24
+        : ['w', 'week', 'weeks'].includes(unit)
+          ? amount * 60 * 24 * 7
+          : amount;
+    return { start: endNow - minutes * 60, end: endNow };
+  }
+
+  if (raw === '今天' || raw === 'today') {
+    return { start: localSeconds(now.y, now.m, now.d), end: endNow };
+  }
+  if (raw === '昨天' || raw === 'yesterday') {
+    const y = new Date(nowMs - 86_400_000);
+    const p = localParts(y.getTime());
+    return { start: localSeconds(p.y, p.m, p.d), end: localSeconds(p.y, p.m, p.d, 23, 59, 59) };
+  }
+  if (raw === '前天') {
+    const y = new Date(nowMs - 2 * 86_400_000);
+    const p = localParts(y.getTime());
+    return { start: localSeconds(p.y, p.m, p.d), end: localSeconds(p.y, p.m, p.d, 23, 59, 59) };
+  }
+  if (raw === '本周' || raw === 'this week' || raw === '这周') {
+    const weekday = (new Date(nowMs).getDay() + 6) % 7; // Mon=0
+    const monday = new Date(nowMs - weekday * 86_400_000);
+    const p = localParts(monday.getTime());
+    return { start: localSeconds(p.y, p.m, p.d), end: endNow };
+  }
+  if (raw === '上周' || raw === 'last week' || raw === '上一周') {
+    const weekday = (new Date(nowMs).getDay() + 6) % 7;
+    const lastMonday = new Date(nowMs - (weekday + 7) * 86_400_000);
+    const lastSunday = new Date(lastMonday.getTime() + 6 * 86_400_000);
+    const a = localParts(lastMonday.getTime());
+    const b = localParts(lastSunday.getTime());
+    return { start: localSeconds(a.y, a.m, a.d), end: localSeconds(b.y, b.m, b.d, 23, 59, 59) };
+  }
+
+  const pastDays = raw.match(/^过去\s*(\d+)\s*天$/);
+  if (pastDays) {
+    const days = Number(pastDays[1]);
+    const startDay = new Date(nowMs - days * 86_400_000);
+    const p = localParts(startDay.getTime());
+    return { start: localSeconds(p.y, p.m, p.d), end: endNow };
+  }
+
+  // Absolute day: YYYY-MM-DD
+  const dayOnly = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (dayOnly) {
+    const y = +dayOnly[1]!;
+    const m = +dayOnly[2]!;
+    const d = +dayOnly[3]!;
+    return { start: localSeconds(y, m, d), end: localSeconds(y, m, d, 23, 59, 59) };
+  }
+
+  throw new Error(`log_invalid_request: unsupported time range "${time}"`);
 }
 
 export function isLogCenterConfigured(config: Pick<RuntimeConfig, 'logcenterAppId' | 'logcenterAppSecret'>): boolean {
@@ -730,11 +910,15 @@ export async function createLogCatalogTools(
     }
   }
   const resolvedUid = correlation?.identifiers.learner_id;
-  const applyLogUidQuery = (query: string | undefined): string | undefined => {
+  const applyLogUidQuery = (
+    query: string | undefined,
+    options?: { topic?: string },
+  ): string | undefined => {
     if (unresolvedLearnerCard) {
       throw new Error('learner_uid_unresolved: 学员编号未成功转换为 uid，已阻止 LogCenter 查询；请检查 UCenter 配置或改用 uid');
     }
-    return applyResolvedUidQuery(query, resolvedUid);
+    const style = options?.topic ? resolveSlsQueryStyle(catalog, options.topic) : 'kv';
+    return applyResolvedUidQuery(query, resolvedUid, style);
   };
   // Match log rows against the post-conversion uid, so evidence correlation
   // uses the same identifier that was sent to LogCenter.
@@ -840,7 +1024,7 @@ export async function createLogCatalogTools(
     resolve_log_target: createTool({
       id: 'resolve_log_target',
       description:
-        'Resolve a business phrase to a catalog target (SLS appid or logcenter APM). Returns source + suggested_query from config. Prefer exact business/appid aliases; vague platform words may be ambiguous. Routing only; not incident evidence.',
+        'Resolve a business phrase to a catalog target (SLS appid or logcenter APM). Returns source + suggested_query from config. Prefer exact business/appid aliases. When status=ambiguous and multi_end=true (SLS h5+client same feature), follow strategy h5_first_then_ua—do not pick only one end; requires_uid first. Other ambiguous (e.g. 埋点 vs APM) → clarify once. Routing only; not incident evidence.',
       inputSchema: z.strictObject({ query: z.string().min(1).max(400) }),
       execute: async ({ query }) => {
         const result = resolveLogTarget(catalog, query);
@@ -849,6 +1033,7 @@ export async function createLogCatalogTools(
           status: result.status,
           candidateCount: result.candidates.length,
           sources: [...new Set(result.candidates.map((c) => c.source))],
+          multiEnd: result.multi_end === true,
         });
         return result;
       },
@@ -856,11 +1041,11 @@ export async function createLogCatalogTools(
     count_cloud_logs: createTool({
       id: 'count_cloud_logs',
       description:
-        'Count Aliyun SLS cloud logs for a resolved aliyun_sls target. Prefer after resolve_log_target when source=aliyun_sls. Upstream cloud-count has NO query filter (topic total only). When query/uid is present, Runtime uses cloud-search total instead so filters actually apply. When the round has a resolved learner uid, Runtime always AND uid:"<id>" into the query.',
+        'Count Aliyun SLS cloud logs for a resolved aliyun_sls target. Prefer after resolve_log_target when source=aliyun_sls. Upstream cloud-count has NO query filter (topic total only). When query/uid is present, Runtime uses cloud-search total instead so filters actually apply. When the round has a resolved learner uid, Runtime ANDs it using query_style from catalog (kv → uid:"…"; fulltext/cloudlearn → "…" phrase). time supports 1h, 昨天, 2026-11-11 07:00到07:40, and YYYY-MM-DD HH:MM:SS~….',
       inputSchema: z.object(SlsTargetFields),
       execute: async (input) => {
         const range = parseTimeRangeSeconds(input.time);
-        const query = applyLogUidQuery(input.query);
+        const query = applyLogUidQuery(input.query, { topic: input.topic });
         // 官方 cloud-count 不接受 query；有过滤条件时改用 search.total，避免「全库量级」误导。
         if (query && query !== '*') {
           const searched = await client.searchCloudLogs({
@@ -891,7 +1076,7 @@ export async function createLogCatalogTools(
     search_cloud_logs: createTool({
       id: 'search_cloud_logs',
       description:
-        'Search Aliyun SLS cloud logs for a resolved aliyun_sls target. Prefer catalog suggested_query. When the round has a resolved learner uid, Runtime always AND uid:<id> into the query. Truncated helpers, not ledger evidence.',
+        'Search Aliyun SLS cloud logs for a resolved aliyun_sls target. Prefer catalog suggested_query and query_style. When the round has a resolved learner uid, Runtime ANDs it (kv → uid:"…"; fulltext → "…" phrase—required for prod-cloudlearn). time supports absolute incident windows. Truncated helpers, not ledger evidence.',
       inputSchema: z.object({
         ...SlsTargetFields,
         size: z.number().int().min(1).max(200).default(50),
@@ -900,7 +1085,7 @@ export async function createLogCatalogTools(
       execute: async (input) => {
         const range = parseTimeRangeSeconds(input.time);
         const size = Math.min(input.size ?? 50, 200);
-        const query = applyLogUidQuery(input.query?.trim() || '*') || '*';
+        const query = applyLogUidQuery(input.query?.trim() || '*', { topic: input.topic }) || '*';
         const result = await client.searchCloudLogs({
           vendor: input.vendor,
           region: input.region,
@@ -931,6 +1116,7 @@ export async function createLogCatalogTools(
           app_clientid: null,
           product_line: null,
           suggested_query: input.query?.trim() || '*',
+          query_style: resolveSlsQueryStyle(catalog, input.topic),
           key_fields: [],
           monitor_types: {},
           notes: [],
@@ -996,6 +1182,7 @@ export async function createLogCatalogTools(
           app_clientid: null,
           product_line: null,
           suggested_query: input.query?.trim() || '*',
+          query_style: 'kv',
           key_fields: [],
           monitor_types: {},
           notes: [],

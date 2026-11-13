@@ -307,6 +307,18 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         diagnosisAgent,
         capabilities,
         modelConfiguration,
+        // 与网页共用编排：否则 IM 只走 legacy，模型写了 next_action=external 也不会真调 Compass。
+        diagnosisOptions: {
+          knowledgeQueryLog: config.knowledgeQueryLog,
+          caseArchiveDir: config.caseArchiveDir,
+          serverSignals,
+          slotRegistry,
+          compassAvailable: isCompassA2AConfigured(config.a2aToken),
+          investigationBudget: {
+            maxSeconds: config.investigationMaxSeconds,
+            maxRemoteCalls: config.investigationMaxRemoteCalls,
+          },
+        },
       })
       : null;
     return {

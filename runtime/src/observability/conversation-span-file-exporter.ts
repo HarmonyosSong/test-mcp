@@ -74,13 +74,26 @@ function safeId(value: string): string {
   return cleaned.slice(0, 120) || 'unknown';
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/** Local calendar date for conversation dirs, e.g. 2026-11-13. */
+export function formatLocalDate(date = new Date()): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
 /** Local wall-clock stamp for filenames, e.g. 2026-11-12_09-51-30. */
 function formatLocalStamp(date = new Date()): string {
-  const pad = (n: number, width = 2) => String(n).padStart(width, '0');
   return [
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
-    `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`,
+    formatLocalDate(date),
+    `${pad2(date.getHours())}-${pad2(date.getMinutes())}-${pad2(date.getSeconds())}`,
   ].join('_');
+}
+
+/** Date-prefixed folder so daily traces sort together: 2026-11-13_conv-xxx */
+export function conversationObservabilityDirName(conversationId: string, date = new Date()): string {
+  return `${formatLocalDate(date)}_${safeId(conversationId)}`;
 }
 
 function preview(value: unknown, limit = DEFAULT_CONTENT_LIMIT): string | undefined {
@@ -335,7 +348,11 @@ export class ConversationSpanFileExporter extends BaseExporter {
   }
 
   async #flushTrace(traceId: string, buffer: TraceBuffer): Promise<void> {
-    const conversationDir = join(this.#rootDir, 'conversations', safeId(buffer.conversationId));
+    const conversationDir = join(
+      this.#rootDir,
+      'conversations',
+      conversationObservabilityDirName(buffer.conversationId),
+    );
     const tracesDir = join(conversationDir, 'traces');
     await mkdir(tracesDir, { recursive: true, mode: 0o700 });
     await chmod(conversationDir, 0o700).catch(() => undefined);

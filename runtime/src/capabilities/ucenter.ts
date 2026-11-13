@@ -23,19 +23,42 @@ export function looksLikeLearnerCard(value: string): boolean {
   return /^\d{8,20}$/.test(value.trim());
 }
 
-/** 日志查询强制带上已解析 uid；若模型误传学员编号当 uid，一律替换。SLS 侧用带引号写法更稳。 */
-export function applyResolvedUidQuery(query: string | undefined, uid: string | undefined): string | undefined {
-  if (!uid) return query?.trim() || undefined;
-  const uidClause = `uid: "${uid}"`;
-  let base = (query ?? '').trim();
-  if (!base || base === '*') return uidClause;
-  base = base
+/** SLS KV vs 全文：prod-cloudlearn 等库 appid/uid 未建 KV 索引时必须用 fulltext。 */
+export type LogQueryStyle = 'kv' | 'fulltext';
+
+function stripUidClauses(base: string, uid: string, style: LogQueryStyle): string {
+  let next = base
     .replace(/\buid\s*:\s*"?[A-Za-z0-9_-]+"?/gi, ' ')
     .replace(/\s+/g, ' ')
-    .trim()
+    .trim();
+  if (style === 'fulltext') {
+    const escaped = uid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    next = next
+      .replace(new RegExp(`"${escaped}"`, 'g'), ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  return next
     .replace(/^(?:AND\s+)+/i, '')
     .replace(/(?:\s+AND)+$/i, '')
     .trim();
+}
+
+/**
+ * 日志查询强制带上已解析 uid；若模型误传学员编号当 uid，一律替换。
+ * - kv：`uid: "<id>"`（默认，适合已建 KV 索引的库 / APM Lucene）
+ * - fulltext：`"<id>"`（对齐 logcenterskill 在 cloudlearn 上的成功路径）
+ */
+export function applyResolvedUidQuery(
+  query: string | undefined,
+  uid: string | undefined,
+  style: LogQueryStyle = 'kv',
+): string | undefined {
+  if (!uid) return query?.trim() || undefined;
+  const uidClause = style === 'fulltext' ? `"${uid}"` : `uid: "${uid}"`;
+  let base = (query ?? '').trim();
+  if (!base || base === '*') return uidClause;
+  base = stripUidClauses(base, uid, style);
   if (!base || base === '*') return uidClause;
   return `(${base}) AND ${uidClause}`;
 }

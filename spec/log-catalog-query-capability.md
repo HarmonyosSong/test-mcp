@@ -57,7 +57,7 @@
 | 密钥 | LogCenter `AppID` / `AppSecret` **仅**环境变量；Catalog **禁止**写密钥 |
 | 工具形态 | 原生 Mastra `createTool`（薄封装 HTTP/API）；不把 Python CLI 当 Agent 子进程主路径 |
 | Agent 行为入口 | `skills/use-log-catalog/SKILL.md` + `load_skill`；`required_tools` 门禁 |
-| 解析模型 | 别名 → `resolve_log_target`；候选带 `source`/`log_kind`；多候选（含埋点 vs APM）则澄清；禁止瞎猜 account/service_id |
+| 解析模型 | 别名 → `resolve_log_target`；候选带 `source`/`log_kind`；SLS 同词 H5+客户端 → `multi_end` 组合查；其它多候选（含埋点 vs APM）则澄清；禁止瞎猜 account/service_id |
 | 默认 SLS 路径 | `vendor=aliyun`，`account=1743276692096170`，`collection=pysy-front-log`，`region=cn-beijing` |
 | 默认 APM 路径 | Catalog 四端 `service_id`；查询 `skill/search/time` 与 `skill/search`（秒级时间，`from`=页码） |
 | LibSQL | **不**存 Catalog；产品库继续只存会话/仓库/快照等运行态 |
@@ -155,7 +155,7 @@ Resolve 规则：
 
 1. 匹配 store / appid / business / `app_clientid` / `service_id` 字符串别名。  
 2. 唯一命中 → 返回带 `source` 的完整坐标与 `suggested_query`。  
-3. 多命中（含跨 source）→ `ambiguous`，Skill 一次澄清（埋点 vs APM、Pad vs 手机等）。  
+3. 多命中 → `ambiguous`。若全部为 `aliyun_sls` 且同时含 `platform=h5` 与非 h5 → 附加 `multi_end` + `strategy=h5_first_then_ua`（同一功能多端，非二选一：先 uid → 先 H5 → UA 定端 → 再客户端）。其它多命中（含跨 source 埋点 vs APM）→ Skill 一次澄清。  
 4. 零命中 → `not_found`；禁止猜 account/topic/service_id。  
 5. 不向 Agent 暴露账号/服务全量列表；扩目录靠改 YAML。
 
@@ -225,7 +225,7 @@ metadata:
 
 1. 五工具齐备时本 Skill 可见。  
 2. 先 `load_skill`，再 `resolve_log_target`。  
-3. `ambiguous` → 一次澄清（埋点 vs APM 等）；`not_found` → 补目录，禁止扫账号。  
+3. `ambiguous` + `multi_end` → 按 `h5_first_then_ua` 组合查（需 uid）；其它 `ambiguous` → 一次澄清（埋点 vs APM 等）；`not_found` → 补目录，禁止扫账号。  
 4. `source=aliyun_sls` → count/search_cloud_logs；`source=logcenter` → count_logs/query_logs。  
 5. 优先 Catalog `suggested_query` / `key_fields`。  
 6. 本阶段结果仅排查辅助，不自动进证据账本。  

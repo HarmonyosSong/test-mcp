@@ -234,10 +234,13 @@ test('本地知识未命中时可提交实现查询的外部协查报告，主 A
   assert.equal(completed.report?.responsibility, 'unknown');
   assert.equal(completed.report?.next_action?.target, 'external');
   const prompts = JSON.stringify(scripted.prompts);
-  assert.match(prompts, /培优问题排查助手的主 Agent/);
+  assert.match(prompts, /学而思 App 问题总入口/);
   assert.match(prompts, /统一外部全栈 Agent/);
-  assert.match(prompts, /前端、H5 和服务端/);
+  assert.match(prompts, /客户端知识库/);
+  assert.match(prompts, /云学习前端日志/);
+  assert.match(prompts, /服务端日志/);
   assert.doesNotMatch(prompts, /云学习服务端 Agent/);
+  assert.doesNotMatch(prompts, /跨侧调查须有本地源码或日志观测支撑/);
 });
 
 test('工具事件：不脱敏，uid/电话/凭证均明文保留', async () => {

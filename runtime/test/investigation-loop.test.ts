@@ -42,10 +42,13 @@ test('故障证据给出明确外部路由时自动接续，不要求用户再�
   assert.equal(decision.plan.correlationReady, true);
 });
 
-test('故障自动接续必须有本地观测和剩余预算', () => {
+test('故障无本地观测也可外协；无问题、关协查、耗尽预算或限定客户端时结束', () => {
+  assert.equal(
+    decideLocalContinuation(localPlan, input({ hasObservedEvidence: false })).type,
+    'continue_external',
+  );
   for (const override of [
     { nextAction: '' },
-    { hasObservedEvidence: false },
     { compassEnabled: false },
     { budgetExpired: true },
     { remoteCallsExhausted: true },

@@ -10,6 +10,7 @@ import {
   parseTimeRangeSeconds,
   resolveLogTarget,
   type LogCatalog,
+  type LogTarget,
 } from '../src/capabilities/log-center.js';
 import { loadRuntimeConfig } from '../src/config.js';
 import { progressLabelForTool } from '../src/channels/yach/progress-map.js';
@@ -31,7 +32,9 @@ test('loads catalog and resolves 口语岛 to cloudlearn eagle-0008', async () =
     assert.equal(hit.appid, 'log-eagle-0008-prod');
     assert.equal(hit.account, '1743276692096170');
     assert.equal(hit.collection, 'pysy-front-log');
-    assert.match(hit.suggested_query, /appid: "log-eagle-0008-prod"/);
+    assert.equal(hit.query_style, 'fulltext');
+    assert.match(hit.suggested_query, /^"log-eagle-0008-prod"/);
+    assert.doesNotMatch(hit.suggested_query, /appid:/);
   }
 });
 
@@ -83,6 +86,61 @@ test('vague 安卓 is ambiguous across product_event and APM', async () => {
   assert.equal(result.status, 'ambiguous');
   const sources = new Set(result.candidates.map((c) => c.source));
   assert.ok(sources.has('logcenter'));
+  assert.equal(result.multi_end, undefined);
+  assert.equal(result.strategy, undefined);
+});
+
+function slsTarget(partial: {
+  id: string;
+  store_ref: string;
+  aliases: string[];
+  platform?: LogTarget['platform'];
+}): LogTarget {
+  return {
+    id: partial.id,
+    source: 'aliyun_sls',
+    log_kind: 'product_event',
+    store_ref: partial.store_ref,
+    platform: partial.platform,
+    aliases: partial.aliases,
+    description: '',
+    notes: [],
+    key_fields: [],
+    businesses: [],
+    suggested_query: '',
+    monitor_types: {},
+  };
+}
+
+test('SLS same-alias h5+client is multi_end h5_first_then_ua', async () => {
+  const catalog = await loadLogCatalog(catalogPath);
+  const multiEndCatalog: LogCatalog = {
+    version: 3,
+    vendor: 'aliyun',
+    defaults: catalog.defaults,
+    stores: [
+      { id: 's-h5', topic: 's-h5', env: 'prod', description: '', notes: [] },
+      { id: 's-native', topic: 's-native', env: 'prod', description: '', notes: [] },
+    ],
+    targets: [
+      slsTarget({ id: 'app-h5', store_ref: 's-h5', aliases: ['同功能词'], platform: 'h5' }),
+      slsTarget({ id: 'app-android', store_ref: 's-native', aliases: ['同功能词'], platform: 'android' }),
+    ],
+  };
+  const result = resolveLogTarget(multiEndCatalog, '同功能词');
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.multi_end, true);
+  assert.equal(result.strategy, 'h5_first_then_ua');
+  assert.equal(result.requires_uid, true);
+  assert.ok(result.guidance);
+  assert.deepEqual(
+    result.preferred_first?.map((c) => c.target_id),
+    ['app-h5'],
+  );
+  assert.deepEqual(
+    result.next_after_ua?.map((c) => c.target_id),
+    ['app-android'],
+  );
 });
 
 test('resolve returns not_found and ambiguous correctly', async () => {
@@ -97,37 +155,15 @@ test('resolve returns not_found and ambiguous correctly', async () => {
       { id: 's', topic: 's', env: 'prod', description: '', notes: [] },
     ],
     targets: [
-      {
-        id: 'app-a',
-        source: 'aliyun_sls',
-        log_kind: 'product_event',
-        store_ref: 's',
-        aliases: ['同名'],
-        description: '',
-        notes: [],
-        key_fields: [],
-        businesses: [],
-        suggested_query: '',
-        monitor_types: {},
-      },
-      {
-        id: 'app-b',
-        source: 'aliyun_sls',
-        log_kind: 'product_event',
-        store_ref: 's',
-        aliases: ['同名'],
-        description: '',
-        notes: [],
-        key_fields: [],
-        businesses: [],
-        suggested_query: '',
-        monitor_types: {},
-      },
+      slsTarget({ id: 'app-a', store_ref: 's', aliases: ['同名'] }),
+      slsTarget({ id: 'app-b', store_ref: 's', aliases: ['同名'] }),
     ],
   };
   const ambiguous = resolveLogTarget(ambiguousCatalog, '同名问题');
   assert.equal(ambiguous.status, 'ambiguous');
   assert.equal(ambiguous.candidates.length, 2);
+  assert.equal(ambiguous.multi_end, undefined);
+  assert.equal(ambiguous.strategy, undefined);
 });
 
 test('parseTimeRangeSeconds supports m/h', () => {
@@ -136,6 +172,34 @@ test('parseTimeRangeSeconds supports m/h', () => {
   assert.equal(hour.end - hour.start, 3600);
   const mins = parseTimeRangeSeconds('15m', now);
   assert.equal(mins.end - mins.start, 15 * 60);
+});
+
+test('parseTimeRangeSeconds supports absolute and natural ranges like logcenterskill', () => {
+  const now = new Date(2026, 10, 13, 12, 0, 0).getTime();
+  const expectedStart = Math.floor(new Date(2026, 10, 11, 7, 0, 0).getTime() / 1000);
+  const expectedEnd = Math.floor(new Date(2026, 10, 11, 7, 40, 0).getTime() / 1000);
+  const slot = parseTimeRangeSeconds('2026-11-11 07:00到07:40', now);
+  assert.equal(slot.start, expectedStart);
+  assert.equal(slot.end, expectedEnd);
+  const tilde = parseTimeRangeSeconds('2026-11-11 07:00:00~2026-11-11 07:40:00', now);
+  assert.equal(tilde.start, expectedStart);
+  assert.equal(tilde.end, expectedEnd);
+  const day = parseTimeRangeSeconds('2026-11-11', now);
+  assert.equal(day.start, Math.floor(new Date(2026, 10, 11, 0, 0, 0).getTime() / 1000));
+  assert.equal(day.end, Math.floor(new Date(2026, 10, 11, 23, 59, 59).getTime() / 1000));
+  const yesterday = parseTimeRangeSeconds('昨天', now);
+  assert.equal(yesterday.start, Math.floor(new Date(2026, 10, 12, 0, 0, 0).getTime() / 1000));
+  assert.equal(yesterday.end, Math.floor(new Date(2026, 10, 12, 23, 59, 59).getTime() / 1000));
+});
+
+test('resolves 磨耳朵 with fulltext query_style for cloudlearn', async () => {
+  const catalog = await loadLogCatalog(catalogPath);
+  const result = resolveLogTarget(catalog, '磨耳朵');
+  assert.equal(result.status, 'resolved');
+  assert.equal(result.candidates[0]?.target_id, 'log-eagle-0016-prod');
+  assert.equal(result.candidates[0]?.query_style, 'fulltext');
+  assert.match(result.candidates[0]!.suggested_query, /^"log-eagle-0016-prod"/);
+  assert.doesNotMatch(result.candidates[0]!.suggested_query, /appid:/);
 });
 
 test('does not mount tools without credentials', async () => {
@@ -420,6 +484,24 @@ test('学员编号在查日志前转为 uid，并强制写入 query', async () =
   assert.deepEqual(fuzzyQueries, [
     'uid: "17524748"',
     '(level:ERROR) AND uid: "17524748"',
+  ]);
+
+  // prod-cloudlearn：全文注入 uid，避免 appid:/uid: KV invalid_key
+  cloudQueries.length = 0;
+  const cloudlearn = await tools.search_cloud_logs.execute!({
+    vendor: 'aliyun',
+    region: 'cn-beijing',
+    account: '1743276692096170',
+    collection: 'pysy-front-log',
+    topic: 'prod-cloudlearn',
+    time: '2026-11-11 07:00到07:40',
+    query: '"log-eagle-0016-prod"',
+    size: 20,
+    from: 0,
+  }, {} as never);
+  assert.ok(cloudlearn);
+  assert.deepEqual(cloudQueries, [
+    '("log-eagle-0016-prod") AND "17524748"',
   ]);
 });
 

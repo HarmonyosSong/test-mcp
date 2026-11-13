@@ -8,7 +8,7 @@
 
 ```text
 <data-dir>/observability/
-  conversations/<conversation_id>/
+  conversations/<YYYY-MM-DD>_<conversation_id>/
     manifest.jsonl          # 每轮一条索引
     traces/<本地时间>_<trace短号>.json   # 例：2026-11-12_09-51-30_895c4437b708.json
 ```
