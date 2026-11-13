@@ -112,6 +112,35 @@ test('显式切换平台时不继承历史平台的版本和形态', () => {
   });
 });
 
+test('问题平台和对照平台同时出现时只绑定实际受影响的平台', () => {
+  assert.deepEqual(resolvePromptSourceContext('鸿蒙学生端点击绘本白屏，安卓没复现', {
+    platform: null,
+    product_line: 'xueersi',
+    form_factor: 'pad',
+    version: null,
+    build: null,
+  }), {
+    platform: 'harmony',
+    productLine: 'xueersi',
+    formFactor: 'pad',
+    version: null,
+    build: null,
+  });
+});
+
+test('两个平台都出现问题时仍拒绝自动绑定', () => {
+  assert.throws(
+    () => resolvePromptSourceContext('鸿蒙和安卓都出现白屏问题', {
+      platform: null,
+      product_line: 'xueersi',
+      form_factor: null,
+      version: null,
+      build: null,
+    }),
+    (error: unknown) => error instanceof PromptVersionContextError && /平台/.test(error.message),
+  );
+});
+
 test('先记录提示词里的部分上下文，等待 LogCenter 补齐端后再绑定', () => {
   assert.deepEqual(resolvePromptSourceContext('请排查学而思的登录问题', {
     platform: null,

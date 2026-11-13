@@ -26,12 +26,40 @@ const BUILD_PATTERN = /(?:build|构建(?:号)?)[\s:=：-]*([A-Za-z0-9][A-Za-z0-9
 const TAG_BUILD_PATTERN = /v?\d+\.\d+\.\d+-(\d+)(?:-|\b)/i;
 
 function detectPlatform(content: string): ClientPlatform | null {
-  const matches = [
-    /鸿蒙|HarmonyOS?|OpenHarmony/i.test(content) ? 'harmony' : null,
-    /安卓|Android/i.test(content) ? 'android' : null,
-    /\biOS\b|苹果系统|iPhone|iPad/i.test(content) ? 'ios' : null,
-  ].filter((value): value is ClientPlatform => value !== null);
-  return uniqueOrThrow(matches, '平台') ?? null;
+  const patterns: Array<{ platform: ClientPlatform; pattern: RegExp }> = [
+    { platform: 'harmony', pattern: /鸿蒙|HarmonyOS?|OpenHarmony/gi },
+    { platform: 'android', pattern: /安卓|Android/gi },
+    { platform: 'ios', pattern: /\biOS\b|苹果系统|iPhone|iPad/gi },
+  ];
+  const active = patterns.flatMap(({ platform, pattern }) => {
+    const mentions: Array<{ index: number; end: number }> = [];
+    for (const match of content.matchAll(pattern)) {
+      if (match.index === undefined) continue;
+      mentions.push({ index: match.index, end: match.index + match[0].length });
+    }
+    return mentions
+      .filter((mention) => !isComparisonPlatformMention(content, mention.index, mention.end))
+      .map(() => platform);
+  });
+  // A sentence such as "HarmonyOS is affected, Android is not reproduced"
+  // names two platforms but only one is the source-selection target. Keep
+  // genuine multi-platform incidents ambiguous and ask for clarification.
+  return uniqueOrThrow(active, '平台') ?? null;
+}
+
+function isComparisonPlatformMention(content: string, index: number, end: number): boolean {
+  const before = content.slice(Math.max(0, index - 24), index);
+  const boundary = content.slice(end).search(/[，。！？；,!?;\n]/);
+  const after = content.slice(end, boundary < 0 ? content.length : end + boundary);
+  const shortAfter = content.slice(end, Math.min(content.length, end + 12));
+  const comparison = /(?:未|没|没有|不曾|暂未|无法)\s*(?:复现|出现|发现|报错|有问题|异常)/i;
+  const normal = /(?:正常|无异常|无问题|没问题|可用|不受影响)/i;
+  return comparison.test(after)
+    || normal.test(after)
+    || comparison.test(shortAfter)
+    || normal.test(shortAfter)
+    || (/(?:对比|相比|相较于|而|但|但是|其他|另外|另一个)\s*$/i.test(before)
+      && (comparison.test(after) || normal.test(after)));
 }
 
 function detectProductLine(content: string): ClientProductLine | null {

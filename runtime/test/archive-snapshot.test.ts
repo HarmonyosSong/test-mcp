@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { gzipSync } from 'node:zlib';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -64,7 +64,7 @@ test('archive 快照原子解包、去掉 GitLab 顶层目录并可复核', asyn
   }
 });
 
-test('archive 快照拒绝路径穿越和符号链接', async () => {
+test('archive 快照跳过符号链接和硬链接但拒绝路径穿越', async () => {
   const root = await mkdtemp(join(tmpdir(), 'archive-snapshot-'));
   const unsafe = await mkdtemp(join(tmpdir(), 'archive-unsafe-'));
   try {
@@ -72,14 +72,20 @@ test('archive 快照拒绝路径穿越和符号链接', async () => {
     await writeFile(symlinkTarget, 'outside');
     const source = join(unsafe, 'source');
     await import('node:fs/promises').then(({ mkdir }) => mkdir(source));
+    await writeFile(join(source, 'regular.txt'), 'regular');
     await symlink(symlinkTarget, join(source, 'link.txt'));
+    await link(join(source, 'regular.txt'), join(source, 'hard-link.txt'));
     const archivePath = join(unsafe, 'symlink.tar.gz');
     execFileSync('tar', ['-czf', archivePath, '-C', unsafe, 'source']);
     const archive = new Uint8Array(await readFile(archivePath));
-    await assert.rejects(
-      () => materializeArchiveSnapshot({ snapshotRoot: root, repositoryId: 'repo-2', repositoryName: 'project', requestedRef: 'main', expectedCommit: COMMIT, archive }),
-      (error: unknown) => error instanceof ArchiveSnapshotError && error.code === 'unsafe_archive',
-    );
+    const snapshot = await materializeArchiveSnapshot({ snapshotRoot: root, repositoryId: 'repo-2', repositoryName: 'project', requestedRef: 'main', expectedCommit: COMMIT, archive });
+    const extractedRegularFiles = await Promise.all([
+      readFile(join(snapshot.workspace_path, 'regular.txt'), 'utf8').then(() => 'regular.txt').catch(() => null),
+      readFile(join(snapshot.workspace_path, 'hard-link.txt'), 'utf8').then(() => 'hard-link.txt').catch(() => null),
+    ]);
+    assert.equal(extractedRegularFiles.filter(Boolean).length, 1);
+    assert.equal(await readFile(join(snapshot.workspace_path, extractedRegularFiles.find(Boolean)!), 'utf8'), 'regular');
+    await assert.rejects(() => readFile(join(snapshot.workspace_path, 'link.txt')));
     await assert.rejects(
       () => materializeArchiveSnapshot({ snapshotRoot: root, repositoryId: 'repo-3', repositoryName: 'project', requestedRef: 'main', expectedCommit: COMMIT, archive: traversalArchive() }),
       (error: unknown) => error instanceof ArchiveSnapshotError && error.code === 'unsafe_archive',

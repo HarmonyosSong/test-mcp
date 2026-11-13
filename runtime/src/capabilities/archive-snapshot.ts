@@ -51,8 +51,8 @@ export async function materializeArchiveSnapshot(input: ArchiveSnapshotInput): P
     await writeFile(archivePath, input.archive, { mode: 0o600 });
     const entries = await listArchiveEntries(archivePath);
     const stripComponents = validateArchiveEntries(entries);
-    await rejectArchiveLinks(archivePath);
-    await extractArchive(archivePath, extractedRoot, stripComponents);
+    const links = await findArchiveLinks(archivePath);
+    await extractArchive(archivePath, extractedRoot, stripComponents, links);
     await rejectSymlinks(extractedRoot);
 
     const snapshot = RepositorySnapshotSchema.parse({
@@ -115,19 +115,47 @@ async function listArchiveEntries(archivePath: string): Promise<string[]> {
   }
 }
 
-async function rejectArchiveLinks(archivePath: string): Promise<void> {
+type ArchiveLink = {
+  name: string;
+  kind: 'symbolic' | 'hard';
+};
+
+/**
+ * GitLab archives may contain dependency symlinks (for example oh_modules).
+ * Skip those entries during extraction; never materialize untrusted links.
+ */
+async function findArchiveLinks(archivePath: string): Promise<ArchiveLink[]> {
   try {
-    const result = await execFile('tar', ['-tvzf', archivePath], { maxBuffer: 32 * 1024 * 1024 });
-    for (const line of result.stdout.split(/\r?\n/).filter(Boolean)) {
-      const type = line[0];
-      if (type === 'l' || type === 'h') {
-        throw new ArchiveSnapshotError('unsafe_archive', 'archive 不允许包含符号链接或硬链接');
-      }
-    }
+    const result = await execFile('tar', ['-tvzf', archivePath], {
+      maxBuffer: 32 * 1024 * 1024,
+      env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
+    });
+    return result.stdout
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .flatMap((line) => {
+        const type = line[0];
+        if (type !== 'l' && type !== 'h') return [];
+        const delimiter = type === 'l' ? ' -> ' : ' link to ';
+        const delimiterIndex = line.indexOf(delimiter);
+        const name = delimiterIndex >= 0 ? archiveListingName(line.slice(0, delimiterIndex)) : null;
+        if (!name) {
+          throw new ArchiveSnapshotError('invalid_archive', '无法解析 archive 的链接条目');
+        }
+        return [{ name, kind: type === 'l' ? 'symbolic' : 'hard' }];
+      });
   } catch (error) {
     if (error instanceof ArchiveSnapshotError) throw error;
     throw new ArchiveSnapshotError('invalid_archive', 'archive 类型读取失败', { cause: error });
   }
+}
+
+function archiveListingName(metadata: string): string | null {
+  // BSD tar and GNU tar both place the path after the month/day/time fields.
+  const match = metadata.match(
+    /\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+(?:\d{2}:\d{2}(?::\d{2})?|\d{4})\s+(.+)$/,
+  );
+  return match?.[1]?.trim() || null;
 }
 
 function validateArchiveEntries(entries: readonly string[]): number {
@@ -151,11 +179,22 @@ function validateArchiveEntries(entries: readonly string[]): number {
   return hasSingleRoot ? 1 : 0;
 }
 
-async function extractArchive(archivePath: string, target: string, stripComponents: number): Promise<void> {
+async function extractArchive(
+  archivePath: string,
+  target: string,
+  stripComponents: number,
+  links: readonly ArchiveLink[],
+): Promise<void> {
   const args = ['-xzf', archivePath, '-C', target];
   if (stripComponents > 0) args.push('--strip-components=1');
+  // Excluding link entries leaves their regular targets untouched while
+  // preventing tar from creating any link in the extracted workspace.
+  for (const link of links) args.push(`--exclude=${link.name}`);
   try {
-    await execFile('tar', args, { maxBuffer: 8 * 1024 * 1024 });
+    await execFile('tar', args, {
+      maxBuffer: 8 * 1024 * 1024,
+      env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
+    });
   } catch (error) {
     throw new ArchiveSnapshotError('invalid_archive', 'tar 解包失败', { cause: error });
   }
