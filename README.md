@@ -171,6 +171,8 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_LOGCENTER_APP_SECRET` | 空 | LogCenter 应用密钥，只在本地配置 |
 | `HARMONY_AGENT_LOGCENTER_BASE_URL` | `https://logcenter-api.tal.com/api` | 日志平台网关地址 |
 | `HARMONY_AGENT_LOGCENTER_TIMEOUT_MS` | `15000` | 单次日志 HTTP 请求超时，范围 100–120000 毫秒；随诊断轮取消 |
+| `HARMONY_AGENT_UCENTER_BASE_URL` | `https://ucenter-one-inner.speiyou.cn` | 学员编号转 uid 的内网服务；转换失败时 Runtime 阻止日志查询 |
+| `HARMONY_AGENT_UCENTER_TIMEOUT_MS` | `10000` | 学员编号转 uid 请求超时 |
 
 网页设置写入 `<data-root>/model-config.json`（默认 `.data/model-config.json`），文件权限为 `0600`。容器部署见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)：只设 `HARMONY_AGENT_DATA_ROOT=/data/troubleshoot-odyssey`，由平台挂卷，勿再写相对 `.data/...` 单项。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key。默认开启官方 Mastra Observability（`Observability` + `SensitiveDataFilter`），并由按会话落盘的 exporter 写入可读 JSON：`.data/mastra/observability/conversations/<会话ID>/traces/*.json`（另有 `manifest.jsonl` 索引）。文件按「用户输入 → steps[]（每轮模型话术 + 工具入出参）→ 最终回答」组织；`processor_run` / `mapping` / `model_chunk` 视为噪音丢弃。终端默认安静（`logger: false`）。不改 knowledge JSONL/cases。需要关闭时设 `HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE=false`。应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
 

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 
 import { z } from 'zod';
+import { UCENTER_DEFAULT_BASE_URL } from './capabilities/ucenter.js';
 
 const booleanFromEnv = z
   .string()
@@ -117,8 +118,8 @@ export const runtimeConfigSchema = z.object({
   logcenterAppSecret: z.string().default(''),
   logcenterBaseUrl: z.string().default('https://logcenter-api.tal.com/api'),
   logcenterTimeoutMs: z.coerce.number().int().min(100).max(120_000).default(15_000),
-  /** 空 = 不启用学员编号→uid；生产内网默认见 .env.example。 */
-  ucenterBaseUrl: z.string().default(''),
+  /** 学员编号默认通过内网 UCenter 转成 uid 后才允许查日志。 */
+  ucenterBaseUrl: z.string().default(UCENTER_DEFAULT_BASE_URL),
   ucenterTimeoutMs: z.coerce.number().int().min(100).max(60_000).default(10_000),
 });
 
@@ -283,7 +284,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     logcenterAppId: config.logcenterAppId.trim(),
     logcenterAppSecret: config.logcenterAppSecret.trim(),
     logcenterBaseUrl: (config.logcenterBaseUrl.trim() || 'https://logcenter-api.tal.com/api').replace(/\/+$/, ''),
-    ucenterBaseUrl: config.ucenterBaseUrl.trim().replace(/\/+$/, ''),
+    ucenterBaseUrl: (config.ucenterBaseUrl.trim() || UCENTER_DEFAULT_BASE_URL).replace(/\/+$/, ''),
     ucenterTimeoutMs: config.ucenterTimeoutMs,
   };
 }

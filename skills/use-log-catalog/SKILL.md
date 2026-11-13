@@ -34,6 +34,19 @@ root-cause proof in this phase.
    - `ambiguous`: ask **one** clarifying question. Common splits: **埋点 vs APM**；**鸿蒙 vs iOS**（可同属 prod-ios store）；Pad vs 手机；装扮商城 vs 播放器等 appid. Do not search a guess.
    - `not_found`: say the catalog does not cover the request; never invent service_id or SLS account/topic.
 
+## Learner identity gate
+
+学员编号（`card`）不是 LogCenter 的 `uid`，不能直接作为日志过滤条件。Runtime 会在本轮工具挂载时完成固定链路：
+
+```text
+学员编号/card -> UCenter getUserByCard -> uid -> Runtime 强制加入日志 query -> LogCenter
+```
+
+- `count_cloud_logs`、`search_cloud_logs`、`count_logs`、`query_logs` 只能使用 Runtime 转换后的 uid；模型不得手写学员编号、猜测 uid 或覆盖 Runtime 注入的条件。
+- 用户明确提供 `uid` 时不需要换码，但最终 uid 条件仍由 Runtime 生成。
+- 如果工具返回 `learner_uid_unresolved`，立即停止远程日志查询；不要重试原学员编号，也不要把它改写成 `uid`。说明 UCenter 转换失败，继续其他可用证据或等待下一轮重试。
+- 没有学员编号或 uid 时可以按普通业务条件查询，但不能把返回的全量结果当作该学员的日志证据。
+
 ## Route by `source`
 
 ### `source=aliyun_sls`（产品埋点）
@@ -46,7 +59,7 @@ root-cause proof in this phase.
 4. Prefer `count_logs` then `query_logs` with resolved `service_id`.
 5. Prefer catalog `suggested_query` (e.g. `c.monitorLogType:1` for network). `query_logs.page` starts at **1** (page number, not offset). Keep size ≤ 40.
 6. Use `client_form` / `app_clientid` / `monitor_types` from the candidate to refine filters; do not call SLS cloud tools for these targets.
-7. **学员编号 ≠ uid（Runtime 自动处理）**：本轮若已识别到学员编号/用户数字，Runtime 会在挂载日志工具时转成 uid，并在 `count_cloud_logs` / `search_cloud_logs` / `count_logs` / `query_logs` **强制 AND** `uid:<id>`。不要向用户索要“请先把编号转成 uid”；也不要把 12 位学员编号手写进 `uid:`。若计数仍是上亿级全库量，说明 uid 过滤没生效，应改用带用户身份标签的原文或明确写 `uid: <数字>` 后再查，而不是让用户手动换算。
+7. **学员编号 ≠ uid（Runtime 自动处理）**：本轮若已识别到学员编号，Runtime 会先调用 UCenter 换成 uid，再在 `count_cloud_logs` / `search_cloud_logs` / `count_logs` / `query_logs` **强制 AND** 转换后的 uid。不要向用户索要“请先把编号转成 uid”，也不要把学员编号手写进 `uid:`。若出现 `learner_uid_unresolved`，停止远程查询并报告转换缺口；不要用原编号重试。若没有用户身份条件，计数只是业务范围总量，不能作为该学员的结论。
 
 ## Boundaries
 

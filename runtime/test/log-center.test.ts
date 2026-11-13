@@ -423,6 +423,42 @@ test('学员编号在查日志前转为 uid，并强制写入 query', async () =
   ]);
 });
 
+test('学员编号转换失败时阻止所有 LogCenter 查询', async () => {
+  let logRequests = 0;
+  const config = loadRuntimeConfig({
+    HARMONY_AGENT_LOGCENTER_APP_ID: 'app-id',
+    HARMONY_AGENT_LOGCENTER_APP_SECRET: 'app-secret',
+    HARMONY_AGENT_LOGCENTER_BASE_URL: 'https://logcenter.example.test/api',
+    HARMONY_AGENT_LOG_CATALOG: catalogPath,
+    HARMONY_AGENT_UCENTER_BASE_URL: 'https://ucenter.example.test',
+  });
+  const tools = await createLogCatalogTools(config, {
+    correlation: {
+      sourceText: '学员编号: 233021794099',
+      identifiers: { learner_id: '233021794099' },
+      learnerIdSource: 'card',
+    },
+    fetchImpl: async () => new Response(JSON.stringify({ rlt: false, data: null }), { status: 200 }),
+    http: async () => {
+      logRequests += 1;
+      return { status: 200, body: { code: 0, data: { total: 0, logs: [] } } };
+    },
+  });
+  assert.ok(tools);
+  await assert.rejects(
+    () => tools.search_cloud_logs.execute!({
+      vendor: 'aliyun', region: 'cn-beijing', account: 'account', collection: 'collection',
+      topic: 'prod-ios', time: '1h', query: 'appid: "log-har-001-prod"', size: 10, from: 0,
+    }, {} as never),
+    /learner_uid_unresolved/,
+  );
+  await assert.rejects(
+    () => tools.count_logs.execute!({ service_id: 6111, time: '1h' }, {} as never),
+    /learner_uid_unresolved/,
+  );
+  assert.equal(logRequests, 0);
+});
+
 
 for (const mode of ['cancel', 'timeout'] as const) {
   test(`log requests stop on round ${mode}`, { timeout: 5_000 }, async () => {

@@ -18,6 +18,7 @@ import {
 import {
   applyResolvedUidQuery,
   createUcenterClient,
+  looksLikeLearnerCard,
   resolveLearnerUid,
 } from './ucenter.js';
 
@@ -697,7 +698,47 @@ export async function createLogCatalogTools(
     options?.http,
     { abortSignal: options?.abortSignal, timeoutMs: config.logcenterTimeoutMs },
   );
-  const privacy = new ClientLogPrivacy(options?.correlation?.identifiers ?? {});
+
+  const correlation = options?.correlation
+    ? {
+        ...options.correlation,
+        identifiers: { ...options.correlation.identifiers },
+      }
+    : undefined;
+  let unresolvedLearnerCard = false;
+  if (correlation?.identifiers.learner_id) {
+    const learnerId = correlation.identifiers.learner_id;
+    const learnerIdSource = correlation.learnerIdSource
+      ?? (looksLikeLearnerCard(learnerId) ? 'card' : 'uid');
+    correlation.learnerIdSource = learnerIdSource;
+    const resolved = await resolveLearnerUid(
+      {
+        learnerId,
+        learnerIdSource,
+      },
+      createUcenterClient(config, options?.fetchImpl),
+      options?.abortSignal,
+    );
+    if (resolved) {
+      correlation.identifiers.learner_id = resolved;
+      correlation.learnerIdSource = 'uid';
+    } else if (learnerIdSource === 'card') {
+      // A card is not a LogCenter uid. Keep the tools mounted for routing, but
+      // block every log request until the conversion succeeds.
+      unresolvedLearnerCard = true;
+      delete correlation.identifiers.learner_id;
+    }
+  }
+  const resolvedUid = correlation?.identifiers.learner_id;
+  const applyLogUidQuery = (query: string | undefined): string | undefined => {
+    if (unresolvedLearnerCard) {
+      throw new Error('learner_uid_unresolved: 学员编号未成功转换为 uid，已阻止 LogCenter 查询；请检查 UCenter 配置或改用 uid');
+    }
+    return applyResolvedUidQuery(query, resolvedUid);
+  };
+  // Match log rows against the post-conversion uid, so evidence correlation
+  // uses the same identifier that was sent to LogCenter.
+  const privacy = new ClientLogPrivacy(correlation?.identifiers ?? {});
   const safeText = (value: unknown): string => String(privacy.sanitize(value).value);
 
   const observe = (
@@ -795,32 +836,6 @@ export async function createLogCatalogTools(
     };
   };
 
-  const correlation = options?.correlation
-    ? {
-        ...options.correlation,
-        identifiers: { ...options.correlation.identifiers },
-      }
-    : undefined;
-  if (correlation?.identifiers.learner_id) {
-    const resolved = await resolveLearnerUid(
-      {
-        learnerId: correlation.identifiers.learner_id,
-        learnerIdSource: correlation.learnerIdSource ?? 'card',
-      },
-      createUcenterClient(config, options?.fetchImpl),
-      options?.abortSignal,
-    );
-    if (resolved) {
-      correlation.identifiers.learner_id = resolved;
-      correlation.learnerIdSource = 'uid';
-    } else if ((correlation.learnerIdSource ?? 'card') === 'card') {
-      // 学员编号未换成 uid：禁止继续用编号当 uid 查日志。
-      delete correlation.identifiers.learner_id;
-      delete correlation.learnerIdSource;
-    }
-  }
-  const resolvedUid = correlation?.identifiers.learner_id;
-
   return {
     resolve_log_target: createTool({
       id: 'resolve_log_target',
@@ -845,7 +860,7 @@ export async function createLogCatalogTools(
       inputSchema: z.object(SlsTargetFields),
       execute: async (input) => {
         const range = parseTimeRangeSeconds(input.time);
-        const query = applyResolvedUidQuery(input.query, resolvedUid);
+        const query = applyLogUidQuery(input.query);
         // 官方 cloud-count 不接受 query；有过滤条件时改用 search.total，避免「全库量级」误导。
         if (query && query !== '*') {
           const searched = await client.searchCloudLogs({
@@ -885,7 +900,7 @@ export async function createLogCatalogTools(
       execute: async (input) => {
         const range = parseTimeRangeSeconds(input.time);
         const size = Math.min(input.size ?? 50, 200);
-        const query = applyResolvedUidQuery(input.query?.trim() || '*', resolvedUid) || '*';
+        const query = applyLogUidQuery(input.query?.trim() || '*') || '*';
         const result = await client.searchCloudLogs({
           vendor: input.vendor,
           region: input.region,
@@ -939,7 +954,7 @@ export async function createLogCatalogTools(
           serviceId: input.service_id,
           start: range.start,
           end: range.end,
-          query: applyResolvedUidQuery(input.query, resolvedUid),
+          query: applyLogUidQuery(input.query),
         });
       },
     }),
@@ -959,7 +974,7 @@ export async function createLogCatalogTools(
           serviceId: input.service_id,
           start: range.start,
           end: range.end,
-          query: applyResolvedUidQuery(input.query, resolvedUid),
+          query: applyLogUidQuery(input.query),
           page: input.page ?? 1,
           size,
         });

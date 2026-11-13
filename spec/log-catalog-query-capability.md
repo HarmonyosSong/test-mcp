@@ -8,7 +8,9 @@
 
 本文是 Troubleshoot Odyssey 中「查日志」能力的发布契约：解决**用户不知道 account / project / logstore / appid / service_id** 时，如何靠内置分类快速定位并查询。交付物是可挂载的工具 + Skill + Catalog；**不改**现有分层取证、报告校验与证据账本主流程。
 
-当前由 `capabilities/session.ts` 统一挂载五工具：`resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`count_logs`、`query_logs`。日志凭证为空不影响其余功能；默认单次 HTTP 超时 15 秒（`HARMONY_AGENT_LOGCENTER_TIMEOUT_MS`）。框架测试用 mock/本机 HTTP。PII 脱敏闭环与日志证据门禁尚未实施。
+当前由 `capabilities/session.ts` 统一挂载五工具：`resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`count_logs`、`query_logs`。日志凭证为空不影响其余功能；默认单次 HTTP 超时 15 秒（`HARMONY_AGENT_LOGCENTER_TIMEOUT_MS`）。框架测试用 mock/本机 HTTP。
+
+学员身份有一条硬门禁：用户提供的是学员编号（`card`）时，Runtime 必须先调用 UCenter 的 `getUserByCard` 换成 `uid`，再把 `uid` 强制写入四个日志查询工具的 query；转换失败时阻止请求，不能把学员编号直接发给 LogCenter。用户直接提供 `uid` 时不需要换码。该过程只在 Runtime 私有上下文中执行，模型不能自行覆盖。
 
 ---
 
@@ -65,9 +67,15 @@
 ## 3. 概念模型
 
 ```text
-用户自然语言（口语岛 / 安卓监控 / uid / 最近1小时）
+用户自然语言（口语岛 / 安卓监控 / 学员编号 / uid / 最近1小时）
         │
         ▼
+┌───────────────────────┐
+│ Runtime 身份门禁       │
+│ card → UCenter → uid   │
+└───────────┬───────────┘
+            │ 转换失败则不发起日志请求
+            ▼
 ┌───────────────────┐
 │ resolve_log_target │  ← Catalog（别名 + source/log_kind）
 └─────────┬─────────┘
@@ -115,6 +123,8 @@ runtime/contracts/log-catalog/
 | `HARMONY_AGENT_LOGCENTER_APP_SECRET` | 是 | 日志中心 Skill AppSecret |
 | `HARMONY_AGENT_LOGCENTER_BASE_URL` | 否 | 可选；区分生产/测试网关 |
 | `HARMONY_AGENT_LOGCENTER_TIMEOUT_MS` | 否 | 单次 HTTP 超时；默认 15000，范围 100–120000 毫秒 |
+| `HARMONY_AGENT_UCENTER_BASE_URL` | 否 | 学员编号转 uid 的 UCenter 地址；默认 `https://ucenter-one-inner.speiyou.cn` |
+| `HARMONY_AGENT_UCENTER_TIMEOUT_MS` | 否 | 学员编号转 uid 请求超时；默认 10000 毫秒 |
 
 未配置 AppID/AppSecret → **不创建**日志 toolset（与外部知识「未配置不挂载」一致）。
 
