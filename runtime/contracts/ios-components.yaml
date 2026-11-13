@@ -1,0 +1,10 @@
+# Source repositories, not the similarly named binary Framework repositories.
+# Rules map identities only; each dependency must supply its own exact version/commit.
+rules:
+  - prefix: XesApp
+    namespace: peiyou_xueersiapp_XesAppModuleiOS
+    suffix: Code
+  - prefix: CloudLearning_
+    namespace: peiyou_xueersiapp_cloudlearning_iOS
+    suffix: ""
+    strip_suffix: _HD

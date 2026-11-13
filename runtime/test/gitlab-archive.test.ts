@@ -5,6 +5,27 @@ import { GitLabArchiveClient, GitLabArchiveError } from '../src/capabilities/git
 
 const COMMIT = 'b'.repeat(40);
 
+test('GitLab tag 查询读取后续页并验证 commit 身份', async () => {
+  const pages: string[] = [];
+  const client = new GitLabArchiveClient({
+    baseUrl: 'https://git.example.test', token: 'fixture',
+    fetchImpl: async (input) => {
+      const page = new URL(String(input)).searchParams.get('page')!;
+      pages.push(page);
+      return Response.json([{ name: `release-${page}`, commit: { id: COMMIT } }], {
+        headers: { 'x-next-page': page === '1' ? '2' : '' },
+      });
+    },
+  });
+  assert.equal((await client.searchTags('group/ios', '5.105.0')).length, 2);
+  assert.deepEqual(pages, ['1', '2']);
+  const invalid = new GitLabArchiveClient({
+    baseUrl: 'https://git.example.test', token: 'fixture',
+    fetchImpl: async () => Response.json([{ name: 'release', commit: { id: 'main' } }]),
+  });
+  await assert.rejects(() => invalid.searchTags('group/ios', '5.105.0'), /固定 commit/);
+});
+
 test('GitLab archive client 先校验 commit，再下载固定 SHA archive，且不泄露 token', async () => {
   const requests: Array<{ url: string; token: string | null }> = [];
   const client = new GitLabArchiveClient({

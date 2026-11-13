@@ -24,6 +24,46 @@ function observabilityOptions(directory: string) {
   };
 }
 
+test('耗时源码准备前已建立 SSE 并发送 RUN_STARTED', { timeout: 5000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-stream-start-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let modelStarted = false;
+  const routes = createConversationRoutes(store, {
+    async *stream() {
+      modelStarted = true;
+      yield { type: 'completed', text: '已检查', report: null, evidence_state: {}, messages_state: [], tool_usage: {} };
+    },
+  } as unknown as DiagnosisAgent, { createKnowledgeSession: async () => null } as unknown as CapabilityMcp,
+  { enabled: true } as ModelConfiguration, {
+    createConversationSource: async () => { await gate; return { source_limitations: ['组件不可用'] }; },
+  });
+  try {
+    const conversation = await store.createConversation({ title: '慢速源码准备' });
+    const response = await routes.request(`/conversations/${conversation.id}/messages`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: '检查 iOS 学家云 5.105.0' }),
+    });
+    const reader = response.body!.getReader();
+    const first = await reader.read();
+    assert.match(new TextDecoder().decode(first.value), /RUN_STARTED/);
+    assert.equal(modelStarted, false);
+    release();
+    let tail = '';
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      tail += new TextDecoder().decode(chunk.value);
+    }
+    assert.match(tail, /RUN_FINISHED/);
+  } finally {
+    release();
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('conversation routes preserve product DTO and hide runtime-only state', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'mastra-conversation-routes-'));
   const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
@@ -234,7 +274,7 @@ test('源码版本歧义不阻断用户消息，先进入调查并保留可恢�
       async *stream(input: DiagnosisRunInput) {
         diagnosisRuns += 1;
         assert.deepEqual(input.conversation.source_limitations, [
-          '源码快照暂未绑定，本轮先查询关联日志；确认产品线、形态或版本后下一轮自动重试。',
+          '源码快照暂未绑定：version_ambiguous: android/latest 命中多个产品线。本轮先查询关联日志，补齐范围后自动重试。',
         ]);
         yield { type: 'completed', text: '已进入日志调查', report: null, evidence_state: {}, messages_state: [], tool_usage: {} };
       },
@@ -266,7 +306,7 @@ test('源码版本歧义不阻断用户消息，先进入调查并保留可恢�
     const saved = await store.getConversation(conversation.id);
     assert.equal(saved.workspace_path, null);
     assert.deepEqual(saved.source_limitations, [
-      '源码快照暂未绑定，本轮先查询关联日志；确认产品线、形态或版本后下一轮自动重试。',
+      '源码快照暂未绑定：version_ambiguous: android/latest 命中多个产品线。本轮先查询关联日志，补齐范围后自动重试。',
     ]);
   } finally {
     await store.close();

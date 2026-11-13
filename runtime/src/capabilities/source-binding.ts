@@ -12,6 +12,17 @@ type SourceBindingState = Pick<
   | 'source_limitations'
 >;
 
+export type BoundSourceContext = {
+  repositories: SourceRepositoryBinding[];
+  limitations: string[];
+};
+
+/** Upgrade older shell-only iOS conversations without switching their shell commit. */
+export function needsIosComponents(value: SourceBindingState & { platform: ConversationRecord['platform'] }): boolean {
+  return value.platform === 'ios' && hasCompleteSourceBinding(value)
+    && !value.source_repositories.some((repository) => repository.role === 'component');
+}
+
 /** A source workspace is usable only after Runtime has recorded its identity. */
 export function hasCompleteSourceBinding(value: SourceBindingState): boolean {
   if (!value.workspace_path || !value.repository_id || !value.resolved_commit) return false;

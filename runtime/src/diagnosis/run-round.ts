@@ -10,6 +10,8 @@ import type { CapabilityMcp } from '../capabilities/mcp.js';
 import type { LogToolCorrelation } from '../capabilities/log-center.js';
 import { createRoundCapabilitySession, type CapabilitySession } from '../capabilities/session.js';
 import { resolvePromptSourceContext } from '../capabilities/prompt-version-context.js';
+import type { BoundSourceContext } from '../capabilities/source-binding.js';
+import { prepareConversationSource } from '../capabilities/prepare-source.js';
 import type { ModelConfiguration } from '../model/configuration.js';
 import type { ProductStore } from '../product/store.js';
 import { redactRecord, redactRecordInPlace, redactSensitiveText } from '../security/redaction.js';
@@ -116,6 +118,7 @@ export interface RunDiagnosisRoundOptions {
     formFactor: ConversationRecord['form_factor'];
     version: ConversationRecord['version'];
     build: ConversationRecord['build'];
+    boundSource?: BoundSourceContext;
     signal?: AbortSignal;
   }) => Promise<Partial<Pick<ConversationRecord, 'workspace_path' | 'repository_id' | 'repository_name' | 'requested_ref' | 'resolved_commit' | 'source_repositories' | 'source_completeness' | 'source_limitations' | 'platform' | 'product_line' | 'form_factor' | 'version' | 'build'>>>;
 }
@@ -345,6 +348,8 @@ async function runLegacyDiagnosisRound(
   let terminalPersisted = false;
 
   try {
+    await prepareConversationSource(conversation, content, options.createConversationSource, abortSignal);
+    await saveConversation(conversation);
     capabilitySession = await createRoundCapabilitySession(capabilities, {
       conversationId: conversation.id,
       messageId: assistantMessage.id,
@@ -834,6 +839,7 @@ async function runOrchestratedDiagnosisRound(
         formFactor: scope.formFactor,
         version: scope.version,
         build: scope.build,
+        ...(conversation.workspace_path ? { boundSource: { repositories: conversation.source_repositories, limitations: conversation.source_limitations } } : {}),
         signal: abortSignal,
       });
       Object.assign(conversation, source);
@@ -852,6 +858,7 @@ async function runOrchestratedDiagnosisRound(
   };
 
   try {
+    if (!input.resume) await prepareConversationSource(conversation, content, options.createConversationSource, abortSignal);
     let plan: InvestigationPlan;
     let correlation: CorrelationContext;
     if (input.resume) {

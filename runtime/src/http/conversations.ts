@@ -26,8 +26,7 @@ import type { ServerSignals } from '../orchestration/server-signals.js';
 import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js';
 import type { InvestigationBudget } from '../orchestration/plan.js';
 import { ExternalConsultationError } from '../orchestration/consultation.js';
-import { PromptVersionContextError, resolvePromptSourceContext } from '../capabilities/prompt-version-context.js';
-import { clearIncompleteSourceBinding, hasCompleteSourceBinding } from '../capabilities/source-binding.js';
+import { clearIncompleteSourceBinding, type BoundSourceContext } from '../capabilities/source-binding.js';
 
 interface ConversationRouteOptions {
   knowledgeQueryLog?: string;
@@ -43,6 +42,7 @@ interface ConversationRouteOptions {
     formFactor: ConversationRecord['form_factor'];
     version: ConversationRecord['version'];
     build: ConversationRecord['build'];
+    boundSource?: BoundSourceContext;
     signal?: AbortSignal;
   }) => Promise<Partial<Pick<ConversationRecord, 'workspace_path' | 'repository_id' | 'repository_name' | 'requested_ref' | 'resolved_commit' | 'source_repositories' | 'source_completeness' | 'source_limitations' | 'platform' | 'product_line' | 'form_factor' | 'version' | 'build'>>>;
 }
@@ -337,49 +337,6 @@ export function createConversationRoutes(
     let prepared;
     try {
       clearIncompleteSourceBinding(conversation);
-      const hasBoundSource = hasCompleteSourceBinding(conversation);
-      if (!hasBoundSource) {
-        const sourceLimitations: string[] = [];
-        try {
-          const promptSource = resolvePromptSourceContext(parsedInput.data.content, {
-            ...conversation,
-            promptHistory: conversation.messages
-              .filter((message) => message.role === 'user')
-              .map((message) => message.content),
-          });
-          if (promptSource) {
-            Object.assign(conversation, {
-              ...(promptSource.platform ? { platform: promptSource.platform } : {}),
-              ...(promptSource.productLine ? { product_line: promptSource.productLine } : {}),
-              ...(promptSource.formFactor ? { form_factor: promptSource.formFactor } : {}),
-              ...(promptSource.version ? { version: promptSource.version } : {}),
-              ...(promptSource.build ? { build: promptSource.build } : {}),
-            });
-            if (options.createConversationSource && promptSource.platform) {
-              try {
-                const source = await options.createConversationSource({
-                  platform: promptSource.platform,
-                  productLine: promptSource.productLine,
-                  formFactor: promptSource.formFactor,
-                  version: promptSource.version,
-                  build: promptSource.build,
-                  signal: context.req.raw.signal,
-                });
-                Object.assign(conversation, source);
-              } catch (error) {
-                if (!(error instanceof RepositoryGitError)) throw error;
-                sourceLimitations.push('源码快照暂未绑定，本轮先查询关联日志；确认产品线、形态或版本后下一轮自动重试。');
-              }
-            }
-          }
-        } catch (error) {
-          if (!(error instanceof PromptVersionContextError)) throw error;
-          sourceLimitations.push('源码绑定所需上下文暂未唯一确定，本轮先查询关联日志或追问缺失信息。');
-        }
-        if (sourceLimitations.length > 0) {
-          conversation.source_limitations = sourceLimitations;
-        }
-      }
       prepared = await prepareDiagnosisRound({
         store,
         modelConfiguration,
@@ -389,7 +346,6 @@ export function createConversationRoutes(
       });
     } catch (error) {
       await admission.release(admissionGrant.runId);
-      if (error instanceof PromptVersionContextError) return jsonError(error.message, 422);
       if (error instanceof RepositoryGitError) return jsonError(error.message, 422);
       throw error;
     }

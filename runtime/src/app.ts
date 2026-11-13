@@ -13,7 +13,7 @@ import { createAuthRoutes } from './http/auth.js';
 import { ProductStore } from './product/store.js';
 import { ModelConfiguration } from './model/configuration.js';
 import { createModelRoutes } from './http/models.js';
-import { RepositoryCapability } from './capabilities/repository.js';
+import { RepositoryCapability, SnapshotNotReadyError } from './capabilities/repository.js';
 import { CapabilityMcp } from './capabilities/mcp.js';
 import { SkillRegistry } from './diagnosis/skills.js';
 import { DiagnosisAgent } from './diagnosis/agent.js';
@@ -42,7 +42,7 @@ import {
 import { CompassSlotAdapter } from './capabilities/compass-slot.js';
 import { createCompassA2ADebugRoutes } from './capabilities/compass-a2a-debug.js';
 import { loadServerSignals } from './orchestration/server-signals.js';
-import { VersionRegistry } from './capabilities/version-registry.js';
+import { VersionRegistry, type VersionRegistryRepository } from './capabilities/version-registry.js';
 import { GitLabArchiveClient, GitLabArchiveError } from './capabilities/gitlab-archive.js';
 import { ArchiveSnapshotError } from './capabilities/archive-snapshot.js';
 import {
@@ -51,6 +51,9 @@ import {
 } from './capabilities/multi-repository-snapshot.js';
 import { RepositoryGitError } from './capabilities/repository.js';
 import { VersionRegistryError } from './capabilities/version-registry.js';
+import { resolveVersionSource } from './capabilities/version-source.js';
+import { loadIosComponentRules, resolveIosComponents } from './capabilities/ios-components.js';
+import type { BoundSourceContext } from './capabilities/source-binding.js';
 
 export interface RuntimeApp {
   app: Hono<{ Variables: AuthVariables }>;
@@ -133,6 +136,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       formFactor,
       version,
       build,
+      boundSource,
       signal,
     }: {
       platform: 'harmony' | 'android' | 'ios';
@@ -140,53 +144,87 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       formFactor: 'phone' | 'pad' | 'universal' | null;
       version: string | null;
       build: string | null;
+      boundSource?: BoundSourceContext;
       signal?: AbortSignal;
     }) => {
       try {
-        let selection;
-        let nearestVersion: string | null = null;
-        try {
-          selection = versionRegistry.select({
-            platform,
-            productLine: productLine ?? undefined,
-            formFactor: formFactor ?? undefined,
-            version,
-            build,
-          });
-        } catch (error) {
-          if (!(error instanceof VersionRegistryError)
-            || !version
-            || !['version_not_registered', 'build_not_registered'].includes(error.code)) throw error;
-          selection = versionRegistry.select({
-            platform,
-            productLine: productLine ?? undefined,
-            formFactor: formFactor ?? undefined,
-          });
-          nearestVersion = selection.entry.version;
-        }
-        const snapshots = await Promise.all(selection.repositories.map(async (registryRepository) => {
+        const { selection, limitations } = boundSource ? {
+          selection: {
+            entry: { product_line: productLine, version },
+            build: { build },
+            repositories: boundSource.repositories.map((repository) => ({
+              repository_id: repository.repository_name,
+              ref: repository.requested_ref,
+              expected_commit: repository.resolved_commit,
+              role: repository.role,
+              mount_path: repository.mount_path,
+            })),
+          },
+          // Recompute component gaps, retaining any shell version mismatch.
+          limitations: boundSource.limitations.filter((value) => /现场.*版本.*对照/.test(value)),
+        } : await resolveVersionSource(versionRegistry, gitlabArchiveClient, {
+          platform,
+          productLine: productLine ?? undefined,
+          formFactor: formFactor ?? undefined,
+          version,
+          build,
+        }, signal);
+        const versionFallback = limitations.length > 0;
+        const prepareRepository = async (registryRepository: VersionRegistryRepository) => {
           const repository = await repositories.ensureRegistryRepository(
             registryRepository.repository_id,
             { baseUrl: config.gitlabBaseUrl, ref: registryRepository.ref },
           );
-          const snapshot = gitlabArchiveClient
-            ? await gitlabArchiveClient.downloadArchive(registryRepository.repository_id, registryRepository.expected_commit, signal)
-              .then(({ archive }) => repositories.prepareArchiveSnapshot(
+          let snapshot;
+          try {
+            snapshot = await repositories.getPreparedSnapshot(repository.id, registryRepository.ref, registryRepository.expected_commit);
+          } catch (error) {
+            if (!(error instanceof SnapshotNotReadyError) || !gitlabArchiveClient) throw error;
+            const { archive } = await gitlabArchiveClient.downloadArchive(registryRepository.repository_id, registryRepository.expected_commit, signal);
+            snapshot = await repositories.prepareArchiveSnapshot(
                 repository.id,
                 registryRepository.ref,
                 registryRepository.expected_commit,
                 archive,
-              ))
-            : await repositories.getPreparedSnapshot(
-              repository.id,
-              registryRepository.ref,
-              registryRepository.expected_commit,
-            );
+              );
+          }
           await store.saveSnapshot(snapshot);
           return { registryRepository, repository, snapshot };
-        }));
-        const shell = snapshots.find((item) => item.registryRepository.role === 'shell');
-        if (!shell) throw new RepositoryGitError('当前版本没有 shell 仓库');
+        };
+        const shellRepository = selection.repositories.find((item) => item.role === 'shell');
+        if (!shellRepository) throw new RepositoryGitError('当前版本没有 shell 仓库');
+        const shell = await prepareRepository(shellRepository);
+        const snapshots = [shell];
+        const componentRepositories = selection.repositories.filter((item) => item.role !== 'shell');
+        if (platform === 'ios') {
+          try {
+            const components = await resolveIosComponents({
+              workspacePath: shell.snapshot.workspace_path,
+              client: gitlabArchiveClient,
+              gitlabBaseUrl: config.gitlabBaseUrl,
+              rules: await loadIosComponentRules(resolve(config.projectRoot, 'runtime/contracts/ios-components.yaml')),
+              signal,
+            });
+            limitations.push(...components.limitations);
+            // Explicit registry mappings take precedence over inferred dependencies.
+            for (const component of components.repositories) {
+              if (!selection.repositories.some((item) => item.repository_id === component.repository_id)) componentRepositories.push(component);
+            }
+          } catch (error) {
+            signal?.throwIfAborted();
+            limitations.push(`iOS 组件解析失败，保留主工程：${error instanceof Error ? error.message : '未知错误'}。`);
+          }
+        }
+        for (let offset = 0; offset < componentRepositories.length; offset += 4) {
+          signal?.throwIfAborted();
+          const batch = componentRepositories.slice(offset, offset + 4);
+          const results = await Promise.allSettled(batch.map(prepareRepository));
+          signal?.throwIfAborted();
+          results.forEach((result, index) => {
+            if (result.status === 'fulfilled') snapshots.push(result.value);
+            else limitations.push(`组件 ${batch[index]!.repository_id}@${batch[index]!.ref} 下载失败，保留其它源码：${result.reason instanceof Error ? result.reason.message : '未知错误'}。`);
+          });
+        }
         const sourceRepositories = snapshots.map(({ registryRepository, repository, snapshot }) => ({
           repository_id: repository.id,
           repository_name: repository.name,
@@ -205,7 +243,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
               mountPath: registryRepository.mount_path ?? '',
             })),
           })).workspace_path;
-        const sourceCompleteness = snapshots.some((item) => item.registryRepository.role !== 'shell')
+        const sourceCompleteness = limitations.length === 0 && snapshots.some((item) => item.registryRepository.role !== 'shell')
           ? 'complete' as const
           : 'partial' as const;
         return {
@@ -217,16 +255,15 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
           source_repositories: sourceRepositories,
           source_completeness: sourceCompleteness,
           source_limitations: [
-            ...(sourceCompleteness === 'partial' ? ['当前登记只包含 shell 仓库，组件源码未挂载。'] : []),
-            ...(nearestVersion && version && nearestVersion !== version
-              ? [`现场日志版本 ${version} 未登记，当前绑定 ${nearestVersion} 作为近邻源码对照；不能据此确认现场版本行为。`]
-              : []),
+            ...(snapshots.length === 1 ? ['当前仅绑定主工程，组件源码未挂载；具体缺口见下方。'] : []),
+            ...limitations,
           ],
           platform,
           product_line: selection.entry.product_line,
           form_factor: formFactor,
-          version: selection.entry.version,
-          build: selection.build.build ?? null,
+          // Keep the incident scope intact when a comparison snapshot is used.
+          version: version ?? selection.entry.version,
+          build: build ?? (!versionFallback ? selection.build.build ?? null : null),
         };
       } catch (error) {
         if (error instanceof VersionRegistryError || error instanceof GitLabArchiveError || error instanceof ArchiveSnapshotError || error instanceof MultiRepositorySnapshotError) {

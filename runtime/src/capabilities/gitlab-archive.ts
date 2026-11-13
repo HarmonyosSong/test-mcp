@@ -13,6 +13,8 @@ export type GitLabCommit = {
   committed_date: string | null;
 };
 
+export type GitLabTag = { name: string; commit: string };
+
 export class GitLabArchiveError extends Error {
   public constructor(
     readonly code: 'invalid_config' | 'invalid_commit' | 'commit_not_found' | 'archive_unavailable' | 'invalid_response',
@@ -76,6 +78,48 @@ export class GitLabArchiveClient {
       short_id: value.short_id,
       committed_date: typeof value.committed_date === 'string' ? value.committed_date : null,
     };
+  }
+
+  /** Search is a substring on older GitLab servers; callers must match tags exactly. */
+  public async searchTags(repositoryId: string, search: string, signal?: AbortSignal): Promise<GitLabTag[]> {
+    const tags: GitLabTag[] = [];
+    for (let page = 1; page <= 10; page += 1) {
+      const query = new URLSearchParams({ search, per_page: '100', page: String(page) });
+      const response = await this.request(
+        `/api/v4/projects/${encodeURIComponent(repositoryId)}/repository/tags?${query}`,
+        signal,
+      );
+      if (!response.ok) {
+        throw new GitLabArchiveError('archive_unavailable', `GitLab tag 查询失败（HTTP ${response.status}，仓库 ${repositoryId}）`);
+      }
+      const values = await this.json(response, 'tags');
+      if (!Array.isArray(values)) throw new GitLabArchiveError('invalid_response', 'GitLab tags 响应不是数组');
+      for (const value of values) {
+        if (!isObject(value) || typeof value.name !== 'string' || !isObject(value.commit)
+          || typeof value.commit.id !== 'string' || !COMMIT_PATTERN.test(value.commit.id)) {
+          throw new GitLabArchiveError('invalid_response', 'GitLab tag 缺少名称或固定 commit');
+        }
+        tags.push({ name: value.name, commit: value.commit.id });
+      }
+      if (response.headers.get('x-next-page') === ''
+        || (!response.headers.get('x-next-page') && values.length < 100)) return tags;
+    }
+    throw new GitLabArchiveError('invalid_response', 'GitLab tag 查询超过分页上限，无法确定完整版本候选');
+  }
+
+  public async findTag(repositoryId: string, tag: string, signal?: AbortSignal): Promise<GitLabTag | null> {
+    const response = await this.request(
+      `/api/v4/projects/${encodeURIComponent(repositoryId)}/repository/tags/${encodeURIComponent(tag)}`,
+      signal,
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) throw new GitLabArchiveError('archive_unavailable', `GitLab tag 查询失败（HTTP ${response.status}）`);
+    const value = await this.json(response, 'tag');
+    if (!isObject(value) || value.name !== tag || !isObject(value.commit)
+      || typeof value.commit.id !== 'string' || !COMMIT_PATTERN.test(value.commit.id)) {
+      throw new GitLabArchiveError('invalid_response', 'GitLab tag 名称或 commit 不一致');
+    }
+    return { name: tag, commit: value.commit.id };
   }
 
   public async downloadArchive(
