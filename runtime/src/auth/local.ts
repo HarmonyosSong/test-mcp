@@ -19,6 +19,23 @@ function isLoopbackHost(value: string | null | undefined): boolean {
   return host === '::ffff:127.0.0.1';
 }
 
+function isAllowedLocalOrigin(origin: string | undefined, configuredBaseUrl: string): boolean {
+  if (!origin || origin === configuredBaseUrl) return Boolean(origin);
+  try {
+    const actual = new URL(origin);
+    if (!['http:', 'https:'].includes(actual.protocol) || !isLoopbackHost(actual.hostname)) return false;
+    if (!configuredBaseUrl) return true;
+    const configured = new URL(configuredBaseUrl);
+    const configuredPort = configured.port || (configured.protocol === 'https:' ? '443' : '80');
+    const actualPort = actual.port || (actual.protocol === 'https:' ? '443' : '80');
+    // Local Vite may be opened as localhost or 127.0.0.1, and HTTP/HTTPS can
+    // differ when mkcert is absent. Keep the configured development port.
+    return actualPort === configuredPort;
+  } catch {
+    return false;
+  }
+}
+
 export class LocalIdentityProvider {
   readonly cookieName = 'xesapp-agent-session';
   readonly publicBaseUrl: string;
@@ -46,7 +63,7 @@ export class LocalIdentityProvider {
 
     const method = input.method.toUpperCase();
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
-      if (input.origin !== this.publicBaseUrl) {
+      if (!isAllowedLocalOrigin(input.origin, this.publicBaseUrl)) {
         throw new AuthHttpError(403, 'Invalid local request origin');
       }
     }

@@ -191,3 +191,25 @@ test('local mode write with matching origin succeeds without csrf', async () => 
     await rm(dataDir, { recursive: true, force: true });
   }
 });
+
+test('local mode accepts localhost and 127.0.0.1 on the configured development port', () => {
+  const provider = new LocalIdentityProvider({ publicBaseUrl: 'https://127.0.0.1:5174' });
+  for (const origin of ['http://127.0.0.1:5174', 'http://localhost:5174', 'https://localhost:5174']) {
+    assert.doesNotThrow(() => provider.resolve({
+      method: 'POST',
+      origin,
+      csrfHeader: undefined,
+      sessionToken: undefined,
+      clientHost: '127.0.0.1',
+      requestHostname: '127.0.0.1',
+    }));
+  }
+  assert.throws(() => provider.resolve({
+    method: 'POST',
+    origin: 'http://localhost:5173',
+    csrfHeader: undefined,
+    sessionToken: undefined,
+    clientHost: '127.0.0.1',
+    requestHostname: '127.0.0.1',
+  }), /Invalid local request origin/);
+});
