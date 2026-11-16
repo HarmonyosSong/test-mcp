@@ -13,6 +13,14 @@ export async function prepareConversationSource(
 ): Promise<void> {
   if (!bind) return;
   clearIncompleteSourceBinding(conversation);
+  // Older rounds substituted the latest registered Harmony/Android release. Retry the
+  // incident version at the next round boundary; old evidence keeps its own
+  // immutable source identity, but the wrong workspace must not stay mounted.
+  if ((conversation.platform === 'harmony' || conversation.platform === 'android') && conversation.version
+    && conversation.source_limitations.some((value) => /现场版本.*未登记.*作为源码对照/.test(value))) {
+    conversation.workspace_path = null;
+    clearIncompleteSourceBinding(conversation);
+  }
   const bound = hasCompleteSourceBinding(conversation);
   if (bound && !needsIosComponents(conversation)) return;
   try {

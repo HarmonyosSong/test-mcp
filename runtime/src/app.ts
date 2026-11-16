@@ -179,7 +179,13 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
           try {
             snapshot = await repositories.getPreparedSnapshot(repository.id, registryRepository.ref, registryRepository.expected_commit);
           } catch (error) {
-            if (!(error instanceof SnapshotNotReadyError) || !gitlabArchiveClient) throw error;
+            if (!(error instanceof SnapshotNotReadyError)) throw error;
+            if (!gitlabArchiveClient) {
+              throw new RepositoryGitError(
+                `当前部署没有 ${registryRepository.repository_id}@${registryRepository.ref} 的本地快照，且未配置 HARMONY_AGENT_GITLAB_TOKEN（或 ANALYSIS_GIT_TOKEN），无法从 GitLab 下载源码`,
+                { cause: error },
+              );
+            }
             const { archive } = await gitlabArchiveClient.downloadArchive(registryRepository.repository_id, registryRepository.expected_commit, signal);
             snapshot = await repositories.prepareArchiveSnapshot(
                 repository.id,
