@@ -46,3 +46,9 @@ export const CODE_INDEX_MCP_TOOL_NAMES = [
   'get_code_outline',
   'trace_code_path',
 ];
+
+export const CODE_CATALOG_MCP_TOOL_NAMES = [
+  'list_code_index_scopes',
+  'search_code_index',
+  'get_code_index_entry',
+];

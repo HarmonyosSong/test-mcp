@@ -82,6 +82,8 @@ export const runtimeConfigSchema = z.object({
   mcpCommand: z.string().default('uv'),
   codeIndexCommand: z.string().trim().default(''),
   codeIndexCacheDir: z.string().default('.data/codebase-memory'),
+  codeIndexFile: z.string().default('code-index/index.jsonl'),
+  codeIndexScopeFile: z.string().default('code-index/version-scope.json'),
   codeIndexMode: z.enum(['fast']).default('fast'),
   codeIndexTimeoutSeconds: z.coerce.number().int().min(5).max(600).default(90),
   skillsDir: z.string().default(resolve(repositoryRoot, 'skills')),
@@ -177,6 +179,8 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     mcpCommand: env.HARMONY_MASTRA_MCP_COMMAND,
     codeIndexCommand: env.HARMONY_AGENT_CODE_INDEX_COMMAND,
     codeIndexCacheDir: env.HARMONY_AGENT_CODE_INDEX_CACHE,
+    codeIndexFile: env.HARMONY_AGENT_CODE_INDEX_FILE,
+    codeIndexScopeFile: env.HARMONY_AGENT_CODE_INDEX_SCOPE_FILE,
     codeIndexMode: env.HARMONY_AGENT_CODE_INDEX_MODE,
     codeIndexTimeoutSeconds: env.HARMONY_AGENT_CODE_INDEX_TIMEOUT_SECONDS,
     skillsDir: env.HARMONY_MASTRA_SKILLS_DIR,
@@ -257,6 +261,8 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     codeIndexCacheDir: config.codeIndexCacheDir === '.data/codebase-memory'
       ? resolve(dataRoot, 'codebase-memory')
       : fromRoot(config.codeIndexCacheDir),
+    codeIndexFile: fromRoot(config.codeIndexFile),
+    codeIndexScopeFile: fromRoot(config.codeIndexScopeFile),
     snapshotDir: underDataRoot(config.snapshotDir, 'workspaces'),
     versionRegistryRoot: fromRoot(config.versionRegistryRoot),
     gitlabBaseUrl: (config.gitlabBaseUrl.trim() || 'https://git.100tal.com').replace(/\/+$/, ''),

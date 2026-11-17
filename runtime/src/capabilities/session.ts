@@ -109,6 +109,14 @@ export function createRoundCapabilitySession(provider: CapabilityMcp, context: C
       return session ? { toolsets: session.toolsets, close: () => session.client.disconnect() } : null;
     },
   }];
+  registrations.push({
+    id: 'code_index',
+    optional: true,
+    create: async () => {
+      const session = await provider.createCodeIndexSession();
+      return session ? { toolsets: session.toolsets, close: () => session.client.disconnect() } : null;
+    },
+  });
   if (context.workspacePath) {
     registrations.push({
       id: 'repository',

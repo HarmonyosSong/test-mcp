@@ -52,6 +52,13 @@ export function knowledgeServerEnvironment(config: RuntimeConfig, conversationId
   };
 }
 
+export function codeIndexServerEnvironment(config: RuntimeConfig): Record<string, string> {
+  return {
+    HARMONY_AGENT_CODE_INDEX_FILE: resolve(config.codeIndexFile),
+    HARMONY_AGENT_CODE_INDEX_SCOPE_FILE: resolve(config.codeIndexScopeFile),
+  };
+}
+
 export type MastraToolsets = Awaited<ReturnType<MCPClient['listToolsets']>>;
 
 export class CapabilityMcp {
@@ -81,6 +88,37 @@ export class CapabilityMcp {
     try {
       const discovered = await client.listToolsetsWithErrors({ perServerTimeoutMs: MCP_TOOL_DISCOVERY_TIMEOUT_MS });
       if (discovered.errors.knowledge) throw new Error(`knowledge MCP unavailable: ${discovered.errors.knowledge}`);
+      return { client, toolsets: discovered.toolsets };
+    } catch {
+      await client.disconnect();
+      return null;
+    }
+  }
+
+  async createCodeIndexSession(): Promise<{
+    client: MCPClient;
+    toolsets: MastraToolsets;
+  } | null> {
+    const client = new MCPClient({
+      id: `troubleshoot-code-index-${Date.now()}`,
+      timeout: 15_000,
+      registerProcessHooks: false,
+      servers: {
+        code_index: {
+          command: this.config.mcpCommand,
+          args: ['run', '--project', resolve(this.config.projectRoot, 'mcp_server'), 'harmony-code-index-mcp'],
+          cwd: resolve(this.config.projectRoot),
+          stderr: 'pipe',
+          logger: () => undefined,
+          env: codeIndexServerEnvironment(this.config),
+          timeout: 15_000,
+        },
+      },
+    });
+    client.__setLogger(noopLogger);
+    try {
+      const discovered = await client.listToolsetsWithErrors({ perServerTimeoutMs: MCP_TOOL_DISCOVERY_TIMEOUT_MS });
+      if (discovered.errors.code_index) throw new Error(`code index MCP unavailable: ${discovered.errors.code_index}`);
       return { client, toolsets: discovered.toolsets };
     } catch {
       await client.disconnect();

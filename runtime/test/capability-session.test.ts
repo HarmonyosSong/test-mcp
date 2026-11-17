@@ -197,8 +197,13 @@ test('round factory keeps unconfigured logs absent and does not expose configure
     });
     try {
       assert.deepEqual(Object.keys(session.toolsets).sort(), configured
-        ? ['learner', 'log_catalog']
-        : ['learner']);
+        ? ['code_index', 'learner', 'log_catalog']
+        : ['code_index', 'learner']);
+      assert.deepEqual(Object.keys(session.toolsets.code_index!), [
+        'list_code_index_scopes',
+        'search_code_index',
+        'get_code_index_entry',
+      ]);
       assert.deepEqual(Object.keys(session.toolsets.learner!), ['lookup_learner']);
       if (configured) {
         assert.deepEqual(Object.keys(session.toolsets.log_catalog!), [
