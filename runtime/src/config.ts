@@ -49,7 +49,7 @@ loadProjectEnv();
 export const A2A_CONFIG_DEFAULTS = {
   baseUrl: 'https://dev-agent-fz.speiyou.com',
   clientId: 'xesapp-agent',
-  waitSeconds: 180,
+  waitSeconds: 600,
 } as const;
 
 export const runtimeConfigSchema = z.object({
