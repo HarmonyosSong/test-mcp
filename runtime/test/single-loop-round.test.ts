@@ -268,6 +268,73 @@ test('incident 全链路：prepare_source 绑定后读码，最终回答引用�
   assert.equal(completed.tool_usage.budget_attempted, 2);
 });
 
+test('跨端对比：对照端观测携带对照端身份，双端 ev-ID 同场引用通过校验', async () => {
+  const path = 'src/crossReport/SucceedListItem';
+  const incidentRepos = [{
+    repository_id: 'repo-harmony', repository_name: 'xesapp-harmony',
+    requested_ref: '7.106.0', resolved_commit: 'a'.repeat(40), role: 'shell' as const, mount_path: '',
+  }];
+  const compareRepos = [{
+    repository_id: 'repo-ios', repository_name: 'xesapp-ios',
+    requested_ref: 'xueersi_v7.106.0_1000_20261101', resolved_commit: 'b'.repeat(40), role: 'shell' as const, mount_path: '',
+  }];
+  const incidentContent = { path, start_line: 44, end_line: 44, content: 'if (kuabaoType === 3 && kuabaoStatus === "4")' };
+  const compareContent = { path, start_line: 44, end_line: 44, content: 'if (pendingPayment == 1)' };
+  // 与运行时相同的哈希输入预计算双端 ev-ID（target 路由参数不进入哈希）。
+  const probe = new ObservationRegistry({ sourceContexts: incidentRepos, compareSourceContexts: () => compareRepos });
+  const incidentId = (probe.capture('read_project_file', { relative_path: path }, incidentContent) as {
+    evidence_refs: Array<{ id: string }>;
+  }).evidence_refs[0]!.id;
+  const compareId = (probe.capture('read_project_file', { relative_path: path, target: 'compare' }, compareContent) as {
+    evidence_refs: Array<{ id: string }>;
+  }).evidence_refs[0]!.id;
+  assert.notEqual(incidentId, compareId);
+
+  const { diagnosis } = await setup([
+    { tool: 'read_project_file', args: { relative_path: path } },
+    { tool: 'read_project_file', args: { relative_path: path, target: 'compare' } },
+    { text: anchored('probable', `鸿蒙侧按 kuabaoStatus 判定（观测 ${incidentId}），iOS 侧按 pendingPayment 判定（观测 ${compareId}），两端实现不一致。`) },
+  ]);
+  const read = createTool({
+    id: 'read_project_file',
+    description: 'Read source from a bound workspace (incident or compare by target).',
+    inputSchema: z.object({ relative_path: z.string(), target: z.string().optional() }),
+    execute: async (args) => (args.target === 'compare' ? compareContent : incidentContent),
+  });
+  const events = await run(diagnosis, '鸿蒙端跨报成功记录不展示去结算按钮', {
+    conversation: {
+      platform: 'harmony',
+      workspace_path: '/fixture/harmony',
+      repository_id: 'repo-harmony',
+      resolved_commit: 'a'.repeat(40),
+      source_repositories: incidentRepos,
+      compare_source: {
+        platform: 'ios', product_line: 'xueersi', form_factor: null,
+        version: '7.106.0', build: null,
+        workspace_path: '/fixture/ios',
+        repository_id: 'repo-ios', repository_name: 'xesapp-ios',
+        requested_ref: 'xueersi_v7.106.0_1000_20261101', resolved_commit: 'b'.repeat(40),
+        source_repositories: compareRepos,
+        source_completeness: 'partial', source_limitations: [],
+        bound_at: new Date(0).toISOString(),
+      },
+    },
+    toolsets: { repository: { read_project_file: read } },
+  });
+  const completed = events.at(-1);
+  assert.equal(completed?.type, 'completed');
+  if (completed?.type !== 'completed') return;
+  assert.equal(completed.verdict, 'probable');
+  const entries = completed.evidence_state.entries as Array<{
+    id: string; source_context?: { repository_id: string; resolved_commit: string };
+  }>;
+  assert.equal(entries.length, 2);
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  assert.equal(byId.get(incidentId)?.source_context?.repository_id, 'repo-harmony');
+  assert.equal(byId.get(compareId)?.source_context?.repository_id, 'repo-ios');
+  assert.equal(completed.tool_usage.budget_attempted, 2);
+});
+
 test('validator 打回重试：无锚点回答不外发，反馈后重答', async () => {
   const { diagnosis, scripted } = await setup([
     { text: '这个入口只对部分课程开放。' },

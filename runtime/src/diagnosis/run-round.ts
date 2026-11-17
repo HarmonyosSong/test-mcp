@@ -270,6 +270,14 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
         // 快照目录失效等异常不阻断本轮：代理工具将返回 unbound 提示，模型可 prepare_source 重试。
       }
     }
+    // 对照端跨轮恢复：上一轮已绑定过对照快照时直接挂回 compare 槽位（快照目录有缓存）。
+    if (conversation.compare_source?.workspace_path) {
+      try {
+        await sourceHolder.bind(conversation.compare_source.workspace_path, 'compare');
+      } catch {
+        // 对照端恢复失败不阻断本轮；模型需要时会经 prepare_source 重新绑定。
+      }
+    }
 
     // knowledge/learner/log_catalog 由能力会话挂载；repository 不经直连
     // （workspacePath 传 null），统一走懒代理工具组，由 prepare_source 轮内热绑定。

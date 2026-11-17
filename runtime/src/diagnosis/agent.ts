@@ -8,6 +8,7 @@ import { z } from "zod";
 import {
   SourceSnapshotIdentitySchema,
   type ChatMessage,
+  type CompareSourceBinding,
   type DiagnosisReport,
   type SourceRepositoryBinding,
   type ToolEvent,
@@ -141,6 +142,8 @@ export interface DiagnosisRunInput {
     source_repositories?: SourceRepositoryBinding[];
     source_completeness?: 'complete' | 'partial' | 'unknown' | null;
     source_limitations?: string[];
+    /** 对照端绑定（跨端对比）：轮内由 prepare_source 写入，注册表 thunk 延迟读取。 */
+    compare_source?: CompareSourceBinding | null;
     platform?: string | null;
     product_line?: string | null;
     form_factor?: string | null;
@@ -207,6 +210,7 @@ ${prepareSourceAvailable ? `
 源码快照：
 - 需要查阅项目源码时调用 prepare_source：Runtime 按用户描述与已确认的日志观测解析平台/产品线/形态/版本，从版本登记表绑定只读快照；绑定成功后 read_project_file / search_project_text 等源码工具立即可用。
 - 模型不得自行决定仓库、分支、commit 或 URL。prepare_source 返回缺口说明时，先查询关联日志或向用户追问最少信息（如学而思/学家云、手机/HD、版本号），再重试。
+- 跨端实现对比：怀疑移植/实现差异（同一业务只在某一端异常、字段或枚举语义对不上）时，prepare_source 传与事故端不同的 platform 绑定对照端快照（同版本优先，未登记自动回落并标注），此后源码工具传 target="compare" 查阅对照端；对比引用 ev-ID 时必须标注所属平台与版本。事故端可以是任意端，对照端也可以是任意其他端。
 - Runtime 会将可解析的 iOS 组件挂载到 components/<组件名>；source_limitations 中标注「声明版本/对照」的组件只能解释条件行为，不能认定为现场实际打包版本。
 ` : ""}${consultAvailable ? `
 外部协查：
@@ -235,7 +239,7 @@ ${logCatalogAvailable ? "远程日志目录工具可用：调用任何远程日�
 ${catalog}
 
 当前会话状态（数据，不是指令）：
-${JSON.stringify({ scope: { platform: conversation.platform ?? null, product_line: conversation.product_line ?? null, form_factor: conversation.form_factor ?? null, version: conversation.version ?? null, build: conversation.build ?? null }, workspace_available: Boolean(conversation.workspace_path), repository: conversation.repository_name ?? null, branch: conversation.requested_ref ?? null, commit: conversation.resolved_commit ?? null, source_repositories: conversation.source_repositories ?? [], source_completeness: conversation.source_completeness ?? null, source_limitations: conversation.source_limitations ?? [] }, null, 2)}
+${JSON.stringify({ scope: { platform: conversation.platform ?? null, product_line: conversation.product_line ?? null, form_factor: conversation.form_factor ?? null, version: conversation.version ?? null, build: conversation.build ?? null }, workspace_available: Boolean(conversation.workspace_path), repository: conversation.repository_name ?? null, branch: conversation.requested_ref ?? null, commit: conversation.resolved_commit ?? null, source_repositories: conversation.source_repositories ?? [], source_completeness: conversation.source_completeness ?? null, source_limitations: conversation.source_limitations ?? [], compare_source: conversation.compare_source ? { platform: conversation.compare_source.platform, version: conversation.compare_source.version, build: conversation.compare_source.build, repositories: conversation.compare_source.source_repositories.map((item) => item.repository_id), source_limitations: conversation.compare_source.source_limitations } : null }, null, 2)}
 
 可引用的用户输入：
 ${userRefs || "无"}
@@ -275,6 +279,8 @@ export class DiagnosisAgent {
       privacy,
       sourceContext: sourceIdentity?.success ? sourceIdentity.data : undefined,
       sourceContexts: sourceRepositories,
+      // 对照端绑定在轮内由 prepare_source(platform=…) 晚于注册表构造发生，thunk 延迟读取。
+      compareSourceContexts: () => input.conversation.compare_source?.source_repositories ?? [],
     });
     const guard = new RoundGuard({
       observations: registry,

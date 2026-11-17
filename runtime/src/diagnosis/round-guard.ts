@@ -25,13 +25,14 @@ import type { ObservationRegistry } from './observations.js';
 const SEARCH_TOOLS = new Set(['search_project_text', 'search_code_symbols', 'search_code_index', 'search_knowledge']);
 const CODE_NAVIGATION_TOOLS = new Set<string>(CODE_INDEX_MCP_TOOL_NAMES);
 const DEFAULT_TOOL_ARGS: Record<string, Record<string, unknown>> = {
-  search_project_text: { file_glob: '**/*', limit: 10, cursor: null },
-  search_code_symbols: { file_pattern: '**/*', limit: 20 },
+  search_project_text: { file_glob: '**/*', limit: 10, cursor: null, target: 'incident' },
+  search_code_symbols: { file_pattern: '**/*', limit: 20, target: 'incident' },
   search_code_index: { limit: 10 },
-  get_code_outline: { limit: 100 },
-  trace_code_path: { direction: 'inbound', depth: 1, limit: 20 },
-  read_project_file: { start_line: 1, end_line: 200, max_chars: 6000 },
-  list_project_files: { pattern: '**/*', limit: 100 },
+  get_code_outline: { limit: 100, target: 'incident' },
+  trace_code_path: { direction: 'inbound', depth: 1, limit: 20, target: 'incident' },
+  read_project_file: { start_line: 1, end_line: 200, max_chars: 6000, target: 'incident' },
+  list_project_files: { pattern: '**/*', limit: 100, target: 'incident' },
+  load_business_context: { target: 'incident' },
   search_knowledge: { scope: 'symptom', limit: 3 },
   get_knowledge_entry: { offset: 0, limit: 2000 },
 };

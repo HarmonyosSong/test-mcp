@@ -319,6 +319,28 @@ export const SlotAuditSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/**
+ * 对照端源码快照绑定（跨端实现对比）：与事故端字段同一来源（createConversationSource），
+ * 但独立存放——事故 scope（platform/version/source_repositories）绝不被对照绑定改写。
+ * 对照端同时只保留一个快照；换绑不淘汰已登记观测（证据自带 source_context）。
+ */
+export const CompareSourceBindingSchema = z.object({
+  platform: ClientPlatformSchema,
+  product_line: ClientProductLineSchema.nullable().default(null),
+  form_factor: ClientFormFactorSchema.nullable().default(null),
+  version: nullableText.default(null),
+  build: nullableText.default(null),
+  workspace_path: z.string(),
+  repository_id: z.string(),
+  repository_name: z.string(),
+  requested_ref: z.string(),
+  resolved_commit: z.string(),
+  source_repositories: z.array(SourceRepositoryBindingSchema).default([]),
+  source_completeness: SourceCompletenessSchema.nullable().default(null),
+  source_limitations: z.array(z.string()).default([]),
+  bound_at: isoDateTime.default(nowIsoDateTime),
+});
+
 export const ConversationRecordSchema = z.object({
   id: z.string().default(defaultConversationId),
   title: z.string().default('新会话'),
@@ -332,6 +354,7 @@ export const ConversationRecordSchema = z.object({
   source_repositories: z.array(SourceRepositoryBindingSchema).default([]),
   source_completeness: SourceCompletenessSchema.nullable().optional().default(null),
   source_limitations: z.array(z.string()).default([]),
+  compare_source: CompareSourceBindingSchema.nullable().optional().default(null),
   platform: ClientPlatformSchema.nullable().optional().default(null),
   product_line: ClientProductLineSchema.nullable().optional().default(null),
   form_factor: ClientFormFactorSchema.nullable().optional().default(null),
@@ -517,6 +540,7 @@ export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type ExternalConsultation = z.infer<typeof ExternalConsultationSchema>;
 export type SlotAudit = z.infer<typeof SlotAuditSchema>;
 export type ConversationRecord = z.infer<typeof ConversationRecordSchema>;
+export type CompareSourceBinding = z.infer<typeof CompareSourceBindingSchema>;
 export type ModelConfigRequest = z.infer<typeof ModelConfigRequestSchema>;
 export type RepositoryRecord = z.infer<typeof RepositoryRecordSchema>;
 export type ClientPlatform = z.infer<typeof ClientPlatformSchema>;

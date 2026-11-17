@@ -103,16 +103,20 @@ export class ObservationRegistry {
     privacy?: ClientLogPrivacy;
     sourceContext?: SourceSnapshotIdentity;
     sourceContexts?: readonly SourceRepositoryBinding[];
+    /** 对照端绑定在轮内由 prepare_source 晚于注册表构造发生，故用 thunk 延迟读取。 */
+    compareSourceContexts?: () => readonly SourceRepositoryBinding[];
   } = {}) {
     this.inputTexts = [...(options.inputTexts ?? [])];
     this.privacy = options.privacy;
     this.sourceContext = options.sourceContext;
     this.sourceContexts = [...(options.sourceContexts ?? [])];
+    this.compareSourceContexts = options.compareSourceContexts;
   }
 
   private readonly privacy?: ClientLogPrivacy;
   private readonly sourceContext?: SourceSnapshotIdentity;
   private readonly sourceContexts: readonly SourceRepositoryBinding[];
+  private readonly compareSourceContexts?: () => readonly SourceRepositoryBinding[];
 
   registerUserTexts(): Array<{ id: string; preview: string }> {
     return this.inputTexts.map((text) => {
@@ -166,6 +170,7 @@ export class ObservationRegistry {
    * 兼容读取：新快照（registry_version=1）直接恢复；旧 EvidenceLedger 快照
    * （ledger_version=2）只取 entries 的元数据字段，忽略 texts/evicted/容量配置。
    * 用户引用不持久化——ID 由用户文本内容哈希决定，每轮用 inputTexts 重新注册。
+   * options 与构造器一致；compareSourceContexts 为轮内晚绑定 thunk。
    */
   static restore(
     state: unknown,
@@ -174,6 +179,7 @@ export class ObservationRegistry {
       privacy?: ClientLogPrivacy;
       sourceContext?: SourceSnapshotIdentity;
       sourceContexts?: readonly SourceRepositoryBinding[];
+      compareSourceContexts?: () => readonly SourceRepositoryBinding[];
     } = {},
   ): ObservationRegistry {
     const registry = new ObservationRegistry(options);
@@ -219,6 +225,14 @@ export class ObservationRegistry {
       };
     }
 
+    // target 是懒代理的路由参数（对照端对比）：不进入 ev-ID 内容哈希——事故端"省略 target"
+    // 与"显式 target=incident"必须同 ID；它只决定 source_context 归属哪一侧绑定。
+    const compareSlot = arguments_.target === 'compare';
+    const { target: _routeOnly, ...idArguments } = arguments_;
+    const slotContexts = compareSlot
+      ? (this.compareSourceContexts?.() ?? [])
+      : this.sourceContexts;
+
     let rows: unknown[];
     if (name === 'parse_hilog' && isRecord(result) && Array.isArray(result.error_lines)) {
       rows = result.error_lines;
@@ -242,12 +256,14 @@ export class ObservationRegistry {
       const path = String(row.path ?? 'pasted-hilog').trim() || 'pasted-hilog';
       const line = row.line ?? row.start_line ?? 1;
       const location = `${String(path)}:${String(line)}`;
-      const sourceContext = name === 'parse_hilog' ? undefined : this.sourceContextForPath(path);
-      if (name !== 'parse_hilog' && this.sourceContexts.length > 0 && !sourceContext) {
+      const sourceContext = name === 'parse_hilog' ? undefined : this.sourceContextForPath(path, compareSlot ? slotContexts : undefined);
+      // 对照端调用要求对照绑定存在且路径可归属；事故端维持原"已绑定则可归属"规则。
+      const bindingsActive = compareSlot || this.sourceContexts.length > 0;
+      if (name !== 'parse_hilog' && bindingsActive && !sourceContext) {
         sourcePathsRejected += 1;
         continue;
       }
-      const idPayload = pythonJson([name, arguments_, location, text, sourceContext]);
+      const idPayload = pythonJson([name, idArguments, location, text, sourceContext]);
       const entry: ObservationEntry = {
         id: `ev-${sha256(idPayload).slice(0, 16)}`,
         kind: name === 'parse_hilog' ? 'log' : 'source',
@@ -264,8 +280,12 @@ export class ObservationRegistry {
       evidence_refs: evidenceRefs,
       result,
       ...(sourcePathsRejected > 0 ? { source_paths_rejected: sourcePathsRejected } : {}),
-      ...(evidenceRefs.length === 0 && rows.length > 0 && this.sourceContexts.length > 0
-        ? { limitation: '源码路径无法归属当前会话绑定的仓库挂载点，未登记为观测。' }
+      ...(evidenceRefs.length === 0 && rows.length > 0 && (compareSlot || this.sourceContexts.length > 0)
+        ? {
+          limitation: compareSlot
+            ? '对照端路径无法归属对照快照的仓库挂载点（或对照端未绑定），未登记为观测。'
+            : '源码路径无法归属当前会话绑定的仓库挂载点，未登记为观测。',
+        }
         : {}),
       ...(softLimitReached
         ? { observation_soft_limit: true, limitation: '观测条目已超过 500 条软上限，请停止泛化取证、用已有观测收尾。' }
@@ -273,11 +293,15 @@ export class ObservationRegistry {
     };
   }
 
-  private sourceContextForPath(rawPath: string): (SourceSnapshotIdentity & { path: string }) | undefined {
+  private sourceContextForPath(
+    rawPath: string,
+    contexts?: readonly SourceRepositoryBinding[],
+  ): (SourceSnapshotIdentity & { path: string }) | undefined {
     const path = rawPath.replaceAll('\\', '/').trim();
     if (!isSafeRelativePath(path)) return undefined;
-    if (this.sourceContexts.length > 0) {
-      const binding = [...this.sourceContexts]
+    const list = contexts ?? this.sourceContexts;
+    if (list.length > 0) {
+      const binding = [...list]
         .sort((left, right) => right.mount_path.length - left.mount_path.length)
         .find((item) => item.mount_path === '' || path === item.mount_path || path.startsWith(`${item.mount_path}/`));
       if (!binding) return undefined;
@@ -289,6 +313,8 @@ export class ObservationRegistry {
         path: relativePath,
       };
     }
+    // 显式传入空列表（对照端未绑定）时不回落事故端身份，防止跨端误归因。
+    if (contexts) return undefined;
     return this.sourceContext ? { ...this.sourceContext, path } : undefined;
   }
 

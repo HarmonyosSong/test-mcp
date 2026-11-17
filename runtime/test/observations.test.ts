@@ -163,3 +163,82 @@ test('多仓绑定的源码归属：不属于任何挂载点的路径被拒绝',
   assert.equal(accepted.evidence_refs.length, 1);
   assert.equal(accepted.evidence_refs[0]?.kind, 'source');
 });
+
+test('对照端观测按 compareSourceContexts 归因：同路径同内容两侧 ev-ID 不同', () => {
+  const incident = [{
+    repository_id: 'repo-harmony', repository_name: 'xesapp-harmony',
+    requested_ref: '7.106.0', resolved_commit: 'harmonycommit', role: 'shell' as const, mount_path: '',
+  }];
+  const compare = [{
+    repository_id: 'repo-ios', repository_name: 'xesapp-ios',
+    requested_ref: 'xueersi_v7.106.0_1000_20261101', resolved_commit: 'ioscommit', role: 'shell' as const, mount_path: '',
+  }];
+  const registry = new ObservationRegistry({
+    sourceContexts: incident,
+    compareSourceContexts: () => compare,
+  });
+  const result = { path: 'src/order/Page', start_line: 10, content: 'if (kuabaoType === 3)' };
+  const incidentCapture = registry.capture('read_project_file', { relative_path: 'src/order/Page' }, result) as {
+    evidence_refs: Array<{ id: string; source_context?: { repository_id: string; resolved_commit: string } }>;
+  };
+  const compareCapture = registry.capture('read_project_file', { relative_path: 'src/order/Page', target: 'compare' }, result) as {
+    evidence_refs: Array<{ id: string; source_context?: { repository_id: string; resolved_commit: string } }>;
+  };
+  const incidentRef = incidentCapture.evidence_refs[0]!;
+  const compareRef = compareCapture.evidence_refs[0]!;
+  assert.notEqual(incidentRef.id, compareRef.id);
+  assert.equal(incidentRef.source_context?.repository_id, 'repo-harmony');
+  assert.equal(compareRef.source_context?.repository_id, 'repo-ios');
+  assert.equal(compareRef.source_context?.resolved_commit, 'ioscommit');
+  assert.equal(registry.has(compareRef.id), true);
+});
+
+test('target=incident 显式与省略同 ID（target 不进入内容哈希）', () => {
+  const result = { path: 'src/a.ets', start_line: 1, content: 'let x = 1' };
+  const implicit = new ObservationRegistry();
+  const explicit = new ObservationRegistry();
+  const a = implicit.capture('read_project_file', { relative_path: 'src/a.ets' }, result) as {
+    evidence_refs: Array<{ id: string }>;
+  };
+  const b = explicit.capture('read_project_file', { relative_path: 'src/a.ets', target: 'incident' }, result) as {
+    evidence_refs: Array<{ id: string }>;
+  };
+  assert.equal(a.evidence_refs[0]?.id, b.evidence_refs[0]?.id);
+});
+
+test('对照端未绑定（空对照上下文）时观测被拒绝并给出对照端提示', () => {
+  const registry = new ObservationRegistry({
+    sourceContexts: [{
+      repository_id: 'repo-harmony', repository_name: 'xesapp-harmony',
+      requested_ref: '7.106.0', resolved_commit: 'harmonycommit', role: 'shell' as const, mount_path: '',
+    }],
+    compareSourceContexts: () => [],
+  });
+  const captured = registry.capture('read_project_file', { relative_path: 'src/a.ets', target: 'compare' }, {
+    path: 'src/a.ets', start_line: 1, content: 'let x = 1',
+  }) as { evidence_refs: unknown[]; source_paths_rejected?: number; limitation?: string };
+  assert.equal(captured.evidence_refs.length, 0);
+  assert.equal(captured.source_paths_rejected, 1);
+  assert.match(String(captured.limitation), /对照端/);
+  // 关键：空对照上下文下不得误归因到事故端仓库
+  assert.equal(registry.size, 0);
+});
+
+test('对照端 thunk 延迟读取：注册表构造后才发生的对照绑定也能正确归因', () => {
+  // 模拟轮内时序：注册表在轮首构造，对照绑定由 prepare_source 在轮内写入会话。
+  const state: {
+    repos: Array<{
+      repository_id: string; repository_name: string; requested_ref: string;
+      resolved_commit: string; role: 'shell'; mount_path: string;
+    }>;
+  } = { repos: [] };
+  const registry = new ObservationRegistry({ compareSourceContexts: () => state.repos });
+  state.repos = [{
+    repository_id: 'repo-ios', repository_name: 'xesapp-ios',
+    requested_ref: 'ref', resolved_commit: 'ioscommit', role: 'shell', mount_path: '',
+  }];
+  const captured = registry.capture('search_project_text', { query: 'kuabao', target: 'compare' }, {
+    matches: [{ path: 'Classes/Order.m', line: 7, content: 'kuabaoType == 3' }],
+  }) as { evidence_refs: Array<{ id: string; source_context?: { repository_id: string } }> };
+  assert.equal(captured.evidence_refs[0]?.source_context?.repository_id, 'repo-ios');
+});

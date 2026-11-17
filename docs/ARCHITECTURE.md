@@ -26,8 +26,9 @@ runDiagnosisRound（单 loop，唯一诊断路径）
         |
         +-- 能力会话：Knowledge MCP / 可选 LogCenter Catalog + SLS / 可选 code_index 目录
         +-- 懒代理源码工具组（LazySourceHolder：read/search/list/parse_hilog 等 8 个代理，
-        |     未绑定返回提示；prepare_source 轮内热绑定快照）
-        +-- prepare_source：按用户描述与已确认日志事实绑定 version-registry 只读快照
+        |     未绑定返回提示；双槽位 incident/compare，prepare_source 轮内热绑定快照）
+        +-- prepare_source：按用户描述与已确认日志事实绑定 version-registry 只读快照；
+        |     传与事故端不同的 platform 则绑定对照端快照（跨端实现对比，事故 scope 不变）
         `-- consult_compass（可选）：委派统一外部全栈 Agent，预算 4 次/轮，结论标注未验证
 
 ProductStore → LibSQL（会话、快照、协查记录、观测元数据）
@@ -59,6 +60,7 @@ Knowledge/Repository/code_index MCP，不再拥有产品 Agent 或 HTTP 服务�
 | 内容 | 当前归属 | 能否支撑正向根因 |
 | --- | --- | --- |
 | 同一快照的源码读取/搜索 | `ObservationRegistry`，`kind=source`，携带 `source_context={repository_id, resolved_commit, path}` | 可以，但仍需模型说明因果 |
+| 对照端快照的源码读取/搜索（`target=compare`） | 同上注册表，`source_context` 携带对照端仓库与 commit，与事故端观测共存 | 可以（对比差异需标注两端平台与版本） |
 | 可追溯到用户输入的 hilog 解析 | `ObservationRegistry`，`kind=log` | 可以 |
 | 用户消息 | `ev-user-*` 用户引用 | 只能证明报告现象，不能单独证明技术根因 |
 | Knowledge MCP / Skill / Catalog | 导航与判据线索 | 不可以 |
@@ -80,6 +82,9 @@ Knowledge/Repository/code_index MCP，不再拥有产品 Agent 或 HTTP 服务�
   通过安全的 `mount_path` 生成组合只读工作区。
 - 源码证据的 `source_context` 由 Runtime 从会话绑定的仓库、commit 和挂载路径注入，稳定证据 ID
   也包含该身份；换版本必须重新绑定，旧源码证据不能改标到新 commit。
+- 跨端对比：`prepare_source` 传与事故端不同的 `platform` 绑定对照端快照（同版本优先，未登记按
+  对照平台规则回落并标注），写入会话 `compare_source` 独立字段；懒代理双槽位（incident/compare），
+  源码工具以 `target` 参数路由。对照端观测按对照端仓库身份归因，与事故端观测共存于同一注册表。
 - 单进程内不同会话可并行，各自拥有独立能力会话、护栏实例、注册表和远端任务。
 - 多进程 lease/CAS 尚未实现，当前部署仍只支持一个 Runtime 进程。
 
@@ -110,6 +115,7 @@ matched_identifiers 观测元数据。Compass 及其模型链路均在内网，�
 | LogCenter Catalog/SLS 工具组 | 目标绑定、身份发现、观测和关联入账框架已实现；真实生产字段覆盖仍待验收 |
 | 学员日志 → 平台确认 → 日志证据 | 合成 mock 链路已实现；真实学员与 HarmonyOS/具体业务字段尚未联调 |
 | Android/iOS/HarmonyOS 精确版本快照选择 | 登记表加载、精确选择、GitLab archive 物化、多仓组合挂载、轮内热绑定已实现 |
+| 跨端实现对比（对照端快照） | prepare_source 显式 platform + 懒代理双槽位已实现并有回归测试 |
 | 代码导航（CBM + code_index 目录） | 可选挂载 `search_code_symbols`、`get_code_outline`、`trace_code_path` 与目录三工具；导航只作线索，失败回退文本搜索 |
 
 启动、配置和验证命令以根目录 [README.md](../README.md) 为准。
