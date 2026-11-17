@@ -1,23 +1,21 @@
-"""配置加载：环境变量 > 配置文件 > 内置默认。
+"""配置加载：环境变量（含项目根 .env）> 内置默认。
 
-凭据与运行参数集中在 `log-mcp/config/log-mcp.local.json`（不提交 git）。
-容器环境通过 `LOG_MCP_*` 环境变量覆盖文件值，便于平台 secret 注入。
+统一维护在 `troubleshoot-odyssey/.env`，前缀 `LOG_MCP_*`。
+不再使用 `log-mcp/config/*.json`。
 
 日志中心与云日志共用同一网关入口（baseUrl + appid/appsecret），按环境区分：
   prod → https://logcenter-api.tal.com/api
   test → https://logcenter-api-test.tal.com/api
 云日志仅额外持有 vendor + defaults（region/account/collection）。
 
-`env` 默认 `test`；线上用 `LOG_MCP_ENV=prod` 或配置文件 `"env": "prod"`。
+`env` 默认 `test`；线上用 `LOG_MCP_ENV=prod`。
 环境名只认 `prod` / `test`，无其它别名。
 """
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, Field, SecretStr
 
@@ -38,8 +36,8 @@ DEFAULT_CLOUDLOG_REGION = "cn-beijing"
 DEFAULT_CLOUDLOG_ACCOUNT = "1743276692096170"
 DEFAULT_CLOUDLOG_COLLECTION = "pysy-front-log"
 
-CONFIG_FILENAME = "log-mcp.local.json"
-CONFIG_DIR_DEFAULT = Path(__file__).resolve().parents[2] / "config"
+# log-mcp/src/log_mcp/config.py → parents[3] = troubleshoot-odyssey 项目根
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def normalize_env(env: str | None) -> str:
@@ -55,7 +53,7 @@ def normalize_env(env: str | None) -> str:
 class GatewayCredential(BaseModel):
     """单个环境的共用网关入口：baseUrl + appid/appsecret。
 
-    日志中心与云日志都走这套凭据；`baseUrl` 可省略，省略时用该环境内置默认。
+    日志中心与云日志都走这套凭据；`base_url` 可省略，省略时用该环境内置默认。
     """
 
     base_url: str = Field(default="", alias="baseUrl")
@@ -109,9 +107,9 @@ class AuthConfig(BaseModel):
 
 
 class Settings(BaseModel):
-    """运行参数；环境变量优先于配置文件。
+    """运行参数；全部来自环境变量 / 内置默认。
 
-    `env`：启动默认环境（可用 `LOG_MCP_ENV` / 配置文件覆盖），
+    `env`：启动默认环境（`LOG_MCP_ENV`），
     作为日志中心工具 `env` 入参缺省值，以及云日志凭据/网关选择依据。
     取值只认 `prod` / `test`。
     """
@@ -142,77 +140,60 @@ class Settings(BaseModel):
         base = os.environ.get("HARMONY_AGENT_DATA_ROOT")
         if base:
             return Path(base) / "log-mcp"
-        project_root = Path(__file__).resolve().parents[3]
-        return project_root / ".data" / "log-mcp"
+        return PROJECT_ROOT / ".data" / "log-mcp"
+
+    @property
+    def logs_dir(self) -> Path:
+        """调用/运行日志目录：`<data_root>/logs`，按日文件落盘。"""
+        return self.data_root_path / "logs"
 
 
-def _read_config_file(path: Path) -> dict[str, Any]:
-    """读取 JSON 配置文件；不存在返回空 dict。"""
-    if not path.is_file():
-        return {}
-    raw = path.read_text(encoding="utf-8")
-    if not raw.strip():
-        return {}
-    return json.loads(raw)
+def _load_root_dotenv() -> None:
+    """从项目根 `.env` 注入未设置的环境变量（不覆盖进程已有值）。"""
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        # 无 python-dotenv 时手写解析，行为对齐 runtime/config.ts
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if "=" not in stripped:
+                continue
+            key, _, value = stripped.partition("=")
+            key = key.strip()
+            if not key or key in os.environ:
+                continue
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+            os.environ[key] = value
+        return
+    load_dotenv(env_path, override=False)
 
 
-def _merge_env_block(target: dict[str, Any], key: str) -> dict[str, Any]:
-    """确保 gateway.prod / test 子 dict 可写。"""
-    block = dict(target.get(key) or {})
-    target[key] = block
-    return block
-
-
-def _normalize_raw_config(raw: dict[str, Any]) -> dict[str, Any]:
-    """规范化文件配置：旧版 `logcenter` 键迁移为 `gateway`，剥掉无效顶层 baseUrl。
-
-    旧键名 `gateway.production` 自动迁到 `gateway.prod`（只为兼容旧文件，对外统一用 prod）。
-    """
-    out = dict(raw)
-    # 兼容旧配置键 logcenter → gateway
-    if "gateway" not in out and isinstance(out.get("logcenter"), dict):
-        out["gateway"] = out.pop("logcenter")
-    else:
-        out.pop("logcenter", None)
-
-    if isinstance(out.get("gateway"), dict):
-        gateway = dict(out["gateway"])
-        gateway.pop("baseUrl", None)
-        if "prod" not in gateway and isinstance(gateway.get("production"), dict):
-            gateway["prod"] = gateway.pop("production")
-        else:
-            gateway.pop("production", None)
-        out["gateway"] = gateway
-
-    if isinstance(out.get("cloudlog"), dict):
-        cloudlog = dict(out["cloudlog"])
-        cloudlog.pop("baseUrl", None)
-        out["cloudlog"] = cloudlog
-    return out
-
-
-def _env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
-    """把 `LOG_MCP_*` 环境变量叠到配置 dict 上（可覆盖文件默认值）。"""
-    overrides: dict[str, Any] = {}
+def _env_to_settings() -> dict:
+    """把 `LOG_MCP_*` 环境变量装配成 Settings 入参 dict。"""
+    raw: dict = {}
 
     if val := os.environ.get("LOG_MCP_HOST"):
-        overrides["host"] = val
+        raw["host"] = val
     if val := os.environ.get("LOG_MCP_PORT"):
-        overrides["port"] = int(val)
-    # 覆盖默认 test：线上/容器注入 LOG_MCP_ENV=prod
+        raw["port"] = int(val)
     if val := os.environ.get("LOG_MCP_ENV"):
-        overrides["env"] = val
+        raw["env"] = val
     if val := os.environ.get("LOG_MCP_DATA_ROOT"):
-        overrides["data_root"] = val
+        raw["data_root"] = val
     if val := os.environ.get("LOG_MCP_TIMEOUT_MS"):
-        overrides["timeout_ms"] = int(val)
+        raw["timeout_ms"] = int(val)
     if val := os.environ.get("LOG_MCP_AUTH_DISABLED"):
-        overrides["auth"] = {"disabled": val.lower() in {"1", "true", "yes"}}
+        raw["auth"] = {"disabled": val.lower() in {"1", "true", "yes"}}
 
-    gateway = dict(raw.get("gateway") or {})
-    prod = _merge_env_block(gateway, "prod")
-    test = _merge_env_block(gateway, "test")
-
+    prod: dict = {}
+    test: dict = {}
     if val := os.environ.get("LOG_MCP_PROD_APPID"):
         prod["appid"] = val
     if val := os.environ.get("LOG_MCP_PROD_APPSECRET"):
@@ -221,37 +202,37 @@ def _env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
         test["appid"] = val
     if val := os.environ.get("LOG_MCP_TEST_APPSECRET"):
         test["appsecret"] = val
-    # 网关 URL 覆盖；LOG_MCP_LOGCENTER_BASE_URL 兼容旧名 → prod
     if val := os.environ.get("LOG_MCP_PROD_BASE_URL") or os.environ.get(
         "LOG_MCP_LOGCENTER_BASE_URL"
     ):
         prod["baseUrl"] = val
     if val := os.environ.get("LOG_MCP_TEST_BASE_URL"):
         test["baseUrl"] = val
-    if gateway:
-        overrides["gateway"] = gateway
+    if prod or test:
+        raw["gateway"] = {"prod": prod, "test": test}
 
-    cloudlog = dict(raw.get("cloudlog") or {})
+    cloudlog: dict = {}
+    defaults: dict = {}
     if val := os.environ.get("LOG_MCP_CLOUDLOG_VENDOR"):
         cloudlog["vendor"] = val
     if val := os.environ.get("LOG_MCP_CLOUDLOG_REGION"):
-        cloudlog.setdefault("defaults", {})["region"] = val
+        defaults["region"] = val
     if val := os.environ.get("LOG_MCP_CLOUDLOG_ACCOUNT"):
-        cloudlog.setdefault("defaults", {})["account"] = val
+        defaults["account"] = val
     if val := os.environ.get("LOG_MCP_CLOUDLOG_COLLECTION"):
-        cloudlog.setdefault("defaults", {})["collection"] = val
+        defaults["collection"] = val
+    if defaults:
+        cloudlog["defaults"] = defaults
     if cloudlog:
-        overrides["cloudlog"] = cloudlog
+        raw["cloudlog"] = cloudlog
 
-    return overrides
+    return raw
 
 
-def load_settings(config_dir: Path | None = None) -> Settings:
-    """按 env > file > default 顺序装配 Settings。"""
-    directory = config_dir or CONFIG_DIR_DEFAULT
-    raw = _normalize_raw_config(_read_config_file(directory / CONFIG_FILENAME))
-    merged = {**raw, **_env_overrides(raw)}
-    return Settings.model_validate(merged)
+def load_settings() -> Settings:
+    """按 env（含根 .env）> 内置默认 装配 Settings。"""
+    _load_root_dotenv()
+    return Settings.model_validate(_env_to_settings())
 
 
 # 向后兼容别名（测试/外部若仍引用旧名）

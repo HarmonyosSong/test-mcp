@@ -91,16 +91,18 @@ mkcert -cert-file .certs/local.pem -key-file .certs/local-key.pem 127.0.0.1 loca
 然后打开两个终端：
 
 ```bash
-# 终端一：Mastra runtime，默认 http://127.0.0.1:8000
+# 终端一：Mastra runtime（:8000）+ 独立 log-mcp（:8766，后台）
 make dev-api
 
 # 终端二：Vite 网页，默认 https://127.0.0.1:5174（配置了证书时）
 make dev-web
 ```
 
-浏览器访问 `https://127.0.0.1:5174/xesapp-agent/`。Vite 会把 `/xesapp-agent/api` 与 `/xesapp-agent/auth` 代理到 `127.0.0.1:8000`。`RUN_MODE=local` 时无需企业登录即可进入工作台；`server` 且未配置 SSO 时页面会提示登录配置未完成。没有模型配置时进入工作台后发送诊断消息会返回配置提示。未安装 Python/uv 时，Mastra API 仍可启动；知识 MCP 会降级为空能力，仓库代码检查不可用。
+`make dev-api` 会先后台启动 `log-mcp`（读根目录 `.env` 的 `LOG_MCP_*`），再前台跑 Agent；两者互不影响。单独启停 log-mcp：`make dev-log-mcp` / `make stop-log-mcp`。调用日志按日写入 `.data/log-mcp/logs/log-mcp-YYYY-MM-DD.log`。
 
-停止服务时，在对应终端按 `Ctrl+C`。
+浏览器访问 `https://127.0.0.1:5174/xesapp-agent/`。Vite 会把 `/xesapp-agent/api` 与 `/xesapp-agent/auth` 代理到 `127.0.0.1:8000`。`RUN_MODE=local` 时无需企业登录即可进入工作台；`server` 且未配置 SSO 时页面会提示登录配置未完成。没有模型配置时进入工作台后发送诊断消息会返回配置提示。未安装 Python/uv 时，Mastra API 仍可启动；知识 MCP 会降级为空能力，仓库代码检查不可用；log-mcp 启动失败只告警，不阻塞 Agent。
+
+停止服务时，在对应终端按 `Ctrl+C`（会顺带 `stop` log-mcp）。
 
 ## 启动项目（生产模式）
 
@@ -173,6 +175,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_LOGCENTER_TIMEOUT_MS` | `15000` | 单次日志 HTTP 请求超时，范围 100–120000 毫秒；随诊断轮取消 |
 | `HARMONY_AGENT_UCENTER_BASE_URL` | `https://ucenter-one-inner.speiyou.cn` | 学员编号转 uid 的内网服务；转换失败时 Runtime 阻止日志查询 |
 | `HARMONY_AGENT_UCENTER_TIMEOUT_MS` | `10000` | 学员编号转 uid 请求超时 |
+| `LOG_MCP_*` | 见 `.env.example` | 独立日志查询 MCP（`log-mcp/`，默认 `:8766`）；与 Agent Node 互不影响。配置只认根目录 `.env`，调用日志按日写入 `<data>/log-mcp/logs/log-mcp-YYYY-MM-DD.log`。说明见 [`log-mcp/README.md`](log-mcp/README.md) |
 
 网页设置写入 `<data-root>/model-config.json`（默认 `.data/model-config.json`），文件权限为 `0600`。容器部署见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)：只设 `HARMONY_AGENT_DATA_ROOT=/data/troubleshoot-odyssey`，由平台挂卷，勿再写相对 `.data/...` 单项。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key。默认开启官方 Mastra Observability（`Observability` + `SensitiveDataFilter`），并由按会话落盘的 exporter 写入可读 JSON：`.data/mastra/observability/conversations/<日期>_<会话ID>/traces/*.json`（另有 `manifest.jsonl` 索引；日期为落盘当天本地日历日）。文件按「用户输入 → steps[]（每轮模型话术 + 工具入出参）→ 最终回答」组织；`processor_run` / `mapping` / `model_chunk` 视为噪音丢弃。终端默认安静（`logger: false`）。不改 knowledge JSONL/cases。需要关闭时设 `HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE=false`。应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
 

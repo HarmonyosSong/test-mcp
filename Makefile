@@ -1,15 +1,27 @@
-.PHONY: setup check-node dev-api dev-server dev-web dev-mcp test test-runtime test-mcp knowledge-validate lint build build-runtime build-web start live-eval knowledge-querylog knowledge-cases
+.PHONY: setup check-node dev-api dev-server dev-web dev-mcp dev-log-mcp stop-log-mcp test test-runtime test-mcp knowledge-validate lint build build-runtime build-web start live-eval knowledge-querylog knowledge-cases
 
 setup: check-node
 	uv sync --project mcp_server --index-url https://pypi.org/simple
+	uv sync --project log-mcp --index-url https://pypi.org/simple
 	npm --prefix web install
 	npm --prefix runtime ci
 
 check-node:
 	@node -e "const [major, minor] = process.versions.node.split('.').map(Number); if (major < 22 || (major === 22 && minor < 13)) { console.error('Node.js >=22.13.0 is required'); process.exit(1); }"
 
+# 后台起 log-mcp（:8766），失败只告警，不挡 Agent
+dev-log-mcp:
+	@if [ ! -d log-mcp ]; then echo "make: skip log-mcp (directory missing)"; exit 0; fi
+	@cd log-mcp && uv sync --quiet && uv run start --background \
+		|| echo "make: WARN log-mcp 启动失败，Agent 仍继续（可稍后 make dev-log-mcp）" >&2
+
+stop-log-mcp:
+	@cd log-mcp && uv run stop 2>/dev/null || true
+
+# 本地开发：先起独立 log-mcp，再前台跑 Agent；Ctrl+C 时停掉 log-mcp
 dev-api: check-node
-	npm --prefix runtime run dev
+	@$(MAKE) dev-log-mcp
+	@trap '$(MAKE) stop-log-mcp' EXIT INT TERM; npm --prefix runtime run dev
 
 dev-server: dev-api
 
@@ -45,8 +57,11 @@ build-runtime: check-node
 build-web:
 	npm --prefix web run build
 
+# 本地生产模式：同样附带后台 log-mcp（与容器入口行为对齐）
 start: build-runtime build-web check-node
-	HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
+	@$(MAKE) dev-log-mcp
+	@trap '$(MAKE) stop-log-mcp' EXIT INT TERM; \
+		HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 # Live evaluation fails when the model is absent; it never silently skips.
 live-eval: check-node

@@ -2,6 +2,8 @@
 
 独立运行的日志查询 MCP 服务。唯一职责：**把日志取回来**，不承载任何调用方的业务语义。
 
+与 Agent Node 进程互不影响：独立端口（默认 `8766`）、独立配置前缀（`LOG_MCP_*`）、独立数据目录。
+
 ## 范围
 
 | 维度 | 说明 |
@@ -21,65 +23,43 @@ log-mcp/
   pyproject.toml
   manage.py                       # 兼容入口（推荐 uv run start/stop/status）
   src/log_mcp/
-    config.py                     # env > file > default
+    config.py                     # 根目录 .env 的 LOG_MCP_* > 内置默认
+    logging_setup.py              # 按日文件日志
     server.py                     # MCPServer 装配 + Starlette + uvicorn 入口
-    auth.py                       # Bearer 校验 ASGI 包装器
-    oauth.py                      # /oauth/token + /oauth/revoke
-    token_store.py                # sqlite3 两张表
-    errors.py                     # LogMcpToolError + isError:true 结构
-    auth_context.py               # 请求级 scope 强制
-    clients/
-      sign.py                     # md5(appid&ts + appsecret)
-      logcenter.py                # 日志中心 7 方法
-      cloudlog.py                 # 云日志 6 方法
-      time_range.py               # 时间解析
-      redact.py                   # 脱敏（两侧共用）
-    tools/
-      logcenter.py                # 7 工具注册
-      cloudlog.py                 # 6 工具注册
-      aggregate.py                # search_both_logs：并行 + 失败隔离
-  config/
-    log-mcp.local.json.example    # 配置模板，提交
+    ...
   tests/
 ```
 
+配置统一在仓库根目录 `.env`（以及 `.env.example` / `.env-prd`），**不再**使用 `config/log-mcp.local.json`。
+
 ## 快速开始
 
+推荐：在项目根用 Make，和 Agent 一起起：
+
 ```bash
-# 1. 安装依赖
-uv sync
-
-# 2. 复制配置模板并填入凭据
-cp config/log-mcp.local.json.example config/log-mcp.local.json
-# 编辑 log-mcp.local.json：填入 gateway.prod / gateway.test 的 appid/appsecret
-
-# 3. 注册一个 OAuth client（输出 client_secret，仅此一次可见）
-uv run client register --client-id odyssey --description "troubleshoot-odyssey"
-
-# 4. 启动服务（默认前台，日志打终端；Ctrl+C 停止）
-LOG_MCP_AUTH_DISABLED=true uv run start
-
-# 5. 另开终端做健康检查 + MCP 协议验证（确认 14 个工具名齐全）
-uv run check
+# 根目录 .env 配好 LOG_MCP_* 后
+make setup          # 含 uv sync --project log-mcp
+make dev-api        # 后台起 log-mcp(:8766) + 前台 Agent(:8000)
+# Ctrl+C 会停掉 log-mcp
 ```
 
-## 本地 IDE 接入（推荐先这样测）
+仅 log-mcp：
 
-本地把其他 IDE / Cursor 接到本机 MCP 时，建议临时关闭鉴权（仅回环生效）：
-
-```jsonc
-// config/log-mcp.local.json
-{ "auth": { "disabled": true } }
+```bash
+make dev-log-mcp    # 后台
+make stop-log-mcp
+# 或进入目录前台跑：
+cd log-mcp && uv run start
+uv run check        # 健康 + 14 工具名
 ```
 
-然后启动：
+## 本地 IDE 接入
 
 ```bash
 cd log-mcp
-LOG_MCP_AUTH_DISABLED=true uv run start
-# 另开终端：
+uv run start
 curl -s http://127.0.0.1:8766/health
-# 期望：{"status":"ok","auth":"disabled"}
+# 期望：{"status":"ok","auth":"disabled"} 或鉴权开启时 status=ok
 ```
 
 ### Cursor / VS Code（`mcp.json`）
@@ -95,54 +75,7 @@ curl -s http://127.0.0.1:8766/health
 }
 ```
 
-Cursor：项目 `.cursor/mcp.json` 或全局 `~/.cursor/mcp.json`。  
-VS Code（Copilot / MCP 扩展）：按扩展文档放到对应 `mcp.json`。
-
-接上后应能看到 **14 个工具**（`search_services`、`query`、`cloud_search`、`search_both_logs` 等）。
-
-### Claude Desktop / 其他支持 Streamable HTTP 的客户端
-
-URL 填：`http://127.0.0.1:8766/mcp`  
-传输：Streamable HTTP（不是 stdio）。
-
-若客户端不支持 HTTP MCP，可用 [mcp-remote](https://www.npmjs.com/package/mcp-remote) 等桥接（视客户端能力而定）。
-
-### 需要 Bearer 时（auth.disabled=false）
-
-先注册 client 并换 token，再在 MCP 配置里加 headers：
-
-```bash
-uv run client register --client-id ide-local --scopes logs:read
-# 记下 client_secret（仅此一次）
-
-TOKEN=$(curl -s -X POST http://127.0.0.1:8766/oauth/token \
-  -d "grant_type=client_credentials" \
-  -d "client_id=ide-local" \
-  -d "client_secret=<your-secret>" | jq -r .access_token)
-echo "$TOKEN"
-```
-
-```json
-{
-  "mcpServers": {
-    "log-mcp": {
-      "type": "http",
-      "url": "http://127.0.0.1:8766/mcp",
-      "headers": {
-        "Authorization": "Bearer <access_token>"
-      }
-    }
-  }
-}
-```
-
-注意：token 默认 1 小时过期，过期后要重新换；本地联调优先用 `auth.disabled=true`。
-
-### 续期约定（生产调用方）
-
-- access_token 有效期 1 小时，距过期 < 5 分钟时提前续期
-- 收到 401 时立即重新换 token 并重试一次
-- `client_secret` 永不轮换；要止损就吊销 client：`uv run client revoke --client-id odyssey`
+需要 Bearer 时，先换 token 再在 headers 加 `Authorization: Bearer <token>`。
 
 ## 端点
 
@@ -155,199 +88,68 @@ echo "$TOKEN"
 | `/oauth/token` | — | 无 | 换取 access_token |
 | `/oauth/revoke` | — | 无 | 吊销令牌 |
 
-## 工具清单
-
-### 日志中心（7）
-
-| 工具 | 说明 |
-| --- | --- |
-| `search_services` | 关键词搜服务，返回 authorized/unauthorized/not_found 三级 |
-| `list_services` | 按权限分页列表 |
-| `get_fields` | 获取 index=true 可查询字段 |
-| `get_storage_type` | es/tls/cls/bls 路由别名 |
-| `count` | 统计总数，不返回内容 |
-| `query` | Lucene 检索（page 从 1 起，每页 40） |
-| `dsl_search` | 透传 ES Query Body（禁 script，from+size≤10000） |
-
-### 云日志（6）
-
-| 工具 | 说明 |
-| --- | --- |
-| `cloud_accounts` | 列出 vendor 下账号 |
-| `cloud_collections` | 列出账号下日志集 |
-| `cloud_topics` | 列出账号下全部 topic（自带 collection/region） |
-| `cloud_count` | 统计 topic 总量（不支持 query 过滤） |
-| `cloud_search` | SLS 类 SQL 检索（from 从 0 起偏移量） |
-| `cloud_probe` | 探测 collection 可访问性与延迟 |
-
-### 聚合（1）
-
-| 工具 | 说明 |
-| --- | --- |
-| `search_both_logs` | 两侧并行 + 单侧/单 topic 失败隔离；不传 cloud 只查日志中心，传 {} 全量扫 topic |
-
-## `time` 参数格式
-
-`count` / `query` / `cloud_count` / `cloud_search` / `search_both_logs` 共用同一解析器，解析失败返回 `bad_request`（无效的时间范围）。
-
-| 类型 | 示例 |
-| --- | --- |
-| 相对 | `15m`、`1h`、`3d`、`1w` |
-| 自然语言 | `今天`、`昨天`、`本周`、`过去3天` |
-| 同日时段 | `今天9:00到10:00`、`2026-11-11 07:00-07:40` |
-| Agent 常见完整写法 | `2026-11-11 07:00:00 to 2026-11-11 07:40:00` |
-
-分隔符支持：`到` / `-` / `至` / `to` / `~`；时间可带可选秒 `:SS`。
-
 ## 配置
 
-配置文件 `config/log-mcp.local.json`（不提交 git），环境变量 `LOG_MCP_*` 优先覆盖。
+全部写在项目根 `.env`，前缀 `LOG_MCP_*`。优先级：
 
-日志中心与云日志共用 `gateway`（网关 + appid/appsecret），按环境区分；云日志仅额外配置 `vendor` + `defaults`：
+```text
+进程环境变量 > 根目录 .env > 内置默认
+```
 
-- `gateway.prod` → `https://logcenter-api.tal.com/api`
-- `gateway.test` → `https://logcenter-api-test.tal.com/api`
+只区分 **prod / test** 两套网关凭据；`LOG_MCP_ENV` 决定启动默认环境。
 
-`env` **默认 `test`**。覆盖方式（优先级从高到低）：
-
-1. 环境变量 `LOG_MCP_ENV=prod`
-2. 配置文件 `"env": "prod"`
-3. 内置默认 `test`
-
-启动 `env` 决定：工具 `env` 入参缺省值、云日志用哪套网关+凭据。工具仍可显式传 `env=test|prod` 临时切换日志中心侧。
-
-| 环境变量 | 对应配置 | 默认 |
+| 环境变量 | 说明 | 默认 |
 | --- | --- | --- |
-| `LOG_MCP_HOST` | host | `127.0.0.1` |
-| `LOG_MCP_PORT` | port | `8766` |
-| `LOG_MCP_ENV` | env | `test`（可覆盖为 `prod`） |
-| `LOG_MCP_DATA_ROOT` | dataRoot | `${HARMONY_AGENT_DATA_ROOT}/log-mcp`，否则复用项目根 `troubleshoot-odyssey/.data/log-mcp` |
-| `LOG_MCP_PROD_APPID` | gateway.prod.appid | — |
-| `LOG_MCP_PROD_APPSECRET` | gateway.prod.appsecret | — |
-| `LOG_MCP_TEST_APPID` | gateway.test.appid | — |
-| `LOG_MCP_TEST_APPSECRET` | gateway.test.appsecret | — |
-| `LOG_MCP_PROD_BASE_URL` | gateway.prod.baseUrl | `https://logcenter-api.tal.com/api` |
-| `LOG_MCP_TEST_BASE_URL` | gateway.test.baseUrl | `https://logcenter-api-test.tal.com/api` |
-| `LOG_MCP_LOGCENTER_BASE_URL` | gateway.prod.baseUrl | 兼容旧名，等价于 `LOG_MCP_PROD_BASE_URL` |
-| `LOG_MCP_TIMEOUT_MS` | timeoutMs | `30000`（单次上游 HTTP 调用） |
-| `LOG_MCP_AUTH_DISABLED` | auth.disabled | `false`（仅回环地址生效） |
-| `LOG_MCP_CLOUDLOG_VENDOR` | cloudlog.vendor | `aliyun` |
-| `LOG_MCP_CLOUDLOG_REGION` | cloudlog.defaults.region | `cn-beijing` |
-| `LOG_MCP_CLOUDLOG_ACCOUNT` | cloudlog.defaults.account | `1743276692096170` |
-| `LOG_MCP_CLOUDLOG_COLLECTION` | cloudlog.defaults.collection | `pysy-front-log` |
+| `LOG_MCP_HOST` | 监听地址 | `127.0.0.1` |
+| `LOG_MCP_PORT` | 端口 | `8766` |
+| `LOG_MCP_ENV` | 默认环境 `prod`/`test` | `test` |
+| `LOG_MCP_DATA_ROOT` | 数据根 | `${HARMONY_AGENT_DATA_ROOT}/log-mcp` 或 `.data/log-mcp` |
+| `LOG_MCP_PROD_APPID` / `LOG_MCP_PROD_APPSECRET` | 生产网关凭据 | — |
+| `LOG_MCP_TEST_APPID` / `LOG_MCP_TEST_APPSECRET` | 测试网关凭据 | — |
+| `LOG_MCP_PROD_BASE_URL` | 生产网关 | `https://logcenter-api.tal.com/api` |
+| `LOG_MCP_TEST_BASE_URL` | 测试网关 | `https://logcenter-api-test.tal.com/api` |
+| `LOG_MCP_TIMEOUT_MS` | 单次上游 HTTP 超时 | `30000` |
+| `LOG_MCP_AUTH_DISABLED` | 关鉴权（仅回环生效） | `false` |
+| `LOG_MCP_CLOUDLOG_VENDOR` | 云日志厂商 | `aliyun` |
+| `LOG_MCP_CLOUDLOG_REGION` | 默认 region | `cn-beijing` |
+| `LOG_MCP_CLOUDLOG_ACCOUNT` | 默认 account | `1743276692096170` |
+| `LOG_MCP_CLOUDLOG_COLLECTION` | 默认 collection | `pysy-front-log` |
+
+## 调用日志（按日文件）
+
+工具调用与运行日志同时打到：
+
+1. 控制台（stdout）
+2. 数据目录按日文件：
+
+```text
+<data_root>/logs/log-mcp-YYYY-MM-DD.log
+```
+
+本地默认：`troubleshoot-odyssey/.data/log-mcp/logs/log-mcp-2026-11-17.log`  
+容器（挂卷后）：`/data/troubleshoot-odyssey/log-mcp/logs/log-mcp-YYYY-MM-DD.log`
+
+内容含 `tool#N BEGIN/END` 调用链，跨日自动切新文件。
 
 ## 进程管理
 
 ```bash
-uv run start              # 默认前台：日志打终端，启动会打印环境变量与解析配置；Ctrl+C 停
-uv run start --background # 后台守护（-d）；日志写入 dataRoot/logs/log-mcp.log
-uv run stop               # 优雅停止后台进程（SIGTERM ≤ 25s）
-uv run restart            # 默认前台重启
-uv run restart -d         # 后台重启
-uv run status             # 查看运行状态
-uv run check              # 健康 + MCP 协议验证（14 个工具名齐全）
+uv run start              # 默认前台
+uv run start --background # 后台
+uv run stop
+uv run restart
+uv run status
+uv run check              # 健康 + 14 工具名
 ```
 
-六项保护：PID 防复用、端口占用保护、健康检查、MCP 协议级验证、优雅停止、文件锁互斥。  
-前台模式不写后台 PID 记录；若已有后台进程，需先 `uv run stop` 再 `uv run start`。
-
-启动后每次工具调用会打工具链日志：`tool#N BEGIN name args=...` → `tool#N END ...`。
-
-> 旧写法 `uv run python manage.py start|restart [--background]` 仍可用，推荐短命令。
-
-### 测试 / 生产环境如何注入
-
-两层环境，别混：
-
-| 层 | 作用 | 怎么设 |
-| --- | --- | --- |
-| **启动默认 `env`** | 工具入参 `env` 缺省值；云日志用哪套网关+凭据 | `LOG_MCP_ENV=test\|prod`，或配置文件 `"env"`；默认 `test` |
-| **单次工具入参 `env`** | 仅日志中心侧（`query`/`count`/…）临时切环境 | 调用工具时传 `env=prod` 或 `env=test` |
-
-凭据按环境分两套，启动时都可注入（也可用 `config/log-mcp.local.json`）：
-
-```bash
-# 测试环境（默认）
-LOG_MCP_ENV=test \
-LOG_MCP_TEST_APPID=xxx \
-LOG_MCP_TEST_APPSECRET=yyy \
-LOG_MCP_AUTH_DISABLED=true \
-uv run start
-
-# 生产环境
-LOG_MCP_ENV=prod \
-LOG_MCP_PROD_APPID=xxx \
-LOG_MCP_PROD_APPSECRET=yyy \
-LOG_MCP_AUTH_DISABLED=true \
-uv run start
-```
-
-配置文件示例：
-
-```json
-{
-  "env": "test",
-  "auth": { "disabled": true },
-  "gateway": {
-    "test": { "appid": "...", "appsecret": "..." },
-    "prod": { "appid": "...", "appsecret": "..." }
-  }
-}
-```
-
-优先级：`环境变量 > 配置文件 > 内置默认`。启动日志里会打印「哪些 `LOG_MCP_*` 已注入」和「解析后的 resolved settings」。
-
-### 带环境变量启动 / 重启
-
-```bash
-cd /path/to/troubleshoot-odyssey/log-mcp
-
-# 前台（默认）
-LOG_MCP_AUTH_DISABLED=true uv run start
-
-# 切生产默认环境后前台重启
-LOG_MCP_ENV=prod LOG_MCP_AUTH_DISABLED=true uv run restart
-
-# 后台跑
-uv run start --background
-LOG_MCP_ENV=prod uv run restart -d
-```
-
-注意：已经在跑的进程**不会**自动吃到你新 export 的变量；必须重新 `start`/`restart`。
-
-## Token CLI
-
-```bash
-uv run client register --client-id odyssey --description "..." [--scopes logs:read|logs:probe]
-uv run client revoke   --client-id odyssey
-uv run client list
-```
-
-`client register` 输出的 `client_secret` 仅此一次可见，丢失只能吊销重建。
-
-## scope 强制
-
-| scope | 允许的工具 |
-| --- | --- |
-| `logs:read` | 全部 14 个（默认） |
-| `logs:probe` | 仅 `cloud_probe` / `list_services` / `get_fields` |
+容器内由 Dockerfile 的 `CMD`（镜像内 `start-services.sh`）后台拉起本服务，再前台启动 Agent；两者互不影响。部署侧只需 Dockerfile + 平台注入的 `.env`。
 
 ## 测试
 
 ```bash
-uv run pytest                    # 全部测试
-uv run ruff check .              # 规范检查
+uv run pytest
+uv run ruff check .
 ```
-
-测试覆盖：脱敏、时间解析、DSL 校验、签名、OAuth、聚合隔离、工具层、scope 强制、调试 path。
-
-## 安全要求
-
-- `client_secret` 与 `access_token` 均用 `hmac.compare_digest` 常量时间比较
-- 存储中只有 sha256 摘要，无明文
-- `Authorization` 头不进日志，审计只记 `client_id`
-- 401 不区分「token 不存在」与「已过期」，避免探测
-- 令牌校验在 MCP 协议层之前完成
 
 ## 不做
 
@@ -357,4 +159,3 @@ uv run ruff check .              # 规范检查
 | uid / 手机号 / traceId 注入 | 同上 |
 | evidence / observation 标记 | 裁决权归调用方 |
 | 结果二次截断 | 掩盖信息，导致误判 |
-| `index_status` | 查询前体检属平台/运维职责 |

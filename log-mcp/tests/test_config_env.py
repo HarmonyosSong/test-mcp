@@ -1,9 +1,6 @@
-"""配置：gateway 共用凭据 + env 默认 test 且可覆盖。"""
+"""配置：gateway 共用凭据 + env 默认 test 且可覆盖（仅环境变量）。"""
 
 from __future__ import annotations
-
-import json
-from pathlib import Path
 
 from log_mcp.config import (
     DEFAULT_ENV,
@@ -66,70 +63,49 @@ def test_factory_shares_gateway_between_sides(tmp_path) -> None:
     assert cloud.cred.appid == "test-id"
 
 
-def test_log_mcp_env_overrides_default_test(tmp_path: Path, monkeypatch) -> None:
-    cfg = tmp_path / "log-mcp.local.json"
-    cfg.write_text(
-        json.dumps(
-            {
-                "gateway": {
-                    "prod": {"appid": "p", "appsecret": "ps"},
-                    "test": {"appid": "t", "appsecret": "ts"},
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
+def test_log_mcp_env_overrides_default_test(monkeypatch) -> None:
+    monkeypatch.setattr("log_mcp.config._load_root_dotenv", lambda: None)
     monkeypatch.setenv("LOG_MCP_ENV", "prod")
-    settings = load_settings(tmp_path)
+    monkeypatch.setenv("LOG_MCP_PROD_APPID", "p")
+    monkeypatch.setenv("LOG_MCP_PROD_APPSECRET", "ps")
+    monkeypatch.setenv("LOG_MCP_TEST_APPID", "t")
+    monkeypatch.setenv("LOG_MCP_TEST_APPSECRET", "ts")
+    settings = load_settings()
     assert settings.default_env == "prod"
+    assert settings.gateway.prod.appid == "p"
+    assert settings.gateway.test.appid == "t"
 
 
-def test_file_env_overrides_default_without_env_var(tmp_path: Path, monkeypatch) -> None:
-    cfg = tmp_path / "log-mcp.local.json"
-    cfg.write_text(
-        json.dumps(
-            {
-                "env": "prod",
-                "gateway": {
-                    "prod": {"appid": "p", "appsecret": "ps"},
-                    "test": {"appid": "t", "appsecret": "ts"},
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
+def test_default_env_without_override(monkeypatch) -> None:
+    monkeypatch.setattr("log_mcp.config._load_root_dotenv", lambda: None)
     monkeypatch.delenv("LOG_MCP_ENV", raising=False)
-    settings = load_settings(tmp_path)
-    assert settings.default_env == "prod"
+    settings = load_settings()
+    assert settings.default_env == "test"
 
 
-def test_legacy_logcenter_key_migrates_to_gateway(tmp_path: Path, monkeypatch) -> None:
-    cfg = tmp_path / "log-mcp.local.json"
-    cfg.write_text(
-        json.dumps(
-            {
-                "env": "test",
-                "logcenter": {
-                    "baseUrl": "https://should-be-ignored/api",
-                    "prod": {"appid": "p", "appsecret": "ps"},
-                    "test": {
-                        "baseUrl": "https://logcenter-api-test.tal.com/api",
-                        "appid": "t",
-                        "appsecret": "ts",
-                    },
-                },
-                "cloudlog": {"baseUrl": "https://also-ignored/api", "vendor": "aliyun"},
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.delenv("LOG_MCP_ENV", raising=False)
+def test_gateway_urls_from_env(monkeypatch) -> None:
+    monkeypatch.setattr("log_mcp.config._load_root_dotenv", lambda: None)
     monkeypatch.delenv("LOG_MCP_LOGCENTER_BASE_URL", raising=False)
-    settings = load_settings(tmp_path)
-    assert settings.gateway.credential("test").appid == "t"
-    assert settings.gateway.base_url("test") == "https://logcenter-api-test.tal.com/api"
-    assert settings.gateway.base_url("prod") == DEFAULT_GATEWAY_BASE_URLS["prod"]
+    monkeypatch.setenv("LOG_MCP_PROD_BASE_URL", "https://prod.example/api")
+    monkeypatch.setenv("LOG_MCP_TEST_BASE_URL", "https://test.example/api")
+    monkeypatch.setenv("LOG_MCP_PROD_APPID", "p")
+    monkeypatch.setenv("LOG_MCP_PROD_APPSECRET", "ps")
+    monkeypatch.setenv("LOG_MCP_TEST_APPID", "t")
+    monkeypatch.setenv("LOG_MCP_TEST_APPSECRET", "ts")
+    settings = load_settings()
+    assert settings.gateway.base_url("prod") == "https://prod.example/api"
+    assert settings.gateway.base_url("test") == "https://test.example/api"
 
+
+def test_legacy_logcenter_base_url_maps_to_prod(monkeypatch) -> None:
+    monkeypatch.setattr("log_mcp.config._load_root_dotenv", lambda: None)
+    monkeypatch.delenv("LOG_MCP_PROD_BASE_URL", raising=False)
+    monkeypatch.setenv("LOG_MCP_LOGCENTER_BASE_URL", "https://legacy-prod.example/api")
+    monkeypatch.setenv("LOG_MCP_PROD_APPID", "p")
+    monkeypatch.setenv("LOG_MCP_PROD_APPSECRET", "ps")
+    settings = load_settings()
+    assert settings.gateway.base_url("prod") == "https://legacy-prod.example/api"
+    assert settings.gateway.base_url("test") == DEFAULT_GATEWAY_BASE_URLS["test"]
 
 def test_normalize_env() -> None:
     assert normalize_env("test") == "test"
@@ -140,21 +116,6 @@ def test_normalize_env() -> None:
     assert normalize_env("production") == "test"
 
 
-def test_legacy_gateway_production_key_migrates_to_prod(tmp_path: Path, monkeypatch) -> None:
-    cfg = tmp_path / "log-mcp.local.json"
-    cfg.write_text(
-        json.dumps(
-            {
-                "env": "prod",
-                "gateway": {
-                    "production": {"appid": "legacy-p", "appsecret": "ps"},
-                    "test": {"appid": "t", "appsecret": "ts"},
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.delenv("LOG_MCP_ENV", raising=False)
-    settings = load_settings(tmp_path)
-    assert settings.default_env == "prod"
-    assert settings.gateway.prod.appid == "legacy-p"
+def test_logs_dir_under_data_root(tmp_path) -> None:
+    settings = Settings(data_root=str(tmp_path))
+    assert settings.logs_dir == tmp_path / "logs"

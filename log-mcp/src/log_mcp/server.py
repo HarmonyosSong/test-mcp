@@ -36,6 +36,7 @@ from log_mcp.clients.logcenter import LogCenterClient
 from log_mcp.clients.redact import redact
 from log_mcp.config import Settings, load_settings
 from log_mcp.errors import LogMcpToolError, internal_error, make_error_result
+from log_mcp.logging_setup import setup_logging
 from log_mcp.oauth import oauth_revoke, oauth_token
 from log_mcp.token_store import TokenStore
 from log_mcp.tools.aggregate import register_aggregate_tools
@@ -413,13 +414,10 @@ def _log_startup_config(settings: Settings) -> None:
 
 def main() -> None:
     """进程入口：读配置、装 app、跑 uvicorn。"""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        datefmt="%H:%M:%S",
-    )
     settings = load_settings()
+    log_file = setup_logging(settings.logs_dir)
     _log_startup_config(settings)
+    LOGGER.info("call/runtime logs → %s (按日切换)", log_file)
     app = create_app(settings)
     LOGGER.info(
         "listening http://%s:%s/mcp  (boot env=%s)",
