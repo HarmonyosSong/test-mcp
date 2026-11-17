@@ -43,6 +43,7 @@ test('applyProgressEvent 按工具起止勾选清单', () => {
     type: 'completed',
     text: 'ok',
     report: null,
+    verdict: null,
     evidence_state: {},
     messages_state: [],
     input_tokens: null,

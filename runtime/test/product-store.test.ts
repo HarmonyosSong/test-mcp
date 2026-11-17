@@ -116,10 +116,11 @@ test("product store owns conversation CRUD and repairs stale streaming messages"
   assert.equal(recovered.messages[1]?.error, "回复中断：服务重启前未完成");
   assert.equal(recovered.messages[1]?.steps[0]?.status, "failed");
   assert.equal(recovered.run_state, "failed");
+  // 人工审批流已退役：waiting_confirmation 是死状态，一律按中断修复（含 pending 协查的遗留会话）。
   const waiting = await restarted.getConversation("conv-waiting");
-  assert.equal(waiting.run_state, "waiting_confirmation");
-  assert.equal(waiting.messages[0]?.status, "streaming");
-  assert.equal(waiting.messages[0]?.error, null);
+  assert.equal(waiting.run_state, "failed");
+  assert.equal(waiting.messages[0]?.status, "failed");
+  assert.equal(waiting.messages[0]?.error, "回复中断：服务重启前未完成");
   await restarted.deleteConversation("conv-waiting");
 
   let followupInput: DiagnosisRunInput | undefined;

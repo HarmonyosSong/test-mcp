@@ -22,11 +22,12 @@ import type { ObservationRegistry } from './observations.js';
  * 删除的编排：finalize 阶段切换、submit 专属豁免与报告尝试计数。
  */
 
-const SEARCH_TOOLS = new Set(['search_project_text', 'search_code_symbols', 'search_knowledge']);
+const SEARCH_TOOLS = new Set(['search_project_text', 'search_code_symbols', 'search_code_index', 'search_knowledge']);
 const CODE_NAVIGATION_TOOLS = new Set<string>(CODE_INDEX_MCP_TOOL_NAMES);
 const DEFAULT_TOOL_ARGS: Record<string, Record<string, unknown>> = {
   search_project_text: { file_glob: '**/*', limit: 10, cursor: null },
   search_code_symbols: { file_pattern: '**/*', limit: 20 },
+  search_code_index: { limit: 10 },
   get_code_outline: { limit: 100 },
   trace_code_path: { direction: 'inbound', depth: 1, limit: 20 },
   read_project_file: { start_line: 1, end_line: 200, max_chars: 6000 },
@@ -44,6 +45,7 @@ const REUSABLE_TOOLS = new Set([
   'read_project_file',
   'search_project_text',
   'search_code_symbols',
+  'search_code_index',
   'get_code_outline',
   'trace_code_path',
   'list_project_files',

@@ -74,12 +74,12 @@ test('malformed provider tool JSON does not leave pending tool events or prevent
     if (requestCount === 1) {
       response.write(chatChunk('malformed-tool', [{
         index: 0,
-        delta: { tool_calls: [{ index: 0, id: 'call-malformed', type: 'function', function: { name: 'submit_diagnosis_report', arguments: '{"verdict":' } }] },
+        delta: { tool_calls: [{ index: 0, id: 'call-malformed', type: 'function', function: { name: 'load_skill', arguments: '{"verdict":' } }] },
         finish_reason: null,
       }]));
       response.write(chatChunk('malformed-tool', [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 }));
     } else {
-      response.write(chatChunk('malformed-recovery', [{ index: 0, delta: { content: '参数格式错误，当前没有可验证的报告。' }, finish_reason: null }]));
+      response.write(chatChunk('malformed-recovery', [{ index: 0, delta: { content: '判定：工具异常\n参数格式错误，当前没有可验证的结论。' }, finish_reason: null }]));
       response.write(chatChunk('malformed-recovery', [{ index: 0, delta: {}, finish_reason: 'stop' }], { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 }));
     }
     response.end('data: [DONE]\n\n');
@@ -121,6 +121,7 @@ test('malformed provider tool JSON does not leave pending tool events or prevent
       assert.equal(Number(finalEvent.tool_usage.blocked), 1);
       assert.equal(Number(finalEvent.tool_usage.attempted), 1);
       assert.equal(Number(finalEvent.tool_usage.accepted), 0);
+      assert.equal(finalEvent.verdict, 'tool_error');
     }
     assert.equal(events.some((event) => event.type === 'failed'), false);
   } finally {
@@ -196,7 +197,8 @@ test('assembles fragmented tool arguments and closes emitted events when the pro
     assert.equal(ends.length, 1);
     assert.equal(starts[0]?.type === 'tool-start' ? starts[0].event.id : null, ends[0]?.type === 'tool-end' ? ends[0].event.id : undefined);
     assert.equal(ends[0]?.type === 'tool-end' ? ends[0].event.status : null, 'completed');
-    assert.ok(events.some((event) => event.type === 'text' && event.delta === '已读取源码，'));
+    // 最终答案校验缓冲：流中断时半成品文本不外发（去编排化后的缓冲语义）。
+    assert.equal(events.some((event) => event.type === 'text'), false);
     assert.equal(terminal?.type, 'failed');
     if (terminal?.type === 'failed') assert.equal(terminal.failure_category, 'provider_error');
   } finally {

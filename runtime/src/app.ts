@@ -42,7 +42,6 @@ import {
 } from './capabilities/compass-a2a.js';
 import { CompassSlotAdapter } from './capabilities/compass-slot.js';
 import { createCompassA2ADebugRoutes } from './capabilities/compass-a2a-debug.js';
-import { loadServerSignals } from './orchestration/server-signals.js';
 import { VersionRegistry, type VersionRegistryRepository } from './capabilities/version-registry.js';
 import { GitLabArchiveClient, GitLabArchiveError } from './capabilities/gitlab-archive.js';
 import { ArchiveSnapshotError } from './capabilities/archive-snapshot.js';
@@ -102,7 +101,6 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
     await skills.load();
     const diagnosisAgent = new DiagnosisAgent(modelConfiguration, skills, mastra);
     const admission = new InMemoryRunAdmission(config.maxConcurrentRuns);
-    const serverSignals = await loadServerSignals(resolve(config.projectRoot, 'runtime/contracts/server-signals.yaml'));
     const slotRegistry = new InMemoryAgentSlotRegistry();
     if (isCompassA2AConfigured(config.a2aToken)) {
       const compass = new CompassA2AClient(compassA2AClientConfig(config));
@@ -321,7 +319,6 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       knowledgeQueryLog: config.knowledgeQueryLog,
       caseArchiveDir: config.caseArchiveDir,
       admission,
-      serverSignals,
       slotRegistry,
       compassAvailable: isCompassA2AConfigured(config.a2aToken),
       investigationBudget: {
@@ -376,7 +373,6 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         diagnosisOptions: {
           knowledgeQueryLog: config.knowledgeQueryLog,
           caseArchiveDir: config.caseArchiveDir,
-          serverSignals,
           slotRegistry,
           compassAvailable: isCompassA2AConfigured(config.a2aToken),
           investigationBudget: {

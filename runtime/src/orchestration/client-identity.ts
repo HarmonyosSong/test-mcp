@@ -62,3 +62,19 @@ export function extractClientIdentityFromMessages(messages: readonly string[]): 
   }
   return resolved;
 }
+
+/** 请求级关联标识（原 orchestration/correlation，编排路由已退役，提取逻辑保留供日志关联）。 */
+export type CorrelationContext = {
+  traceId?: string;
+  requestId?: string;
+};
+
+/** 只提取明确标记的 ID；订单号等普通数字不能冒充请求关联标识。 */
+export function extractCorrelationContext(question: string): CorrelationContext {
+  const traceId = /(?:\btrace[_ -]?id)\s*[:=：]\s*([A-Za-z0-9._-]{1,128})/i.exec(question)?.[1];
+  const requestId = /(?:\brequest[_ -]?id|请求\s*ID)\s*[:=：]\s*([A-Za-z0-9._-]{1,128})/i.exec(question)?.[1];
+  return {
+    ...(traceId ? { traceId } : {}),
+    ...(requestId ? { requestId } : {}),
+  };
+}

@@ -12,7 +12,7 @@ import { DiagnosisAgent } from '../diagnosis/agent.js';
 import {
   prepareDiagnosisRound,
   runDiagnosisRound,
-  type ConsultationResumeDecision,
+  type InvestigationBudget,
   type PreparedDiagnosisRound,
 } from '../diagnosis/run-round.js';
 import { CapabilityMcp } from '../capabilities/mcp.js';
@@ -22,17 +22,13 @@ import { invalidJsonError, requestValidationError } from './errors.js';
 import { redactRecord, redactRecordInPlace, redactSensitiveText } from '../security/redaction.js';
 import type { AuthVariables } from '../auth/index.js';
 import { InMemoryRunAdmission, type RunAdmission, type RunAdmissionGrant } from '../orchestration/admission.js';
-import type { ServerSignals } from '../orchestration/server-signals.js';
 import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js';
-import type { InvestigationBudget } from '../orchestration/plan.js';
-import { ExternalConsultationError } from '../orchestration/consultation.js';
 import { clearIncompleteSourceBinding, type BoundSourceContext } from '../capabilities/source-binding.js';
 
 interface ConversationRouteOptions {
   knowledgeQueryLog?: string;
   caseArchiveDir?: string;
   admission?: RunAdmission;
-  serverSignals?: ServerSignals;
   slotRegistry?: AgentSlotRegistry;
   compassAvailable?: boolean;
   investigationBudget?: InvestigationBudget;
@@ -93,13 +89,12 @@ export function createConversationRoutes(
     prepared: PreparedDiagnosisRound;
     admissionGrant: RunAdmissionGrant;
     content: string;
-    resume?: { consultationId: string; decision: ConsultationResumeDecision };
     requestSignal: AbortSignal;
   }): Response => {
     if (!diagnosisAgent || !capabilities || !modelConfiguration) {
       throw new Error('诊断运行依赖尚未配置');
     }
-    const { id, prepared, admissionGrant, content, resume, requestSignal } = input;
+    const { id, prepared, admissionGrant, content, requestSignal } = input;
     const runController = new AbortController();
     const signal = AbortSignal.any([requestSignal, runController.signal]);
     const body = new ReadableStream<Uint8Array>({
@@ -132,12 +127,10 @@ export function createConversationRoutes(
             conversation: prepared.conversation,
             prepared,
             content,
-            resume,
             abortSignal: signal,
             options: {
               knowledgeQueryLog: options.knowledgeQueryLog,
               caseArchiveDir: options.caseArchiveDir,
-              serverSignals: options.serverSignals,
               slotRegistry: options.slotRegistry,
               compassAvailable: options.compassAvailable,
               investigationBudget: options.investigationBudget,
@@ -169,10 +162,6 @@ export function createConversationRoutes(
                 }));
               }
             },
-            onOrchestrationEvent: (event) => {
-              const { type, runId: eventRunId, ...payload } = event;
-              send(sse(type, runId || eventRunId, redactRecord(payload, redact)));
-            },
           });
           runId = result.runId;
           terminalPersisted = result.terminalPersisted;
@@ -189,7 +178,6 @@ export function createConversationRoutes(
               conversation: publicView(result.conversation),
             }));
           }
-          // waiting_confirmation 只发送确认事件和状态快照，不伪装成完成或失败。
           terminalSent = true;
         } catch (error) {
           const message = redact(error instanceof Error ? error.message : '诊断运行失败');
@@ -317,9 +305,6 @@ export function createConversationRoutes(
       if (error instanceof ProductNotFoundError) return jsonError('conversation not found', 404);
       throw error;
     }
-    if (conversation.run_state === 'waiting_confirmation') {
-      return jsonError('当前诊断正在等待外发确认，请先处理确认请求', 409);
-    }
     if (conversation.messages.some((message) => message.status === 'streaming')) {
       return jsonError('上一条回复尚未完成，请稍后再发送', 409);
     }
@@ -357,96 +342,6 @@ export function createConversationRoutes(
       requestSignal: context.req.raw.signal,
     });
   });
-
-  const consultationDecision = async (
-    context: Context<{ Variables: AuthVariables }>,
-    decision: 'approved' | 'rejected',
-  ) => {
-    const rawBody = await context.req.text();
-    if (rawBody.trim()) {
-      let body: unknown;
-      try {
-        body = JSON.parse(rawBody);
-      } catch {
-        return invalidJsonError();
-      }
-      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length > 0) {
-        return jsonError('确认接口不接受新的外发内容或附加字段', 422);
-      }
-    }
-    if (!diagnosisAgent || !capabilities || !modelConfiguration?.enabled) {
-      return jsonError('聊天需要先在模型设置中配置模型', 409);
-    }
-    const id = context.req.param('id') ?? '';
-    const consultationId = context.req.param('consultationId') ?? '';
-    let conversation;
-    try {
-      conversation = await store.getConversation(id);
-    } catch (error) {
-      if (error instanceof ProductNotFoundError) return jsonError('conversation not found', 404);
-      throw error;
-    }
-    const subject = context.get('identity')?.subject;
-    if (!subject || !conversation.owner_subject || conversation.owner_subject !== subject) {
-      return jsonError('无权处理该会话的外发确认', 403);
-    }
-    if (conversation.run_state !== 'waiting_confirmation') {
-      return jsonError('当前会话没有等待处理的外发确认', 409);
-    }
-    const consultation = conversation.consultations.find((item) => item.id === consultationId);
-    if (!consultation) return jsonError('consultation not found', 404);
-
-    const acquired = await admission.acquire({ conversationId: id });
-    if (!acquired.ok) {
-      if (acquired.reason === 'conversation_busy') return jsonError('该会话正在处理其他任务', 409);
-      return new Response(JSON.stringify({ detail: '当前诊断任务较多，请稍后重试', retry_after: 1 }), {
-        status: 429,
-        headers: { 'content-type': 'application/json', 'retry-after': '1' },
-      });
-    }
-    const admissionGrant = acquired.grant;
-    let prepared: PreparedDiagnosisRound;
-    let resume: { consultationId: string; decision: ConsultationResumeDecision } = {
-      consultationId,
-      decision,
-    };
-    const prepareResume = () => prepareDiagnosisRound({
-      store,
-      modelConfiguration,
-      conversation,
-      content: '',
-      runId: admissionGrant.runId,
-      resume,
-    });
-    try {
-      redactRecordInPlace(conversation, redact);
-      try {
-        prepared = await prepareResume();
-      } catch (error) {
-        if (!(error instanceof ExternalConsultationError) || error.code !== 'expired') throw error;
-        // 过期是调查的可恢复终态：保留本地事实，不落 approved/rejected，也不调用远端。
-        resume = { consultationId, decision: 'expired' };
-        prepared = await prepareResume();
-      }
-    } catch (error) {
-      await admission.release(admissionGrant.runId);
-      if (error instanceof ExternalConsultationError) return jsonError(error.message, 409);
-      throw error;
-    }
-    return streamPreparedRound({
-      id,
-      prepared,
-      admissionGrant,
-      content: '',
-      resume,
-      requestSignal: context.req.raw.signal,
-    });
-  };
-
-  routes.post('/conversations/:id/consultations/:consultationId/approve', (context) =>
-    consultationDecision(context, 'approved'));
-  routes.post('/conversations/:id/consultations/:consultationId/reject', (context) =>
-    consultationDecision(context, 'rejected'));
 
   return routes;
 }

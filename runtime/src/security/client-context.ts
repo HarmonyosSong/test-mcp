@@ -1,6 +1,8 @@
-import { extractClientIdentityFromMessages } from '../orchestration/client-identity.js';
-import { extractCorrelationContext } from '../orchestration/correlation.js';
-import type { CorrelationContext } from '../orchestration/plan.js';
+import {
+  extractClientIdentityFromMessages,
+  extractCorrelationContext,
+  type CorrelationContext,
+} from '../orchestration/client-identity.js';
 import { ClientLogPrivacy, type LogIdentifiers } from './log-privacy.js';
 
 /** 仅使用用户原文构造本轮隐私上下文；assistant 输出不能注入新的匹配标识。 */

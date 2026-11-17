@@ -380,6 +380,7 @@ export class YachChannel {
           type: 'completed',
           text: result.text,
           report: result.assistantMessage.report,
+          verdict: null,
           evidence_state: result.conversation.evidence_state,
           messages_state: result.conversation.messages_state,
           input_tokens: result.assistantMessage.input_tokens ?? null,

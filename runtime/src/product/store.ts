@@ -212,13 +212,8 @@ export class ProductStore {
       const conversation = ConversationRecordSchema.parse(
         parseData<unknown>(row.data),
       );
-      const hasPendingConsultation = conversation.consultations.some(
-        (consultation) => consultation.status === "pending",
-      );
-      // 等待外发确认是可恢复的暂停态，不是崩溃留下的半截回复。
-      if (conversation.run_state === "waiting_confirmation" && hasPendingConsultation) {
-        continue;
-      }
+      // 人工审批流（waiting_confirmation）已随编排层退役：代码不再写入该状态，
+      // 历史遗留一律按中断修复。
       const hasStreaming = conversation.messages.some(
         (message) => message.status === "streaming",
       );

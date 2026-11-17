@@ -1,8 +1,0 @@
-version: 1
-# 服务名和接口前缀按真实误判/漏判案例补充；首版不为未知服务猜测路由。
-serviceNames: []
-apiPrefixes: []
-errorCodePatterns:
-  - '(?<![A-Za-z0-9])5(?:[0-9]{2}|xx)(?![A-Za-z0-9])'
-  - '\bHTTP_5[0-9]{2}\b'
-  - '\b(?:BAD_GATEWAY|GATEWAY_TIMEOUT|SERVICE_UNAVAILABLE|UPSTREAM_ERROR)\b'
