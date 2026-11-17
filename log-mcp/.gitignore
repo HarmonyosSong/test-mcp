@@ -1,0 +1,11 @@
+# 本地配置与运行态不提交
+config/*.local.json
+config/*.local.env
+# 运行态：sqlite、日志、PID 等（manage.py 产物）
+.data/
+.venv/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
