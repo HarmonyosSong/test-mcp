@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { parseVerdictMarker, validateFinalAnswer } from '../src/diagnosis/final-answer-validator.js';
+import { ObservationRegistry } from '../src/diagnosis/observations.js';
+
+function registryWithObservation(): { registry: ObservationRegistry; id: string } {
+  const registry = new ObservationRegistry();
+  const captured = registry.capture('read_project_file', { relative_path: 'src/a.ets' }, {
+    path: 'src/a.ets',
+    start_line: 1,
+    content: 'throw new Error("boom")',
+  }) as { evidence_refs: Array<{ id: string }> };
+  return { registry, id: captured.evidence_refs[0]!.id };
+}
+
+test('合格回答通过并解析判定锚点', () => {
+  const { registry, id } = registryWithObservation();
+  const text = `判定：已定位\n崩溃由空指针引起，见 ${id} 的抛出点。`;
+  const check = validateFinalAnswer(text, registry);
+  assert.equal(check.ok, true);
+  if (check.ok) assert.equal(check.verdict, 'located');
+  assert.equal(parseVerdictMarker(text), 'located');
+  assert.equal(parseVerdictMarker('判定：证据不足\n还需要日志'), 'insufficient_evidence');
+});
+
+test('空回答被打回', () => {
+  const check = validateFinalAnswer('   ', new ObservationRegistry());
+  assert.equal(check.ok, false);
+  if (!check.ok) assert.match(check.feedback, /没有输出任何回答/);
+});
+
+test('DSML/工具协议文本泄露被打回；代码块内讨论协议豁免', () => {
+  const { registry, id } = registryWithObservation();
+  const leaked = `判定：已定位\n<｜｜DSML｜｜invoke name="read_project_file">… ${id}`;
+  assert.equal(validateFinalAnswer(leaked, registry).ok, false);
+
+  const discussing = '判定：证据不足\n```\n<｜｜DSML｜｜invoke name="x"> 是协议示例\n```\n需要更多日志。';
+  assert.equal(validateFinalAnswer(discussing, registry).ok, true);
+});
+
+test('引用不存在的 ev-ID 被打回；真实 ID 通过', () => {
+  const { registry, id } = registryWithObservation();
+  const fabricated = `判定：可能定位\n见 ev-0000000000000000 的观测。`;
+  const check = validateFinalAnswer(fabricated, registry);
+  assert.equal(check.ok, false);
+  if (!check.ok) assert.match(check.feedback, /不存在的观测 ID/);
+
+  const real = `判定：可能定位\n见 ${id} 的抛出点。`;
+  assert.equal(validateFinalAnswer(real, registry).ok, true);
+});
+
+test('用户引用 ev-user-* 同样接受在册校验', () => {
+  const registry = new ObservationRegistry({ inputTexts: ['提交作业失败，提示网络异常'] });
+  const userRef = registry.registerUserTexts()[0]!.id;
+  const ok = validateFinalAnswer(`判定：证据不足\n用户描述（${userRef}）缺少日志支撑。`, registry);
+  assert.equal(ok.ok, true);
+  const bad = validateFinalAnswer('判定：证据不足\n见 ev-user-000000000000。', registry);
+  assert.equal(bad.ok, false);
+});
+
+test('缺少判定锚点被打回', () => {
+  const { registry, id } = registryWithObservation();
+  const check = validateFinalAnswer(`崩溃原因见 ${id}。`, registry);
+  assert.equal(check.ok, false);
+  if (!check.ok) assert.match(check.feedback, /判定锚点/);
+});
