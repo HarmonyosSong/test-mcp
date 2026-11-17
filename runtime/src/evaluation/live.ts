@@ -9,6 +9,7 @@ import { createRoundCapabilitySession } from '../capabilities/session.js';
 import { ChatMessageSchema, type ChatMessage } from '../domain/schemas.js';
 import { redactRecord } from '../security/redaction.js';
 import type { DiagnosisRunInput } from '../diagnosis/agent.js';
+import { parseVerdictMarker } from '../diagnosis/final-answer-validator.js';
 
 export interface LiveCase {
   id: string;
@@ -200,13 +201,15 @@ export async function runLive(datasetPath: string, outputPath: string, timeoutSe
           }
           if (final?.type === 'completed') {
             message.content = final.text || text;
-            message.report = final.report;
+            message.report = null;
             message.status = 'completed';
             message.input_tokens = final.input_tokens;
             message.output_tokens = final.output_tokens;
             message.tool_usage = final.tool_usage;
             conversation.evidence_state = final.evidence_state;
             row.status = 'completed';
+            // verdict 由 agent 从「判定：」锚点解析；兜底再从落盘文本解析一次。
+            row.verdict = final.verdict ?? parseVerdictMarker(message.content);
           } else {
             message.content = text;
             message.status = 'failed';
@@ -235,18 +238,20 @@ export async function runLive(datasetPath: string, outputPath: string, timeoutSe
         row.reused = message.tool_usage.reused ?? null;
         row.result_chars = null;
         row.error = message.error;
-        row.report_submitted = message.report !== null;
         row.input = prompt;
         row.response = message.content;
-        row.report = message.report;
         row.steps = message.steps;
         const expected = item.expected[turn];
-        if (expected.location !== undefined) row.correct_location = Boolean(message.report && ['located', 'probable'].includes(message.report.verdict) && message.report.likely_location?.includes(expected.location));
+        const verdict = typeof row.verdict === 'string' ? row.verdict : null;
+        if (expected.location !== undefined) {
+          // 自由文本时代的位置断言：判定为正向前两档且回答中提及期望位置。
+          row.correct_location = Boolean(verdict && ['located', 'probable'].includes(verdict) && message.content.includes(expected.location));
+        }
         if (expected.verdict !== undefined) {
           const expectedVerdicts = Array.isArray(expected.verdict) ? expected.verdict : [expected.verdict];
-          row.expected_verdict_pass = message.report ? expectedVerdicts.includes(message.report.verdict) : false;
+          row.expected_verdict_pass = verdict !== null && expectedVerdicts.includes(verdict);
         }
-        if (expected.clarification_terms?.length) row.appropriate_clarification = message.status === 'completed' && expected.clarification_terms.every((term) => (message.content + JSON.stringify(message.report ?? '')).includes(term));
+        if (expected.clarification_terms?.length) row.appropriate_clarification = message.status === 'completed' && expected.clarification_terms.every((term) => message.content.includes(term));
         row.unsupported_conclusion = null;
         row.conversation_id = conversation.id;
         row.message_id = message.id;

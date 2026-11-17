@@ -32,13 +32,12 @@ test('diagnosis report Skill keeps knowledge leads out of unsupported root-cause
   const skill = registry.get('report-harmony-diagnosis');
 
   assert.ok(skill);
-  assert.match(skill.instructions, /Every root-cause candidate, regardless of verdict, must cite at least one observed source or log/);
-  assert.match(skill.instructions, /When returning `insufficient_evidence` because no source or log observation supports a cause, leave/);
-  assert.match(skill.instructions, /do not turn them into incident candidates/);
-  assert.match(skill.instructions, /set `likely_location` to null unless the current user-provided/);
-  assert.match(skill.instructions, /Separate conditional code behavior from the observed incident/);
-  assert.match(skill.instructions, /Do not write “the caller passed no name” as an incident fact/);
-  assert.match(skill.instructions, /the verdict may be at most `probable`/);
+  // 自由文本契约：判定锚点首行强制、ev-ID 引用纪律、条件行为与已观察事故区分。
+  assert.match(skill.instructions, /判定：已定位/);
+  assert.match(skill.instructions, /禁止自创/);
+  assert.match(skill.instructions, /知识线索/);
+  assert.match(skill.instructions, /区分条件行为与已观察事故/);
+  assert.match(skill.instructions, /判定至多为 `可能定位`/);
 });
 
 test('location Skill preserves conflicting static rules as unresolved', async () => {

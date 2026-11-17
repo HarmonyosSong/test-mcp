@@ -77,3 +77,7 @@ root-cause proof in this phase.
 - Vague「安卓日志」/「iOS日志」without 埋点 vs 监控 → ask; catalog may return ambiguous across sources（无 multi_end）。
 - SLS 同词同时命中 H5 与客户端 → 跟 `multi_end` / `h5_first_then_ua`，不要当成冲突二选一。
 - If tools are unconfigured or fail with permission errors, report the gap and continue with other evidence.
+- 完成学员身份匹配的远程日志条目是正式观测证据：最终回答引用时必须原样照抄该条目
+  `evidence_refs` 里的 `ev-` ID 与摘录；禁止把日志的 `log-` entry_id 或 location 后缀
+  拼接伪造成 ev- ID。
+- 目录路由结论不能替代用户粘贴的 hilog 或源码观测；已有本地证据优先用本地证据。

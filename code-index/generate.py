@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-EXTENSIONS = {".ets", ".ts", ".tsx", ".js", ".jsx", ".kt", ".kts", ".java", ".swift", ".m", ".mm", ".h", ".hpp", ".cpp", ".cc", ".gradle", ".json", ".json5", ".xml", ".yaml", ".yml", ".md", ".properties"}
+EXTENSIONS = {".ets", ".ts", ".tsx", ".js", ".jsx", ".kt", ".kts", ".java", ".swift", ".m", ".mm", ".h", ".hpp", ".cpp", ".cc", ".gradle", ".json", ".json5", ".xml", ".yaml", ".yml", ".properties"}
 SKIP = {".git", ".idea", ".hvigor", "build", "dist", "node_modules", "oh_modules", "Pods"}
 DECLARATION = re.compile(r"\b(?:class|interface|struct|enum|object|function|func|def|const|let|var)\s+([A-Za-z_$][\w$]*)")
 EXPORTED_DECLARATION = re.compile(r"\bexport\s+(?:default\s+)?(?:class|interface|struct|enum|object|function|func)\s+([A-Za-z_$][\w$]*)")
@@ -127,6 +127,14 @@ def main() -> None:
             })
             item["modules"].append({"module_id": rule["module_id"], "matched_file_count": len(hits)})
         coverage.append(item)
+    for failure in manifest.get("failures", []):
+        coverage.append({
+            "key": failure.get("key"),
+            "status": failure.get("status", "unavailable"),
+            "message": failure.get("message"),
+            "limitations": failure.get("limitations", []),
+            "modules": [],
+        })
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n" for row in records), encoding="utf-8")
     args.coverage.write_text(json.dumps({"generated_at": generated, "source_count": len(coverage), "entry_count": len(records), "sources": coverage}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

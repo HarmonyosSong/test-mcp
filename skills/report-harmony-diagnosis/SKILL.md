@@ -1,72 +1,58 @@
 ---
 name: report-harmony-diagnosis
-description: Produce a structured, evidence-linked HarmonyOS report via submit_diagnosis_report once evidence supports a conclusion or the user asks for one. Not for fixes or runtime validation.
+description: 在证据足以支撑结论或用户要求结论时，输出带判定锚点的自由文本最终回答。不用于修复问题或运行时验证。
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
   stage: diagnose
   modes: [chat]
-  required_tools: [submit_diagnosis_report]
 ---
 
 # Report Harmony Diagnosis
 
-Submit exactly one `DiagnosisReport` through the `submit_diagnosis_report` tool; do not paste
-report drafts into the chat text. Choose exactly one verdict:
+最终回答是普通聊天文本，不是工具调用；运行时在放出前会做机器校验（非空、无协议泄露、
+引用的 ev-ID 真实存在、含判定锚点），不合格会被打回重写。
 
-- `located` only when accessible evidence directly identifies the causal location and behavior.
-- `probable` when one candidate is better supported than alternatives but still needs verification.
-- `insufficient_evidence` when the current material cannot support a reliable candidate.
-- `tool_error` when a failed inspection materially prevents completion.
+## 首行判定锚点（强制）
 
-Every `located` or `probable` candidate must reference at least one evidence ID included in the same
-report. Calibrate confidence to evidence quality, not answer fluency. State the likely location only
-when a path, symbol, module, or configuration area was observed.
-Evidence is cited by reference: each item takes only `id` (a tool `evidence_refs` ID, or an
-`ev-user-*` ID from the `user_evidence` list in the instructions state block), `excerpt` (a verbatim
-substring of that observation or user message), and `supports`. Never fill in kind, source, or
-location — the system assembles them from the ledger. The submission tool rejects unknown, expired,
-or misquoted citations with an error code; fix and resubmit. Evidence observed in earlier turns of
-this conversation remains citable.
-Every root-cause candidate, regardless of verdict, must cite at least one observed source or log
-item in the same report. User descriptions, knowledge, and repository context cannot serve as the
-candidate's only evidence. This structural check does not prove the causal argument.
-When returning `insufficient_evidence` because no source or log observation supports a cause, leave
-`root_cause_candidates` empty. Keep architecture or ownership details from knowledge explicitly
-labeled as knowledge leads in the summary or limitations; do not turn them into incident candidates.
-For an `insufficient_evidence` report, set `likely_location` to null unless the current user-provided
-stack/log or a completed source/log tool observation identifies a concrete location. Never put an
-undifferentiated list of possible components in `likely_location`; retain it as a labeled lead in
-the summary only when it helps choose the next question.
+第一行必须是且仅是以下四者之一：
 
-Separate conditional code behavior from the observed incident. Source such as `value!.method()` can
-prove that the expression throws if `value` is nullish; it does not prove the current caller passed a
-nullish value. If a user supplies a stack frame, cite it as user-provided runtime evidence and limit
-the claim to what that frame plus inspected source supports. Keep missing call arguments, environment,
-and causal links in `missing_information` unless they were actually observed.
-For example, when a stack points to `profile.name!.trim()` but the argument was not observed, report
-that the failing frame is consistent with a missing `name` and explicitly say the actual argument is
-unknown. Do not write “the caller passed no name” as an incident fact or in a confirmed candidate.
-If the stack and source identify the failing line but the triggering argument/state was not observed,
-the verdict may be at most `probable`; phrase the candidate conditionally and keep the unobserved state
-in `missing_information`. Use `located` only when the observed evidence establishes the causal behavior
-for this incident, not merely a code path that would fail under one possible input.
+- `判定：已定位` — 可访问的证据直接确定了本事故的因果位置与行为。
+- `判定：可能定位` — 某一候选明显优于其他候选，但仍需验证。
+- `判定：证据不足` — 当前材料不足以支撑可靠候选。
+- `判定：工具异常` — 工具失败实质上阻碍了排查完成。
 
-Describe checks exactly as performed. Do not claim a repository or specific files were checked unless
-the corresponding read/search tool completed, and do not claim coverage broader than the returned
-observations (for example, one file scan is not proof that the deployed call path was checked).
+## 证据与引用纪律
 
-有界定位仍无法唯一定位，再请用户补充。
-If the entry route, environment, or competing causal branches remain unresolved, return
-`insufficient_evidence` and put the next discriminating questions in `missing_information`.
-Choose them from the matched symptom's “区分它们需要什么” section when available; reuse all
-previous answers and available URL/log observations. Do not treat narrowing as root-cause confirmation.
-Disclose failed or budget-blocked tool calls as limitations. An isolated tool failure does not
-invalidate independent evidence; choose `tool_error` only when it materially prevents completion.
-Knowledge search matches and symptom candidate lists alone do not support a positive verdict.
+- `已定位` / `可能定位` 的每个候选必须引用至少一个真实存在的观测 ID：工具结果
+  `evidence_refs` 里的 `ev-` ID，或指令状态块里用户输入清单的 `ev-user-` ID。原样照抄，
+  禁止自创、禁止拼接。
+- 用户描述、知识命中、仓库上下文不能单独支撑机制类根因候选；知识命中只能作为
+  标注清楚的线索。
+- 证据不足时不强行给候选；把帮助选择下一个问题的线索明确标注为「知识线索」。
+- `证据不足` 时不写「位置：…」，除非用户提供的堆栈/日志或已完成的源码/日志观测
+  确实指向一个具体位置。绝不把「可能的组件清单」当作位置。
 
-Include the conclusion, category, severity, candidates, evidence chain, checks performed, ruled-out
-hypotheses, missing information, confidence, and limitations. Recommendations in this MVP are limited
-to evidence the user can collect or verify; do not provide a patch or claim the issue is resolved.
+## 区分条件行为与已观察事故
 
-Always disclose that the diagnosis was static and read-only, that no build or device verification was
-performed, that DevEco CLI was not called, and that no project file was modified.
+源码如 `value!.method()` 只能证明「value 为空时会抛」，不能证明本次调用方真的传了空值。
+用户给了堆栈帧时，把它当作用户提供的运行时证据，结论限定在「该帧 + 已读源码」支撑的范围内。
+未观察到的调用参数、环境、因果链放入「仍需补充」。堆栈与源码确定了失败行但触发参数/状态
+未观察到时，判定至多为 `可能定位`，候选用条件句表述。只有证据确立了本事故的因果行为时才用
+`已定位`，而不是「某条代码路径在某种可能输入下会失败」。
+
+## 过程与缺口披露
+
+- 如实描述实际执行过的检查：没有完成的读/搜索工具，不得声称查过对应仓库或文件；
+  单文件扫描不代表覆盖了部署调用链。
+- 工具失败、预算或时限导致的收尾，都要写进「局限」；孤立的工具失败不影响其他独立证据，
+  只有实质阻碍完成时才判 `工具异常`。
+- 有界定位后仍无法唯一定位时：判 `证据不足`，列出 1-2 个能区分剩余候选的追问
+  （优先用命中症状的「区分它们需要什么」小节），并说明每个答案能收窄什么。
+- 建议仅限于用户可以自行收集或验证的证据；不提供补丁，不声称问题已修复。
+- 始终披露：本次诊断为静态只读分析，未做构建或真机验证，未调用 DevEco CLI，
+  未修改任何项目文件。
+
+## 推荐结构
+
+首行判定锚点后，依次给出：结论摘要（面向提问者，一两句）、关键依据（带 ev- 引用）、
+候选原因与已排除方向（如有）、仍需补充（如有）、局限（工具失败/只读边界）。

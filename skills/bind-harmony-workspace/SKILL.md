@@ -1,17 +1,18 @@
 ---
 name: dynamic-source-context
-description: 需要查阅客户端源码时，按照用户提示词与已确认的 LogCenter 事实解析平台、产品线、形态和版本，并由 Runtime 自动绑定版本登记表中的只读源码快照。
+description: 需要查阅客户端源码时调用 prepare_source，由 Runtime 按用户描述与已确认的日志事实解析平台、产品线、形态和版本，绑定版本登记表中的只读源码快照。
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
   stage: locate
   modes: [chat]
-  required_tools: []
+  required_tools: [prepare_source]
 ---
 
 # Dynamic Source Context
 
-仅在确实需要读取代码时使用源码快照。业务知识检索、日志观察和追问不要求提前绑定仓库。
-源码绑定由 Runtime 完成，模型不选择仓库、分支、工作区路径或 commit。
+仅在确实需要读取代码时才绑定源码快照。业务知识检索、日志观察和追问不要求提前绑定仓库。
+源码绑定由 Runtime 完成：模型不选择仓库、分支、工作区路径或 commit，只通过
+`prepare_source` 发起绑定（可用 `hint` 补充用户提到的版本线索）。
 
 ## 解析规则
 
@@ -21,9 +22,15 @@ metadata:
 3. Android/iOS 同一产品线存在多个端形态且提示词没有形态时，不猜测，追问手机还是 HD/平板。
 4. 产品线无法从提示词或已确认日志事实唯一确定时，追问学而思还是学家云。
 5. Runtime 解析完成后自动读取 `version-registry/`，下载对应 ref 的 archive，并以登记的
-   `expected_commit` 形成只读源码快照。模型只能使用当前会话提供的源码工具。
+   `expected_commit` 形成只读源码快照。
 
-绑定成功后继续原有定位或调查流程，不重新执行无关知识检索，不额外增加全仓预扫描。
+## prepare_source 的返回处理
+
+- `bound`：绑定成功，`read_project_file` / `search_project_text` 等源码工具立即可用，
+  继续原有定位或调查流程，不重新执行无关知识检索，不额外增加全仓预扫描。
+- `unresolved` / `unavailable`：返回里带缺口说明。不要重试相同输入——先查询关联日志
+  补齐平台/版本事实，或向用户追问最少信息（如学而思/学家云、手机/HD、版本号），再重试。
+- 源码工具在绑定前会返回未绑定提示；出现该提示时调用 `prepare_source`，不要反复试探。
 
 ## 边界
 

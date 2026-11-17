@@ -64,8 +64,8 @@ whose answers separate the remaining candidates, explain what each answer would 
 for the reply. Missing platform or entry route stays unknown, even though this agent targets
 HarmonyOS. Do not dump the whole symptom checklist or ask for a generic bundle of logs.
 On the next turn, state the newly narrowed scope before continuing; a route being identified is
-not a root cause being confirmed. In a single-shot diagnosis, put these questions in
-`missing_information` and return `insufficient_evidence` while the scope remains unresolved.
+not a root cause being confirmed. 单次回复必须收尾时，把这些追问写进最终回答的「仍需补充」，
+并在范围未收敛时判 `证据不足`。
 
 Return a short location summary that separates observed facts from hypotheses. If the input contains
 no error, location, reproduction, or project evidence, mark the scope as unresolved and name the

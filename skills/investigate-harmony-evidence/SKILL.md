@@ -23,18 +23,17 @@ the next 1-2 unanswered questions that distinguish them. First inspect observati
 the conversation or supplied artifacts. After the answer, narrow the candidate set and explain
 the scope change; do not keep asking resolved questions or promote a user answer into causal proof.
 If no symptom entry is available, derive the question from the observed competing hypotheses.
-In single-shot reports, record the discriminating questions in `missing_information`.
+单次回复必须收尾时，把这些追问写进最终回答的「仍需补充」。
 
-Tool errors are evidence gaps, never negative search results or proof against a candidate. Respect
-the shared per-turn failure budget (default 10). Do not repeat a failed call with identical
-arguments unless the upstream explicitly marks it transient; even then retry only once. Change
-parameters only for a new evidence-backed lookup. When the budget is exhausted, stop using tools
-and report the evidence, limitations, and minimum unanswered question.
-The runtime also caps total calls and consecutive calls without new information. Reuse successful
-results and loaded skills; `reused_from_call` points to an existing result, not a fresh observation.
-When a budget removes tools, conclude with supported findings and missing evidence. Do not evade it
-by changing parameters without an evidence need. Source/log results include runtime `evidence_refs`;
-preserve their IDs and provenance and quote exact observed text when citing them.
+Tool errors are evidence gaps, never negative search results or proof against a candidate.
+工具调用与失败有运行时硬上限：同一签名调用失败后禁止原样重试（上游明确标记 transient 时
+也只重试一次），只有存在新的证据需求才调整参数。连续多次调用没有新信息时，运行时会在
+工具结果里附提醒文本——收到后应调整排查方向、向用户追问或用已有证据收尾，而不是换皮
+重复同一查询。工具因预算或收尾时限关闭时（结果带 `soft_closed` 或上限提示），立即停止
+取证，用已有证据给出结论并写明局限。Reuse successful results and loaded skills：命中缓存
+的重复结果是复用，不是新观测。
+Source/log results include runtime `evidence_refs`; preserve their IDs and provenance and quote
+exact observed text when citing them.
 Knowledge candidates, especially `auto` / `ticket` / `experience` entries or mismatched platform
 and version hits, can guide these questions but cannot substitute for current case evidence.
 

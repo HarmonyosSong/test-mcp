@@ -24,9 +24,6 @@ const MAX_TOOL_CALLS = 120;
 /** 最终答案校验失败后的反馈重试次数（首轮之外最多再打回 2 次）。 */
 const MAX_ANSWER_RETRIES = 2;
 
-// TODO(phase-4): 日志工具合同迁移进 skills/use-log-catalog/SKILL.md 后删除此段。
-const LOG_CATALOG_INSTRUCTIONS = `When remote log catalog tools are available, load the use-log-catalog Skill before calling them. Resolve via resolve_log_target first; use candidate fields, suggested_query, and query_style from catalog—never invent account/collection/topic/service_id. source=aliyun_sls → count_cloud_logs/search_cloud_logs (Harmony/iOS may share prod-ios); source=logcenter → count_logs/query_logs. Prefer count before search/query. query_style=fulltext (e.g. prod-cloudlearn): use quoted phrases like "log-eagle-0016-prod", never appid:/uid: KV. query_style=kv: appid: filters OK. Runtime injects uid per query_style. time accepts 1h, 昨天, 2026-11-11 07:00到07:40, or YYYY-MM-DD HH:MM:SS~…—use absolute windows for incidents. If ambiguous with multi_end=true, follow h5_first_then_ua. Other ambiguous → clarify once. Incident lookup needs uid. Present learner profile via lookup_learner (card only). Card→uid via UCenter for log filters; never put card in uid filters or retry after learner_uid_unresolved. Correlated remote log results are observed evidence: cite the exact ev- ID and excerpt from evidence_refs; do not use the log- entry_id or location suffix as an invented ev- ID. Do not replace pasted hilog or source evidence with catalog routing alone.`;
-
 function truncate(value: unknown, limit = 500): string {
   const text =
     typeof value === "string"
@@ -225,7 +222,7 @@ ${prepareSourceAvailable ? `
 - 索引结果只是导航线索，不能直接作为证据；命中后根据返回的 platform、version、repository_id、resolved_commit 调用 prepare_source，再用 read_project_file 核实同一快照。
 - 用户只问产品规则时不必调用代码索引；用户问实现、代码位置或模块归属时优先调用代码索引。索引无命中再回退代码图或全文搜索。
 ` : ""}
-${logCatalogAvailable ? LOG_CATALOG_INSTRUCTIONS : "远程日志目录工具不可用；不要声称已查询日志中心或云日志。"}
+${logCatalogAvailable ? "远程日志目录工具可用：调用任何远程日志工具前，先用 load_skill 加载 use-log-catalog 技能并遵循其合同。" : "远程日志目录工具不可用；不要声称已查询日志中心或云日志。"}
 
 输出规范：
 1. 最终回答直接面向提问者（多为非研发角色），用简洁自然的中文陈述结论、依据与必要缺口；不复述排查过程，不输出完整调用链、工具名或内部 ID 清单（用户明确要求详细报告时除外）。
