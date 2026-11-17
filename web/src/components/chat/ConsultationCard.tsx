@@ -29,8 +29,8 @@ export function ConsultationCard({
     <section className="consultation-card" aria-labelledby={`consultation-${consultation.id}`}>
       <header className="consultation-card-header">
         <div>
-          <span className="eyebrow">外部协查</span>
-          <h3 id={`consultation-${consultation.id}`}>Compass 全栈协查记录</h3>
+          <span className="eyebrow">服务端协查</span>
+          <h3 id={`consultation-${consultation.id}`}>Compass 协查记录</h3>
         </div>
         <span className="consultation-status">{STATUS_LABELS[consultation.status] ?? consultation.status}</span>
       </header>
@@ -38,7 +38,7 @@ export function ConsultationCard({
       <dl className="consultation-meta">
         <div>
           <dt>接收方</dt>
-          <dd>Compass</dd>
+          <dd>Compass（服务端研发 Agent）</dd>
         </div>
         <div>
           <dt>协查原因</dt>
@@ -56,10 +56,6 @@ export function ConsultationCard({
           <pre className="consultation-outbound">{outboundText}</pre>
         </div>
       )}
-
-      <p className="consultation-card-note">
-        远端结论未经本地验证，只能作为待验证线索。
-      </p>
     </section>
   );
 }

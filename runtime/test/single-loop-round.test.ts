@@ -407,7 +407,7 @@ test('软时限到期：工具关闭返回收尾提示，模型用已有证据�
   assert.match(ends[0]!.type === 'tool-end' ? ends[0].event.result_summary ?? '' : '', /收尾/);
 });
 
-test('外部协查预算耗尽：工具如实返回缺口，模型标注未验证后收尾', async () => {
+test('外部协查预算耗尽：工具如实返回缺口，模型基于已有证据收尾', async () => {
   const { diagnosis, scripted } = await setup([
     { tool: 'consult_compass', args: { question: '请核查排行榜接口实现' } },
     { text: anchored('insufficient_evidence', '本地知识未覆盖该接口，本轮外部协查次数已用完；请补充接口返回示例后再查。') },
@@ -426,8 +426,50 @@ test('外部协查预算耗尽：工具如实返回缺口，模型标注未验�
   if (completed?.type !== 'completed') return;
   assert.equal(completed.verdict, 'insufficient_evidence');
   const prompt = JSON.stringify(scripted.prompts[0]);
-  assert.match(prompt, /统一外部全栈 Agent/);
-  assert.match(prompt, /仅来自远端 Agent 报告/);
+  assert.match(prompt, /Compass（服务端研发 Agent/);
+  assert.match(prompt, /与本地观测同级/);
+  assert.doesNotMatch(prompt, /仅来自远端 Agent 报告|本地未验证/);
+});
+
+test('协查完成态结论作为正式观测：最终回答可直接引用其 ev-ID 支撑判定', async () => {
+  const consultResult = {
+    status: 'completed',
+    conclusion: '服务端 successRecord 接口在多退少补场景返回 kuabaoStatus=1。',
+    consultation_id: 'consult-evidence-fixture',
+    truncated: false,
+    limitations: [],
+  };
+  const observed = new ObservationRegistry().capture(
+    'consult_compass',
+    { question: '请核查 successRecord 接口返回值' },
+    consultResult,
+  ) as { evidence_refs: Array<{ id: string }> };
+  const evidenceId = observed.evidence_refs[0]!.id;
+  const { diagnosis } = await setup([
+    { tool: 'consult_compass', args: { question: '请核查 successRecord 接口返回值' } },
+    { text: anchored('located', `服务端在多退少补场景返回 kuabaoStatus=1，与客户端按钮条件不匹配（观测 ${evidenceId}）。`) },
+  ]);
+  const consult = createTool({
+    id: 'consult_compass',
+    description: 'Delegate to the Compass server development agent.',
+    inputSchema: z.object({ question: z.string() }),
+    execute: async () => consultResult,
+  });
+  const events = await run(diagnosis, '多退少补场景为什么没有去结算按钮？', {
+    toolsets: { round: { consult_compass: consult } },
+  });
+  const completed = events.at(-1);
+  assert.equal(completed?.type, 'completed');
+  if (completed?.type !== 'completed') return;
+  assert.equal(completed.verdict, 'located');
+  const entries = completed.evidence_state.entries as Array<{
+    id: string; kind: string; source: string; observation_context?: { consultation_id?: string };
+  }>;
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.id, evidenceId);
+  assert.equal(entries[0]?.kind, 'external');
+  assert.equal(entries[0]?.source, 'compass:consult_compass');
+  assert.equal(entries[0]?.observation_context?.consultation_id, 'consult-evidence-fixture');
 });
 
 test('工具事件：不脱敏，uid/电话/凭证均明文保留', async () => {

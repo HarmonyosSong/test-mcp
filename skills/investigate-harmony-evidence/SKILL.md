@@ -32,8 +32,8 @@ Tool errors are evidence gaps, never negative search results or proof against a 
 重复同一查询。工具因预算或收尾时限关闭时（结果带 `soft_closed` 或上限提示），立即停止
 取证，用已有证据给出结论并写明局限。Reuse successful results and loaded skills：命中缓存
 的重复结果是复用，不是新观测。
-Source/log results include runtime `evidence_refs`; preserve their IDs and provenance and quote
-exact observed text when citing them.
+Source/log results and completed Compass consultations include runtime `evidence_refs`; preserve their IDs and provenance and quote
+exact observed text when citing them. Completed Compass conclusions are observations of the same standing as local source/log evidence.
 Knowledge candidates, especially `auto` / `ticket` / `experience` entries or mismatched platform
 and version hits, can guide these questions but cannot substitute for current case evidence.
 

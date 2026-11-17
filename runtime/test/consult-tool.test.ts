@@ -105,7 +105,8 @@ test('成功协查：咨询记录直写 approved→sent→completed，审计与�
   const result = await tool.execute!({ question: '请核查服务端作业提交校验' }, {} as never) as Record<string, unknown>;
   assert.equal(result.status, 'completed');
   assert.match(String(result.conclusion), /远端结论/);
-  assert.match(String(result.note), /未验证/);
+  assert.equal(result.note, undefined, '协查结论不再附带「未验证」降级标注');
+  assert.equal(result.consultation_id, conversation.consultations[0]?.id);
   // 任务文本 = 固定摘要，模型只贡献了 question。
   assert.match(String((invokeCalls[0] as { text: string }).text), /用户问题原文/);
   // 无 pending 停留：最终记录为 completed，全程一次 sent 检查点 + 一次终态落库。

@@ -6,7 +6,7 @@ export const PROGRESS_STEPS = [
   { id: 'knowledge', title: '查阅产品知识' },
   { id: 'logs', title: '检索线上日志' },
   { id: 'source', title: '核对源码线索' },
-  { id: 'consult', title: '外部协查' },
+  { id: 'consult', title: '服务端协查' },
   { id: 'report', title: '整理结论' },
 ] as const;
 
@@ -72,13 +72,13 @@ export function progressStepForTool(toolName: string): ProgressStepId | null {
 export function progressLabelForTool(toolName: string): string {
   const name = toolName.toLowerCase();
   if (name.includes('prepare_source')) return '正在绑定源码快照';
-  if (name.includes('consult_compass')) return '正在请求外部协查';
+  if (name.includes('consult_compass')) return '正在请求服务端协查';
   const step = progressStepForTool(toolName);
   if (step === 'learner') return '正在查询学员信息';
   if (step === 'logs') return '正在查询远程日志';
   if (step === 'source') return '正在读取代码证据';
   if (step === 'knowledge') return '正在查阅知识库';
-  if (step === 'consult') return '正在请求外部协查';
+  if (step === 'consult') return '正在请求服务端协查';
   if (step === 'report') return '正在整理结论';
   return '正在收集证据';
 }

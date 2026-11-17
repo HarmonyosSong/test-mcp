@@ -210,6 +210,9 @@ export class ObservationRegistry {
     if (name === 'search_cloud_logs' || name === 'query_logs' || name === 'discover_client_sessions') {
       return this.captureRemoteLogs(name, result);
     }
+    if (name === 'consult_compass') {
+      return this.captureConsult(result);
+    }
     const observedTools = new Set(['read_project_file', 'search_project_text', 'parse_hilog']);
     if (!observedTools.has(name)) return result;
 
@@ -316,6 +319,38 @@ export class ObservationRegistry {
     // 显式传入空列表（对照端未绑定）时不回落事故端身份，防止跨端误归因。
     if (contexts) return undefined;
     return this.sourceContext ? { ...this.sourceContext, path } : undefined;
+  }
+
+  /**
+   * Compass 协查完成态结论登记为正式观测（kind=external）：与本地观测同表、同存在性校验、
+   * 同 ev-ID 引用纪律——协查结论与本地证据同级参与诊断，不做"未验证"降级标注。
+   * 失败/超时/预算耗尽可能携带部分文本，不是完成态结论，不登记。
+   */
+  private captureConsult(result: unknown): unknown {
+    if (!isRecord(result)) return result;
+    if (result.status !== 'completed') return result;
+    const text = result.conclusion;
+    if (typeof text !== 'string' || !text.trim()) return result;
+    const consultationId = typeof result.consultation_id === 'string' ? result.consultation_id : null;
+    const idPayload = pythonJson(['consult_compass', { consultation_id: consultationId }, null, text]);
+    const entry: ObservationEntry = {
+      id: `ev-${sha256(idPayload).slice(0, 16)}`,
+      kind: 'external',
+      source: 'compass:consult_compass',
+      location: null,
+      ...(consultationId
+        ? { observation_context: { consultation_id: consultationId, truncated: result.truncated === true } }
+        : {}),
+    };
+    this.add(entry);
+    const softLimitReached = this.entries.size > SOFT_ENTRY_LIMIT;
+    return {
+      evidence_refs: [entry],
+      result,
+      ...(softLimitReached
+        ? { observation_soft_limit: true, limitation: '观测条目已超过 500 条软上限，请停止泛化取证、用已有观测收尾。' }
+        : {}),
+    };
   }
 
   private captureRemoteLogs(name: string, result: unknown): unknown {

@@ -20,7 +20,7 @@ test('progressStepForTool 区分学员/日志/源码/知识/协查', () => {
   assert.equal(progressStepForTool('consult_compass'), 'consult');
   assert.equal(progressLabelForTool('lookup_learner'), '正在查询学员信息');
   assert.equal(progressLabelForTool('prepare_source'), '正在绑定源码快照');
-  assert.equal(progressLabelForTool('consult_compass'), '正在请求外部协查');
+  assert.equal(progressLabelForTool('consult_compass'), '正在请求服务端协查');
 });
 
 test('applyProgressEvent 按工具起止勾选清单', () => {

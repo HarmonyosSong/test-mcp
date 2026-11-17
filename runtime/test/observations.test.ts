@@ -242,3 +242,39 @@ test('对照端 thunk 延迟读取：注册表构造后才发生的对照绑定�
   }) as { evidence_refs: Array<{ id: string; source_context?: { repository_id: string } }> };
   assert.equal(captured.evidence_refs[0]?.source_context?.repository_id, 'repo-ios');
 });
+
+test('协查完成态结论登记为 external 观测：可引用、参与存在性校验', () => {
+  const registry = new ObservationRegistry();
+  const result = {
+    status: 'completed',
+    conclusion: '服务端在 v3.2 引入该校验，多退少补场景返回 kuabaoStatus=1',
+    consultation_id: 'consult-abc',
+    truncated: false,
+  };
+  const captured = registry.capture('consult_compass', { question: '查校验逻辑' }, result) as {
+    evidence_refs: Array<{ id: string; kind: string; source: string; observation_context?: Record<string, unknown> }>;
+    result: unknown;
+  };
+  assert.equal(captured.evidence_refs.length, 1);
+  const ref = captured.evidence_refs[0]!;
+  assert.match(ref.id, /^ev-[0-9a-f]{16}$/);
+  assert.equal(ref.kind, 'external');
+  assert.equal(ref.source, 'compass:consult_compass');
+  assert.equal(ref.observation_context?.consultation_id, 'consult-abc');
+  assert.equal(registry.has(ref.id), true);
+  assert.deepEqual(captured.result, result, '原始结果原样内嵌返回');
+});
+
+test('协查未完成态不登记：failed/budget_exhausted/缺文本原样透传', () => {
+  const registry = new ObservationRegistry();
+  for (const result of [
+    { status: 'failed', conclusion: '半截文本', consultation_id: 'c1' },
+    { status: 'budget_exhausted' },
+    { status: 'completed', conclusion: '   ', consultation_id: 'c2' },
+    { status: 'completed', consultation_id: 'c3' },
+  ]) {
+    const captured = registry.capture('consult_compass', { question: 'q' }, result);
+    assert.deepEqual(captured, result);
+  }
+  assert.equal(registry.size, 0);
+});

@@ -17,7 +17,8 @@ import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js'
  * consult_compass：把"跨侧协查"从 Supervisor 编排（分支 + 自动授权 + 联合阶段）
  * 改为模型可见工具。模型自主决定何时委派服务端/全栈排查；Runtime 保留：
  * 固定结构摘要（用户原文 + 明确问题）、轮次预算、发送前落库检查点、
- * 超时/截断/审计。远端结论始终标注"未验证"，不进入本地观测注册表。
+ * 超时/截断/审计。完成态结论由观测注册表登记为正式观测（kind=external，
+ * 可引用 ev-ID），与本地证据同级参与诊断。
  */
 
 // 外发限长：只带用户原文和明确协查问题（与现行编排一致）。
@@ -108,7 +109,7 @@ export function createConsultCompassTool(options: {
       '把问题委派给统一外部全栈 Agent（Compass）协查服务端/前端/H5 侧。' +
       '本地证据指向服务端、或本地知识与源码不足以回答规则/实现查询时使用；' +
       'question 须写明具体协查问题，用户原文由 Runtime 自动附上。' +
-      '远端结论未经本地验证，只能作为待验证线索引用。每轮调用次数有限，避免重复委派。',
+      '完成态结论登记为正式观测（可引用 ev-ID），与本地证据同级使用。每轮调用次数有限，避免重复委派。',
     inputSchema: z.object({
       question: z.string().min(1).describe('具体的协查问题（含已知关键事实与缺口）'),
     }),
@@ -195,7 +196,6 @@ export function createConsultCompassTool(options: {
           truncated: result.truncated,
           limitations: result.limitations,
           consultation_id: consultation.id,
-          note: '以上结论仅来自远端 Agent 报告，本地未验证；只能作为待验证线索，不能当作本地已确认观测。',
         };
       } catch (error) {
         capabilityContext.abortSignal?.throwIfAborted();

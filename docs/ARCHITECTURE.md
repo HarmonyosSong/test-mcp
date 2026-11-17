@@ -29,7 +29,7 @@ runDiagnosisRound（单 loop，唯一诊断路径）
         |     未绑定返回提示；双槽位 incident/compare，prepare_source 轮内热绑定快照）
         +-- prepare_source：按用户描述与已确认日志事实绑定 version-registry 只读快照；
         |     传与事故端不同的 platform 则绑定对照端快照（跨端实现对比，事故 scope 不变）
-        `-- consult_compass（可选）：委派统一外部全栈 Agent，预算 4 次/轮，结论标注未验证
+        `-- consult_compass（可选）：委派 Compass 服务端研发 Agent，预算 4 次/轮，完成态结论登记为正式观测
 
 ProductStore → LibSQL（会话、快照、协查记录、观测元数据）
 ```
@@ -65,7 +65,7 @@ Knowledge/Repository/code_index MCP，不再拥有产品 Agent 或 HTTP 服务�
 | 用户消息 | `ev-user-*` 用户引用 | 只能证明报告现象，不能单独证明技术根因 |
 | Knowledge MCP / Skill / Catalog | 导航与判据线索 | 不可以 |
 | 关联 `search_cloud_logs` / `discover_client_sessions` 条目 | 元数据进入 `ObservationRegistry`，携带 `observation_context` | 目标绑定且身份匹配时可以；未关联条目直接拒绝 |
-| Compass / 其他远端 Agent | `external_findings` | 不能作为本地已验证观测，必须标注「仅来自远端 Agent 报告」 |
+| Compass 协查完成态结论 | `ObservationRegistry`，`kind=external`，`observation_context` 携带 consultation_id | 可以（服务端事项的确信证据，与本地观测同级） |
 | 代码索引图节点/边 | Repository/code_index MCP 内部导航结果 | 不可以，必须回读同一快照源码 |
 
 注册表 append-only、无淘汰、无正文存储（500 条元数据软上限）。最终回答引用的 ev-ID 由
