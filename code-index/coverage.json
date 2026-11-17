@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-11-17T04:02:34Z",
+  "generated_at": "2026-11-17T04:05:41Z",
   "source_count": 12,
-  "entry_count": 44,
+  "entry_count": 39,
   "sources": [
     {
       "platform": "harmony",
@@ -24,7 +24,7 @@
         },
         {
           "module_id": "english-library",
-          "matched_file_count": 78
+          "matched_file_count": 14
         },
         {
           "module_id": "home",
@@ -32,7 +32,7 @@
         },
         {
           "module_id": "login",
-          "matched_file_count": 415
+          "matched_file_count": 385
         },
         {
           "module_id": "payment",
@@ -61,7 +61,7 @@
         },
         {
           "module_id": "english-library",
-          "matched_file_count": 74
+          "matched_file_count": 13
         },
         {
           "module_id": "home",
@@ -69,7 +69,7 @@
         },
         {
           "module_id": "login",
-          "matched_file_count": 366
+          "matched_file_count": 336
         },
         {
           "module_id": "payment",
@@ -89,20 +89,16 @@
       "status": "ready",
       "modules": [
         {
-          "module_id": "english-library",
-          "matched_file_count": 5
-        },
-        {
           "module_id": "home",
-          "matched_file_count": 13
+          "matched_file_count": 12
         },
         {
           "module_id": "login",
-          "matched_file_count": 32
+          "matched_file_count": 31
         },
         {
           "module_id": "payment",
-          "matched_file_count": 8
+          "matched_file_count": 7
         }
       ]
     },
@@ -117,10 +113,6 @@
       "workspace": ".data/code-index/workspaces/registry-e92d838741cf8b7130f3/bd45e02a2b32c19c1a3f7d5ea43506cf6b9728e9",
       "status": "ready",
       "modules": [
-        {
-          "module_id": "english-library",
-          "matched_file_count": 5
-        },
         {
           "module_id": "home",
           "matched_file_count": 10
@@ -147,10 +139,6 @@
       "status": "ready",
       "modules": [
         {
-          "module_id": "english-library",
-          "matched_file_count": 2
-        },
-        {
           "module_id": "home",
           "matched_file_count": 1
         },
@@ -175,10 +163,6 @@
       "workspace": ".data/code-index/workspaces/registry-654c412cac0617391025/a44953fb1c391c9b738a4726bcda4e8468cfc8d1",
       "status": "ready",
       "modules": [
-        {
-          "module_id": "english-library",
-          "matched_file_count": 2
-        },
         {
           "module_id": "home",
           "matched_file_count": 1
@@ -214,7 +198,7 @@
         },
         {
           "module_id": "english-library",
-          "matched_file_count": 74
+          "matched_file_count": 13
         },
         {
           "module_id": "home",
@@ -222,7 +206,7 @@
         },
         {
           "module_id": "login",
-          "matched_file_count": 366
+          "matched_file_count": 336
         },
         {
           "module_id": "payment",
@@ -251,7 +235,7 @@
         },
         {
           "module_id": "english-library",
-          "matched_file_count": 97
+          "matched_file_count": 19
         },
         {
           "module_id": "home",
@@ -259,7 +243,7 @@
         },
         {
           "module_id": "login",
-          "matched_file_count": 635
+          "matched_file_count": 628
         },
         {
           "module_id": "payment",
@@ -278,10 +262,6 @@
       "workspace": ".data/code-index/workspaces/registry-654c412cac0617391025/a44953fb1c391c9b738a4726bcda4e8468cfc8d1",
       "status": "ready",
       "modules": [
-        {
-          "module_id": "english-library",
-          "matched_file_count": 2
-        },
         {
           "module_id": "home",
           "matched_file_count": 1

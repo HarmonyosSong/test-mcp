@@ -1,6 +1,7 @@
 # 当前系统架构
 
-> 本文描述当前 TypeScript Runtime 的实现。后续能力只看 [multi-capability-expansion-plan.md](multi-capability-expansion-plan.md)，不再用旧 Python 迁移文档推断现状。
+> 本文描述当前 TypeScript Runtime 的实现。2026-11-17 起诊断链路为**单 loop 去编排化架构**
+>（[0004 去编排化](decisions/0004-deorchestration.md)）：模型自主决定排查路径，代码层只封装工具与横切护栏。
 
 ## 1. 运行时边界
 
@@ -11,95 +12,104 @@ Web / 知音楼 IM / 评测
 Hono 产品 API + SSO/local 身份 + AG-UI 兼容 SSE
         |
         v
-RunAdmission + Runtime Supervisor
+RunAdmission（全局并发闸门 + 会话互斥）
         |
-        +-- ClientBranch: DiagnosisAgent（培优问题排查主 Agent / 本地调查）
-        |     +-- CapabilitySession
-        |     |     +-- 本地 Knowledge MCP
-        |     |     +-- Repository MCP（动态绑定的固定 archive 快照）
-        |     |     |     `-- 可选 CBM 内部适配器：符号、outline、调用候选
-        |     |     `-- 可选 LogCenter Catalog/SLS 工具
-        |     +-- SkillRegistry / 工具预算 / observe → source 门禁
-        |     `-- EvidenceLedger + submit_diagnosis_report
+        v
+runDiagnosisRound（单 loop，唯一诊断路径）
         |
-        `-- ServerBranch: AgentSlotRegistry
-              `-- Compass Slot → A2A JSON-RPC/SSE → 统一外部全栈 Agent（前端 / H5 / 服务端）
+        +-- DiagnosisAgent.stream（maxSteps=96，模型自主规划排查路径）
+        |     +-- 内置 load_skill（SkillRegistry 按可用工具过滤技能目录）
+        |     +-- RoundGuard 横切护栏：串行 dispatch / 调用与失败硬上限 /
+        |     |   同签名失败禁重试 / 结果缓存 / 连续无进展只注入提醒 / 软时限关工具
+        |     +-- ObservationRegistry（append-only 观测元数据，ev-ID 内容哈希）
+        |     `-- FinalAnswerValidator（非空 / 无协议泄露 / ev-ID 存在性 / 判定锚点）
+        |
+        +-- 能力会话：Knowledge MCP / 可选 LogCenter Catalog + SLS / 可选 code_index 目录
+        +-- 懒代理源码工具组（LazySourceHolder：read/search/list/parse_hilog 等 8 个代理，
+        |     未绑定返回提示；prepare_source 轮内热绑定快照）
+        +-- prepare_source：按用户描述与已确认日志事实绑定 version-registry 只读快照
+        `-- consult_compass（可选）：委派统一外部全栈 Agent，预算 4 次/轮，结论标注未验证
 
-Supervisor → 本地证据 + external_findings → 联合报告
-ProductStore → LibSQL（会话、仓库、快照、调查状态和证据）
+ProductStore → LibSQL（会话、快照、协查记录、观测元数据）
 ```
 
-Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 路由。Python 进程只提供 Knowledge/Repository MCP，不再拥有产品 Agent 或 HTTP 服务。Runtime 不提供 Shell、业务仓库写入、构建或设备操作。
+Mastra 负责模型与 Agent 流执行；Hono 只暴露产品定义的 REST/SSE 路由。Python 进程只提供
+Knowledge/Repository/code_index MCP，不再拥有产品 Agent 或 HTTP 服务。Runtime 不提供 Shell、
+业务仓库写入、构建或设备操作。
 
-## 2. 一轮调查
+## 2. 一轮诊断
 
-1. `POST /api/conversations/:id/messages` 先经过全局并发闸门和会话互斥，再持久化用户消息与 streaming 占位。初始写入失败不会留下幽灵任务；同会话并发返回 409，全局容量不足返回 429。
-2. `createInvestigationPlan()` 以确定性规则生成 `local`、`server` 或 `parallel` 计划。远端计划带有 `externalScope=frontend_backend`，明确 Compass 当前承载的是统一前端、H5 和服务端 Agent；`server` 仅是旧持久化分支名。`clientSteps` 明确客户端是否执行 `observe`、`source`；计划、理由、预算和分支状态随会话保存。
-3. `createRoundCapabilitySession()` 按轮创建知识、仓库和可选日志工具，统一传播 AbortSignal，检查工具冲突，并在结束时取消和逆序清理。学员身份通过 Runtime 私有内存上下文传给日志工具，不进入模型 schema。
-4. 本地分支复用 `DiagnosisAgent`。Runtime 先按用户提示词和已确认日志事实解析源码范围，再绑定 `version-registry` 选出的固定快照；故障诊断绑定源码时执行 `observe → source`：过早源码调用会被 Runtime 拒绝；目录不覆盖、空结果、身份未匹配或查询失败会降级，但不得把降级写成平台确认。
-5. 本地报告通过 `submit_diagnosis_report` 和 EvidenceLedger 校验。源码读取/搜索、可追溯到用户输入的 hilog，以及目标已绑定且匹配当前学员身份的远程日志（内网明文）可产生观测；知识和 Catalog 永远只是线索。
-6. 本地结构化结果以 `next_action.target=external` 和明确问题表达外部协查；`responsibility` 只表示当前证据的责任判断，不再兼任路由条件。规则与实现查询在本地知识不足时可转统一外部全栈 Agent，不要求源码/日志观测或 traceId；故障诊断仍要求本地观测和请求关联。满足条件后由 Runtime 自动调用，老师不需要审批或理解 Compass；预算、handoff 上限和远端结论隔离规则不变。
-7. 外部调查先创建带固定结构摘要和 digest 的 `ExternalConsultation`，由 Runtime 按策略自动授权并在同一轮调用远端、生成联合报告。老师只看到通俗进度和结果；历史 `pending` 记录仍可通过原审批接口兼容恢复，恢复轮次重新走准入，不重复已完成的本地调查。
-8. Compass 经 Agent Slot 调用，支持 Agent Card、JSON-RPC SSE、超时、取消和输出限长。远端结论写入 `external_findings`，不能进入本地 `evidence_refs`。
-9. 联合阶段由培优问题排查主 Agent 根据本地报告与结构化远端结论生成 `joint_assessment`。`verified_claims` 只能引用本地账本证据，外部 task/consultation ID 不能冒充观测。
-10. 工具终态和证据快照先持久化再发送 SSE；最终 completed/failed/cancelled 状态在流结束前保存。启动恢复会修复遗留 streaming，并保留可恢复的 pending 审批。
+1. `POST /api/conversations/:id/messages` 先经过全局并发闸门和会话互斥，再持久化用户消息与
+   streaming 占位。同会话并发返回 409，全局容量不足返回 429。
+2. 轮首最佳努力绑定源码：用户显式带版本时省一轮工具往返；歧义/缺口转为 limitations 文本。
+3. `createRoundCapabilitySession()` 按轮创建知识、可选日志目录与 code_index 工具，统一传播
+   AbortSignal，结束时逆序清理。学员身份经 Runtime 私有内存上下文传给日志工具，不进入模型 schema。
+4. 模型自主决定排查路径：知识检索（线索）→ 日志观察 / 粘贴 hilog 解析 → 需要源码时调用
+   `prepare_source` 绑定快照（返回缺口说明时先查日志或追问）→ 读码取证 → 本地证据不足且指向
+   服务端时 `consult_compass` 协查。技能正文（skills/）承载业务流程指引，模型按需 load_skill。
+5. 软时限（默认 900s）到期后 RoundGuard 关闭全部工具并提示收尾；180s 收尾窗后硬 abort 兜底。
+6. 最终回答经 FinalAnswerValidator 校验后放出：文本缓冲、打回重试 ≤2 次、仍不合格放行并记
+   verdict=null。verdict 从「判定：已定位|可能定位|证据不足|工具异常」锚点解析，写入
+   diagnosis_outcome 日志与知音楼标签。
+7. 工具终态和观测快照先持久化再发送 SSE；completed/failed 终态在流结束前保存。
+   启动恢复修复遗留 streaming；历史 waiting_confirmation 一律按中断修复（审批流已退役）。
 
-## 3. 调查计划规则
-
-按顺序命中：
-
-1. 用户明确限定只查客户端或只查服务端时遵守范围；只查服务端且远端可用时由 Runtime 自动协查，不再要求老师确认。
-2. 尚未解析出源码范围且没有本地证据时走 `local + ['observe']`，可进行知识问答或澄清。
-3. 绑定源码的客户端计划为 `['observe','source']`。
-4. 新工单即使命中服务端特征并带 traceId/requestId，只要账本没有 `kind=log` 观测，仍先 `local`。
-5. 已有本地日志观测，同时满足服务端信号、请求关联标识、Compass 开关和远端预算时才可直接 `parallel`。
-6. 学员编号或联系电话不是 Compass 的请求关联标识；`correlationReady` 仍只由 traceId/requestId 等请求级信息满足。
-7. `reported_platform` 只作线索。目录命中、store 名称、普通业务日志、空结果和查询失败都不能生成 `observed_platform`；只有身份匹配且平台字段唯一的实际条目可以确认。
-
-空 `search_cloud_logs` 和身份未匹配查询会进入“已尝试但未观察”的降级状态，不能据此确认平台或伪装成成功观测。
-
-## 4. 证据与数据边界
+## 3. 证据与数据边界
 
 | 内容 | 当前归属 | 能否支撑正向根因 |
 | --- | --- | --- |
-| 同一快照的源码读取/搜索 | `EvidenceLedger`，`kind=source`，携带 `source_context={repository_id, resolved_commit, path}` | 可以，但仍需模型说明因果 |
-| 可追溯到用户输入的 hilog 解析 | `EvidenceLedger`，`kind=log` | 可以 |
+| 同一快照的源码读取/搜索 | `ObservationRegistry`，`kind=source`，携带 `source_context={repository_id, resolved_commit, path}` | 可以，但仍需模型说明因果 |
+| 可追溯到用户输入的 hilog 解析 | `ObservationRegistry`，`kind=log` | 可以 |
 | 用户消息 | `ev-user-*` 用户引用 | 只能证明报告现象，不能单独证明技术根因 |
 | Knowledge MCP / Skill / Catalog | 导航与判据线索 | 不可以 |
-| 关联 `search_cloud_logs` / `discover_client_sessions` 条目 | 原文逐条进入 `EvidenceLedger`，携带 Runtime `observation_context` | 目标绑定且身份匹配时可以；未关联条目直接拒绝 |
-| Compass / 其他远端 Agent | `external_findings` | 不能作为本地已验证观测 |
-| 代码索引图节点/边 | Repository MCP 内部导航结果 | 不可以，必须回读同一快照源码 |
+| 关联 `search_cloud_logs` / `discover_client_sessions` 条目 | 元数据进入 `ObservationRegistry`，携带 `observation_context` | 目标绑定且身份匹配时可以；未关联条目直接拒绝 |
+| Compass / 其他远端 Agent | `external_findings` | 不能作为本地已验证观测，必须标注「仅来自远端 Agent 报告」 |
+| 代码索引图节点/边 | Repository/code_index MCP 内部导航结果 | 不可以，必须回读同一快照源码 |
 
-账本支持跨轮恢复、当前轮保护、历史容量淘汰、淘汰墓碑和相同内容重读恢复。报告引用必须逐字匹配观测；未知、过期或伪造 ID 会被拒绝，非法报告不会静默改成其他 verdict。
+注册表 append-only、无淘汰、无正文存储（500 条元数据软上限）。最终回答引用的 ev-ID 由
+校验器做存在性校验；摘录真实性交给模型自律与评测。
 
-## 5. 动态版本快照与并发
+## 4. 动态版本快照与并发
 
-- Runtime 启动时加载 `version-registry/<platform>/<product-line>.yaml`，只接受 `verified: true` 的 ref/commit 映射。用户不登记仓库、不选择分支、不绑定本地目录。
-- 首条用户消息和已确认 LogCenter 事实共同解析平台、产品线、形态、版本和构建。明确版本按指定登记行绑定；产品线未写出但登记表命中唯一产品线时自动补齐；缺少版本时选择唯一范围内最新已核验构建；多个产品线、形态或构建无法唯一确定时先启动日志调查并在仍无事实时追问，不在用户发送消息时直接返回 Runtime 歧义错误，也不跨端或跨产品线猜测。
-- GitLab archive 物化前校验登记 commit，登记的 `repos` 可包含一个 shell 和多个 component/config，并通过安全的 `mount_path` 生成组合只读工作区。缺映射、版本歧义、commit 不符或快照未准备均失败关闭。
-- 源码证据的 `source_context` 由 Runtime 从会话绑定的仓库、commit 和挂载路径注入，稳定证据 ID 也包含该身份；如果后续会话需要另一版本，必须新建会话，旧源码证据不能改标到新 commit。
-- 单进程内不同会话可并行，各自拥有独立 run、能力会话、预算、账本和远端任务。历史 `waiting_confirmation` 暂停态释放全局运行槽位，恢复时重新准入；新的常规协查不再进入等待态。
+- Runtime 启动时加载 `version-registry/<platform>/<product-line>.yaml`，只接受 `verified: true`
+  的 ref/commit 映射。用户不登记仓库、不选择分支、不绑定本地目录。
+- `prepare_source` 与轮首预绑共用同一解析链路：明确版本按指定登记行绑定；产品线未写出但登记表
+  命中唯一产品线时自动补齐；缺少版本时选择唯一范围内最新已核验构建；无法唯一确定时返回缺口
+  说明，由模型决定追问或先查日志。
+- GitLab archive 物化前校验登记 commit；登记的 `repos` 可包含一个 shell 和多个 component/config，
+  通过安全的 `mount_path` 生成组合只读工作区。
+- 源码证据的 `source_context` 由 Runtime 从会话绑定的仓库、commit 和挂载路径注入，稳定证据 ID
+  也包含该身份；换版本必须重新绑定，旧源码证据不能改标到新 commit。
+- 单进程内不同会话可并行，各自拥有独立能力会话、护栏实例、注册表和远端任务。
 - 多进程 lease/CAS 尚未实现，当前部署仍只支持一个 Runtime 进程。
 
-## 6. 持久化与安全
+## 5. 持久化与安全
 
-可选 CBM 索引是动态绑定快照的派生产物，缓存在 `.data/codebase-memory/`：`source-views/` 保存快照代码副本，`engine/` 保存上游索引，两者必须分开，避免 CBM 的缓存目录排除规则漏掉源码。身份绑定源码内容和引擎；每轮首次导航重新确认索引，快照身份变化时拒绝旧图查询。索引不进入证据账本，生产缓存复用和回收仍需部署验收。
+可选 CBM 索引与 code_index 目录是动态绑定快照的派生产物，缓存在 `.data/codebase-memory/` 与
+`code-index/`：索引不进入观测注册表，生产缓存复用和回收仍需部署验收。
 
-`product_conversations` 保存消息、证据、调查计划、分支状态、协查记录、外部结论和 Slot 审计；`product_snapshots` 保存动态版本登记产生的固定快照元数据。`product_repositories` 仅为旧数据迁移保留，不参与当前源码选择。`.data/knowledge-queries.jsonl` 与 `.data/knowledge-cases/` 是可重建的观测产物，不是对话事实源。
+`product_conversations` 保存消息、观测元数据快照、协查记录、外部结论和 Slot 审计；
+`product_snapshots` 保存动态版本登记产生的固定快照元数据。`product_repositories` 仅为旧数据
+迁移保留。`.data/knowledge-queries.jsonl` 与 `.data/knowledge-cases/` 是可重建的观测产物，
+不是对话事实源；案例归档体为 steps + 注册表元数据 + messages_state。
 
-模型配置保存在 owner-only `.data/model-config.json`，不进入产品数据库。2026-11-13 起全链路不脱敏（用户决定，内网协作排查）：学员编号/电话/凭证在工具结果、事件、证据、案例归档和日志中均明文保留；Runtime 每轮仍从用户明确标签构造学员标识上下文，用于日志匹配与 matched_identifiers 观测元数据。Compass 及其模型链路均在内网，外发摘要只包含用户原文和具体协查问题。外部 Agent 的原因判断在报告中作为待验证线索独立呈现，不进入本地证据或已验证根因候选。
+模型配置保存在 owner-only `.data/model-config.json`，不进入产品数据库。2026-11-13 起全链路
+不脱敏（用户决定，内网协作排查）：学员编号/电话/凭证在工具结果、事件、证据、案例归档和日志中
+均明文保留；Runtime 每轮仍从用户明确标签构造学员标识上下文，用于日志匹配与
+matched_identifiers 观测元数据。Compass 及其模型链路均在内网，外发摘要只包含用户原文和具体
+协查问题。
 
-## 7. 当前能力状态
+## 6. 当前能力状态
 
 | 能力 | 当前状态 |
 | --- | --- |
-| Mastra + Hono + LibSQL 主链路 | 已实现，旧 Python Agent/FastAPI 不再是运行入口 |
-| Supervisor、自动跨侧、预算和取消 | 已实现并有离线/恢复测试 |
-| Compass Agent Slot、自动协查和联合报告 | 已接入；真实 Compass A2A 已做过受控联调，对端按统一外部全栈 Agent 使用 |
+| Mastra + Hono + LibSQL 主链路 | 已实现，旧 Python Agent/FastAPI 已删除 |
+| 单 loop 诊断 + RoundGuard 护栏 + 最终回答校验 | 已实现并有回归测试 |
+| prepare_source 轮内热绑定 / consult_compass 协查工具 | 已实现；真实 Compass A2A 已做过受控联调 |
 | 多用户会话隔离与全局并发闸门 | 单进程已实现 |
-| LogCenter Catalog/SLS 四工具 | 目标绑定、身份发现、观测和关联入账框架已实现；真实生产字段覆盖仍待验收 |
+| LogCenter Catalog/SLS 工具组 | 目标绑定、身份发现、观测和关联入账框架已实现；真实生产字段覆盖仍待验收 |
 | 学员日志 → 平台确认 → 日志证据 | 合成 mock 链路已实现；真实学员与 HarmonyOS/具体业务字段尚未联调 |
-| Android/iOS/HarmonyOS 精确版本快照选择 | 登记表加载、精确选择、GitLab archive 物化、多仓组合挂载、提示词/日志上下文补齐和后续轮次绑定已实现；正在运行轮次不热切换 |
-| Repository MCP 内部代码导航 | 可选挂载 `search_code_symbols`、`get_code_outline`、`trace_code_path`；未配置时保留原工具，失败时明确报错并引导文本搜索。真实鸿蒙工程的导航与回读已做冒烟验证，三端精度仍待验收 |
+| Android/iOS/HarmonyOS 精确版本快照选择 | 登记表加载、精确选择、GitLab archive 物化、多仓组合挂载、轮内热绑定已实现 |
+| 代码导航（CBM + code_index 目录） | 可选挂载 `search_code_symbols`、`get_code_outline`、`trace_code_path` 与目录三工具；导航只作线索，失败回退文本搜索 |
 
 启动、配置和验证命令以根目录 [README.md](../README.md) 为准。

@@ -36,7 +36,7 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 | 能力协议 | MCP、`@mastra/mcp`、Python FastMCP 服务 |
 | 网页 | React 19、TypeScript、Vite |
 
-`agent/` 和 `server/` 只保留旧 Python Agent/FastAPI 源码与测试作为迁移参考，不再提供可安装项目或受支持运行入口；产品 Agent 与 HTTP runtime 由 `runtime/` 承载。当前架构见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，全部有效文档的入口见 [`docs/README.md`](docs/README.md)。
+产品 Agent 与 HTTP runtime 由 `runtime/` 承载（单 loop 去编排化架构）；旧 Python Agent/FastAPI 参考栈已于 2026-11-17 删除。当前架构见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，全部有效文档的入口见 [`docs/README.md`](docs/README.md)。
 
 ## 环境要求
 
@@ -236,4 +236,4 @@ skills/       声明式诊断 Skill
 docs/         当前架构、迁移规格、运维文档和历史设计记录
 ```
 
-设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 和 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)。真实学员日志链验收、观察后的自动源码换绑、多端产品化和代码索引验收只看 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)；完整文档入口见 [`docs/README.md`](docs/README.md)。
+设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)（编排层旧设计见带 superseded 说明的 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)）。真实学员日志链验收、观察后的自动源码换绑、多端产品化和代码索引验收只看 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)；完整文档入口见 [`docs/README.md`](docs/README.md)。

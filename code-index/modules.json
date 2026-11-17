@@ -2,7 +2,7 @@
   "modules": [
     {"module_id":"cross-report","title":"跨报","aliases":["跨报","转班报告","去结算"],"keywords":["crossReport","kuabao","CrossReport"],"path_hints":["crossreport","crossreport"]},
     {"module_id":"grinding-ear","title":"磨耳朵/英语听力","aliases":["磨耳朵","听力","grinding ear","grindingear"],"keywords":["GrindingEar","grindingEar","磨耳朵"],"path_hints":["grinding","cloudlearningforenglish"]},
-    {"module_id":"english-library","title":"英语书房","aliases":["英语书房","人文书房","书房","英语阅读"],"keywords":["EnglishLibrary","english_library","Library"],"path_hints":["library","englishlibrary","book"]},
+    {"module_id":"english-library","title":"英语书房","aliases":["英语书房","人文书房","书房","英语阅读"],"keywords":["EnglishLibrary","english_library","ClassLearnEngLibraryH5Page","LibraryBook"],"path_hints":["library","englishlibrary","book"]},
     {"module_id":"home","title":"首页","aliases":["首页","主页","home"],"keywords":["HomePage","homepage","Home"],"path_hints":["homepage","home"]},
     {"module_id":"login","title":"登录与身份","aliases":["登录","登陆","账号","身份"],"keywords":["Login","login","Auth","Token"],"path_hints":["login","auth","account"]},
     {"module_id":"payment","title":"支付与订单","aliases":["支付","订单","购买","权益"],"keywords":["Payment","payment","Order","order","Purchase"],"path_hints":["payment","order","purchase"]}

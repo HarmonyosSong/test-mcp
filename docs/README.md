@@ -7,7 +7,7 @@
 | 文档 | 用途 |
 | --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 当前 Runtime、Supervisor、能力会话、证据与存储的权威架构说明 |
-| [orchestration-layer-design.md](orchestration-layer-design.md) | 已实现的调查计划、客户端观察门禁、Agent Slot、审批恢复、并发和联合报告细则 |
+| [orchestration-layer-design.md](orchestration-layer-design.md) | （已被 0004 去编排化取代，历史参考）旧调查计划、观察门禁、Agent Slot 与联合报告细则 |
 | [multi-capability-expansion-plan.md](multi-capability-expansion-plan.md) | 尚未完成的能力及实施顺序；不是现有功能清单 |
 | [business-knowledge-and-code-search-research.md](business-knowledge-and-code-search-research.md) | 业务知识与代码索引分层、三端开源检索方案比较，以及 Repository MCP 内部 CBM 适配边界 |
 | [multi-platform-version-snapshot-design.md](multi-platform-version-snapshot-design.md) | 三端版本登记、commit 校验、GitLab archive 快照和会话源码选择 |

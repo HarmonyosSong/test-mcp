@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 EXTENSIONS = {".ets", ".ts", ".tsx", ".js", ".jsx", ".kt", ".kts", ".java", ".swift", ".m", ".mm", ".h", ".hpp", ".cpp", ".cc", ".gradle", ".json", ".json5", ".xml", ".yaml", ".yml", ".properties"}
-SKIP = {".git", ".idea", ".hvigor", "build", "dist", "node_modules", "oh_modules", "Pods"}
+SKIP = {".git", ".idea", ".hvigor", ".codebuddy", ".codex", ".claude", "AI", "build", "dist", "node_modules", "oh_modules", "Pods"}
 DECLARATION = re.compile(r"\b(?:class|interface|struct|enum|object|function|func|def|const|let|var)\s+([A-Za-z_$][\w$]*)")
 EXPORTED_DECLARATION = re.compile(r"\bexport\s+(?:default\s+)?(?:class|interface|struct|enum|object|function|func)\s+([A-Za-z_$][\w$]*)")
 
@@ -46,9 +46,13 @@ def files(root: Path) -> list[Path]:
 
 
 def matches(rule: dict[str, Any], relative: str, content: str) -> list[str]:
-    haystack = norm(relative + "\n" + content)
-    terms = [*rule.get("keywords", []), *rule.get("path_hints", [])]
-    return [term for term in terms if norm(term) and norm(term) in haystack]
+    path_text = norm(relative)
+    content_text = norm(content)
+    keywords = [term for term in rule.get("keywords", [])
+                if norm(term) and (norm(term) in path_text or norm(term) in content_text)]
+    hints = [term for term in rule.get("path_hints", [])
+             if norm(term) and norm(term) in path_text]
+    return keywords + hints
 
 
 def pointers(root: Path, paths: list[tuple[Path, list[str]]]) -> list[dict[str, Any]]:

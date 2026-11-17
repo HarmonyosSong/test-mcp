@@ -1,6 +1,11 @@
 # 编排层设计与实现：Supervisor、Agent Slot 与会话并发
 
-> 状态：本文描述**当前已接入聊天链路的实现**。学员日志关联入账、提示词/日志上下文解析和精确快照选择器已接入框架；真实字段验收与正在运行轮次的源码热切换边界见 [multi-capability-expansion-plan.md](multi-capability-expansion-plan.md)。
+> **已取代（2026-11-17）**：本文描述的确定性 Supervisor、客户端/服务端分支、联合阶段与
+> observe→source 门禁已被 [0004 去编排化](decisions/0004-deorchestration.md) 取代——
+> 诊断现在是单 loop：模型自主决定排查路径，编排能力收敛为 prepare_source / consult_compass
+> 工具与 RoundGuard 横切护栏。本文仅作历史参考保留。
+>
+> ~~状态：本文描述**当前已接入聊天链路的实现**。~~学员日志关联入账、提示词/日志上下文解析和精确快照选择器已接入框架；真实字段验收与正在运行轮次的源码热切换边界见 [multi-capability-expansion-plan.md](multi-capability-expansion-plan.md)。
 
 ## 1. 范围
 

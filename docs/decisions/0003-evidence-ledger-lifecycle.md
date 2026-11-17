@@ -1,6 +1,10 @@
 # 0003:观测证据生命周期与工具缓存一致性
 
-> 本 ADR 的证据生命周期和缓存原则仍生效；文中 `agent/tests` 与 Python 类名是历史验收上下文。当前 TypeScript 实现位于 `runtime/src/diagnosis/evidence.ts` 和 `runtime/src/diagnosis/agent.ts`，当前测试位于 `runtime/test/`。
+> **部分取代（2026-11-17）**：容量淘汰、墓碑与 submit 报告引用校验已随
+> [0004 去编排化](0004-deorchestration.md) 退役——观测注册表（ObservationRegistry）
+> 改为 append-only 元数据、无淘汰、无正文存储。ev-ID 内容哈希契约继续有效，
+> 缓存一致性原则（复用结果须通过注册表存在性校验）由 RoundGuard 继承。
+> 文中 `agent/tests`、Python 类名与 `evidence.ts` 均为历史验收上下文。
 
 2026-09-29。本决策替代 [0002](0002-runtime-knowledge-budget.md) 中「上限 120 条 FIFO 淘汰」的
 单一约定(0002 第 32-33 行);0002 其余约束仍然有效。触发事件:53 步会话中早期证据被
