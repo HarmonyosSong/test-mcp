@@ -282,9 +282,6 @@ export const ChatMessageSchema = z.object({
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
 
-// 编排计划仍在演进；持久化层先保留完整 JSON 对象，不锁死内部分支字段。
-export const InvestigationStateSchema = JsonObjectSchema;
-
 export const ExternalConsultationSchema = z.strictObject({
   id: z.string().min(1),
   conversation_id: z.string().min(1),
@@ -342,8 +339,6 @@ export const ConversationRecordSchema = z.object({
   build: nullableText.optional().default(null),
   model_override: z.string().max(250).nullable().optional().default(null),
   run_state: RunStateSchema.default('idle'),
-  consult_compass: z.boolean().default(false),
-  investigation: InvestigationStateSchema.nullable().default(null),
   consultations: z.array(ExternalConsultationSchema).default([]),
   external_findings: z.array(RemoteConclusionSchema).default([]),
   slot_audit: z.array(SlotAuditSchema).default([]),
@@ -377,8 +372,6 @@ export const SendMessageRequestSchema = z.object({
 export const UpdateConversationRequestSchema = z.object({
   title: z.string().trim().min(1).max(120).nullable().optional(),
   model_override: z.string().trim().max(250).nullable().optional(),
-  // 仅允许产品 UI 通过 PATCH 显式修改；聊天文本和模型输出没有该写路径。
-  consult_compass: z.boolean().optional(),
 });
 
 const credentialFreeHttpUrl = (value: string) => {
@@ -521,7 +514,6 @@ export type DiagnosisReport = z.infer<typeof DiagnosisReportSchema>;
 export type DiagnosisReportDraft = z.infer<typeof DiagnosisReportDraftSchema>;
 export type ToolEvent = z.infer<typeof ToolEventSchema>;
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
-export type InvestigationState = z.infer<typeof InvestigationStateSchema>;
 export type ExternalConsultation = z.infer<typeof ExternalConsultationSchema>;
 export type SlotAudit = z.infer<typeof SlotAuditSchema>;
 export type ConversationRecord = z.infer<typeof ConversationRecordSchema>;

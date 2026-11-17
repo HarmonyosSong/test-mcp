@@ -17,10 +17,10 @@ test('已知 AG-UI 事件仍按原契约解码', () => {
   );
 });
 
-for (const type of ['INVESTIGATION_PLAN', 'BRANCH_STATUS', 'JOINT_ASSESSMENT']) {
-  test(`当前前端解码编排事件 ${type}`, () => {
+for (const type of ['INVESTIGATION_PLAN', 'BRANCH_STATUS', 'JOINT_ASSESSMENT', 'EXTERNAL_CONSULTATION_REQUIRED']) {
+  test(`编排事件 ${type} 已退役：按未知事件静默忽略（兼容旧服务端/历史流）`, () => {
     const block = `data: ${JSON.stringify({ ...knownEvent, type })}`;
-    assert.equal(decodeAguiEventBlock(block)?.type, type);
+    assert.equal(decodeAguiEventBlock(block), null);
   });
 }
 

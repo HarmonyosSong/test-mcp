@@ -87,10 +87,10 @@ export interface ChatMessage {
   created_at: string;
 }
 
+// waiting_confirmation 随人工审批流退役；历史数据由服务端启动修复为 failed。
 export type RunState =
   | 'idle'
   | 'running'
-  | 'waiting_confirmation'
   | 'completed'
   | 'failed'
   | 'cancelled';
@@ -124,30 +124,6 @@ export interface ExternalConsultation {
   updated_at: string;
 }
 
-export interface InvestigationPlan {
-  mode: 'local' | 'server' | 'parallel';
-  branches: Array<'client' | 'server'>;
-  reason: string;
-  remoteSlots?: string[];
-  externalScope?: 'frontend_backend';
-  clientSteps?: Array<'observe' | 'source'>;
-  correlationReady?: boolean;
-  budget?: { maxSeconds: number; maxRemoteCalls: number };
-  maxHandoffRounds?: number;
-}
-
-export interface InvestigationState {
-  currentPlan?: InvestigationPlan;
-  initialPlan?: InvestigationPlan;
-  planHistory?: InvestigationPlan[];
-  [key: string]: unknown;
-}
-
-export interface ConsultationAction {
-  consultationId: string;
-  decision: 'approve' | 'reject';
-}
-
 export interface ChatConversation {
   id: string;
   title: string;
@@ -171,10 +147,8 @@ export interface ChatConversation {
   build?: string | null;
   model_override?: string | null;
   run_state?: RunState;
-  consult_compass?: boolean;
   consultations?: ExternalConsultation[];
   external_findings?: RemoteConclusion[];
-  investigation?: InvestigationState | null;
   messages: ChatMessage[];
   created_at: string;
   updated_at: string;

@@ -110,7 +110,7 @@ export const api = {
   getConversation: (id: string) => request<ChatConversation>(`/conversations/${id}`),
   updateConversation: (
     id: string,
-    patch: { title?: string; model_override?: string; consult_compass?: boolean },
+    patch: { title?: string; model_override?: string },
   ) =>
     request<ChatConversation>(`/conversations/${id}`, {
       method: 'PATCH',

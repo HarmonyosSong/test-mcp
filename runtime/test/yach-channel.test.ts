@@ -1,57 +1,34 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { DiagnosisReportSchema } from '../src/domain/schemas.js';
 import { formatYachFinalReply } from '../src/channels/yach/channel.js';
+import { IM_MESSAGE_LIMIT } from '../src/channels/yach/cli.js';
 
-test('知音楼只发送最终结构化报告，不发送协查前的中间汇总', () => {
-  const report = DiagnosisReportSchema.parse({
-    verdict: 'insufficient_evidence',
-    summary: '联合调查完成，当前只能确认客户端入口状态。',
-    issue_category: 'implementation',
-    task_type: 'implementation',
-    confidence: 0.4,
-    responsibility: 'unknown',
-    root_cause_candidates: [],
-    missing_information: ['需要确认权益接口字段'],
-    joint_assessment: {
-      relation: 'unverified',
-      text: '远端结果需要源码或接口证据复核。',
-      verified_claims: [],
-      unverified_claims: ['仅来自远端 Agent 报告：解锁状态由权益接口返回。'],
-      next_actions: ['补充当前版本和端形态'],
-    },
-    evidence: [],
-    external_findings: [{
-      consultation_id: 'consult-1',
-      task_id: 'task-1',
-      context_id: null,
-      agent_id: 'compass',
-      agent_version: null,
-      state: 'TASK_STATE_COMPLETED',
-      text: '解锁状态由权益接口返回。',
-      truncated: false,
-      scope: ['current_question'],
-      limitations: [],
-      request_digest: 'sha256:test',
-      received_at: '2026-11-13T07:00:00.000Z',
-    }],
-  });
+test('知音楼发送校验后的最终回答全文，首行判定锚点即结论标签', () => {
+  const text = '判定：可能定位\n启动白屏源于 LoginPage.ets:42 访问缺失字段抛出 TypeError。\n仍需补充：当前版本号。';
+  const reply = formatYachFinalReply(text, 'http://127.0.0.1:5174/xesapp-agent/');
 
-  const reply = formatYachFinalReply(
-    report,
-    '用户问题原文：旧的协查前汇总',
-    'http://127.0.0.1:5174/xesapp-agent/',
-  );
-
-  assert.match(reply, /最终诊断结论/);
-  assert.match(reply, /解锁状态由权益接口返回/);
-  assert.match(reply, /补充当前版本和端形态/);
-  assert.doesNotMatch(reply, /用户问题原文：旧的协查前汇总/);
-  assert.match(reply, /完整报告请打开工作台/);
+  assert.match(reply, /^判定：可能定位/);
+  assert.match(reply, /LoginPage\.ets:42/);
+  assert.match(reply, /补充：当前版本号/);
+  assert.match(reply, /完整报告请打开工作台：http:\/\/127\.0\.0\.1:5174\/xesapp-agent\//);
 });
 
-test('没有最终报告时才回退到诊断正文', () => {
-  const reply = formatYachFinalReply(null, '诊断失败，请打开工作台。', '/xesapp-agent/');
-  assert.match(reply, /诊断失败，请打开工作台/);
+test('判定锚点缺失时只发兜底句，不放出未校验文本', () => {
+  const reply = formatYachFinalReply('没有锚点的回答正文', '/xesapp-agent/');
+  assert.match(reply, /诊断已完成，请打开工作台查看详情/);
+  assert.doesNotMatch(reply, /没有锚点的回答正文/);
+
+  const empty = formatYachFinalReply('', '/xesapp-agent/');
+  assert.match(empty, /诊断已完成，请打开工作台查看详情/);
+  const missing = formatYachFinalReply(null, '/xesapp-agent/');
+  assert.match(missing, /诊断已完成，请打开工作台查看详情/);
+});
+
+test('超长回答截断到 IM 上限并保留工作台链接', () => {
+  const text = `判定：已定位\n${'很长的结论。'.repeat(2000)}`;
+  const reply = formatYachFinalReply(text, 'http://127.0.0.1:5174/xesapp-agent/');
+  assert.ok(reply.length <= IM_MESSAGE_LIMIT + 100);
+  assert.match(reply, /已截断/);
+  assert.match(reply, /完整报告请打开工作台/);
 });

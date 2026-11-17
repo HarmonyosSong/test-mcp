@@ -225,8 +225,6 @@ test('legacy conversation records validate persisted shape and fill historical d
   });
   assert.equal(record.model_override, null);
   assert.equal(record.run_state, 'idle');
-  assert.equal(record.consult_compass, false);
-  assert.equal(record.investigation, null);
   assert.deepEqual(record.consultations, []);
   assert.deepEqual(record.external_findings, []);
   assert.deepEqual(record.slot_audit, []);
@@ -240,18 +238,11 @@ test('legacy conversation records validate persisted shape and fill historical d
   assert.equal(ConversationRecordSchema.safeParse({ ...record, created_at: 'yesterday' }).success, false);
 });
 
-test('conversation orchestration fields preserve plans, consultations, findings, and audits', () => {
+test('conversation records preserve consultations, findings, and audits', () => {
   const record = ConversationRecordSchema.parse({
     id: 'conv-orchestration',
     title: 'joint investigation',
     run_state: 'waiting_confirmation',
-    consult_compass: true,
-    investigation: {
-      initial_plan: { mode: 'local', branches: ['client'] },
-      current_plan: { mode: 'server', branches: ['server'], remoteSlots: ['compass'] },
-      plan_change_reason: '本地报告给出 server 路由',
-      branch_states: { client: 'completed', server: 'pending' },
-    },
     consultations: [{
       id: 'consultation-1',
       conversation_id: 'conv-orchestration',
@@ -281,11 +272,8 @@ test('conversation orchestration fields preserve plans, consultations, findings,
     created_at: timestamp,
     updated_at: timestamp,
   });
+  // waiting_confirmation 是已退役审批流的遗产状态，schema 保留枚举值以兼容历史数据。
   assert.equal(record.run_state, 'waiting_confirmation');
-  assert.equal(record.consult_compass, true);
-  assert.deepEqual(record.investigation?.current_plan, {
-    mode: 'server', branches: ['server'], remoteSlots: ['compass'],
-  });
   assert.deepEqual(record.consultations[0]?.attachment_items, []);
   assert.equal(record.external_findings[0]?.task_id, 'task-1');
   assert.equal(record.slot_audit[0]?.slotId, 'compass');

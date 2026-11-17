@@ -1,6 +1,6 @@
 import { apiPath } from '../auth/paths';
 import { authenticatedFetch } from '../auth/session-fetch';
-import type { ChatConversation, ConsultationAction } from '../types';
+import type { ChatConversation } from '../types';
 import { reduceChatEvent } from './chatReducer';
 import { decodeAguiEventBlock, type AguiEvent } from './events';
 
@@ -121,29 +121,6 @@ export async function streamChatMessage(
   return readEventStream<ChatConversation>(
     apiPath(`/conversations/${conversationId}/messages`),
     { content },
-    {
-      signal: options.signal,
-      onEvent: options.onEvent,
-      reduce: reduceChatEvent,
-    },
-  );
-}
-
-/** 审批请求不携带任何可修改外发内容的字段，恢复轮次仍走统一 AG-UI 流。 */
-export async function streamConsultationDecision(
-  conversationId: string,
-  consultationId: string,
-  decision: ConsultationAction['decision'],
-  options: {
-    signal?: AbortSignal;
-    onEvent?: (event: AguiEvent, conversation: ChatConversation | null) => void;
-  } = {},
-): Promise<ChatConversation> {
-  return readEventStream<ChatConversation>(
-    apiPath(
-      `/conversations/${encodeURIComponent(conversationId)}/consultations/${encodeURIComponent(consultationId)}/${decision}`,
-    ),
-    {},
     {
       signal: options.signal,
       onEvent: options.onEvent,

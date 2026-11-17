@@ -1,20 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { streamChatMessage, streamConsultationDecision } from '../agui/client';
+import { streamChatMessage } from '../agui/client';
 import type { AguiEvent } from '../agui/events';
-import {
-  investigationProgressForEvent,
-  type InvestigationProgress,
-} from '../agui/progress';
 import { api } from '../api';
-import { consultationDecisionErrorMessage } from '../consultation';
 import { loadSessionState } from '../sessionFlow';
 import type {
   ChatConversation,
   ChatConversationSummary,
   ConnectionState,
-  ConsultationAction,
   CreateConversationInput,
 } from '../types';
+
+/** 单 loop 时代的进度提示：只有「进行中」一种状态，编排阶段的 waiting 已退役。 */
+export interface ChatProgress {
+  text: string;
+}
 
 interface UseChatSessionsOptions {
   connection: ConnectionState;
@@ -27,17 +26,12 @@ export interface ChatController {
   activeId: string | null;
   sending: boolean;
   loaded: boolean;
-  progress: InvestigationProgress | null;
-  consultationAction: ConsultationAction | null;
+  progress: ChatProgress | null;
   select: (id: string) => void;
   createNew: (input?: CreateConversationInput) => Promise<boolean>;
   refresh: () => Promise<boolean>;
   remove: (id: string) => Promise<void>;
   send: (content: string) => Promise<void>;
-  decideConsultation: (
-    consultationId: string,
-    decision: ConsultationAction['decision'],
-  ) => Promise<void>;
   stop: () => void;
   setModelOverride: (spec: string) => Promise<void>;
 }
@@ -51,8 +45,7 @@ export function useChatSessions({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [progress, setProgress] = useState<InvestigationProgress | null>(null);
-  const [consultationAction, setConsultationAction] = useState<ConsultationAction | null>(null);
+  const [progress, setProgress] = useState<ChatProgress | null>(null);
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
   const abortRef = useRef<AbortController | null>(null);
@@ -68,8 +61,6 @@ export function useChatSessions({
     (conversationId: string, event: AguiEvent, conversation: ChatConversation | null) => {
       if (activeIdRef.current !== conversationId) return;
       if (conversation && conversation.id === conversationId) setActive(conversation);
-      const nextProgress = investigationProgressForEvent(event);
-      if (nextProgress) setProgress(nextProgress);
       if (event.type === 'RUN_FINISHED' || event.type === 'RUN_ERROR') setProgress(null);
     },
     [],
@@ -154,7 +145,7 @@ export function useChatSessions({
       const abortController = new AbortController();
       abortRef.current = abortController;
       setSending(true);
-      setProgress({ text: '正在检查应用', state: 'active' });
+      setProgress({ text: '正在检查应用' });
       try {
         await streamChatMessage(conversationId, content, {
           signal: abortController.signal,
@@ -181,55 +172,6 @@ export function useChatSessions({
       } finally {
         if (abortRef.current === abortController) abortRef.current = null;
         busyRef.current = false;
-        setSending(false);
-      }
-    },
-    [onNotice, refreshSummaries, updateFromEvent],
-  );
-
-  const decideConsultation = useCallback(
-    async (consultationId: string, decision: ConsultationAction['decision']) => {
-      const conversationId = activeIdRef.current;
-      if (!conversationId || busyRef.current) return;
-
-      busyRef.current = true;
-      const abortController = new AbortController();
-      abortRef.current = abortController;
-      setConsultationAction({ consultationId, decision });
-      setSending(true);
-      setProgress({
-        text: decision === 'approve' ? '正在继续排查' : '正在整理结论',
-        state: 'active',
-      });
-      try {
-        await streamConsultationDecision(conversationId, consultationId, decision, {
-          signal: abortController.signal,
-          onEvent: (event, conversation) =>
-            updateFromEvent(conversationId, event, conversation),
-        });
-        void refreshSummaries();
-      } catch (error) {
-        const aborted =
-          abortController.signal.aborted ||
-          (error instanceof DOMException && error.name === 'AbortError');
-        if (!aborted) {
-          onNotice({
-            kind: 'error',
-            message: consultationDecisionErrorMessage(error, decision),
-          });
-        }
-        // 409、429、中断和流错误都重新读取真实状态，绝不靠本地猜测审批结果。
-        try {
-          const detail = await api.getConversation(conversationId);
-          if (activeIdRef.current === conversationId) setActive(detail);
-        } catch {
-          // 保留确认卡片，便于用户稍后重试或手动刷新。
-        }
-        void refreshSummaries();
-      } finally {
-        if (abortRef.current === abortController) abortRef.current = null;
-        busyRef.current = false;
-        setConsultationAction(null);
         setSending(false);
       }
     },
@@ -264,13 +206,11 @@ export function useChatSessions({
     sending,
     loaded,
     progress,
-    consultationAction,
     select,
     createNew,
     refresh: load,
     remove,
     send,
-    decideConsultation,
     stop,
     setModelOverride,
   };

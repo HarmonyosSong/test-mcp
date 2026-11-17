@@ -1,39 +1,38 @@
-import { LoaderCircle, SendHorizonal, ShieldAlert, X } from 'lucide-react';
 import { formatDate } from '../../format';
-import type { ConsultationAction, ExternalConsultation } from '../../types';
+import type { ExternalConsultation } from '../../types';
 
-interface ConsultationCardProps {
-  consultation: ExternalConsultation;
-  action: ConsultationAction | null;
-  disabled: boolean;
-  onDecision: (
-    consultationId: string,
-    decision: ConsultationAction['decision'],
-  ) => void;
-}
+const STATUS_LABELS: Record<ExternalConsultation['status'], string> = {
+  pending: '待确认（审批流已退役）',
+  approved: '已确认',
+  rejected: '已拒绝',
+  sent: '已发送',
+  completed: '已完成',
+  failed: '失败',
+  cancel_requested: '取消中',
+  unknown: '未知',
+  expired: '已过期',
+};
 
+/**
+ * 历史协查记录的只读展示。人工确认流程已随编排层退役：
+ * 新协查由 consult_compass 工具在轮内自动完成，这里只负责呈现记录。
+ */
 export function ConsultationCard({
   consultation,
-  action,
-  disabled,
-  onDecision,
-}: ConsultationCardProps) {
+}: {
+  consultation: ExternalConsultation;
+}) {
   const outboundText = consultation.outbound_text;
   const hasOutboundText = typeof outboundText === 'string' && outboundText.trim().length > 0;
-  const actionPending = action?.consultationId === consultation.id ? action.decision : null;
-  const buttonsDisabled = disabled || Boolean(action) || !hasOutboundText;
 
   return (
     <section className="consultation-card" aria-labelledby={`consultation-${consultation.id}`}>
       <header className="consultation-card-header">
-        <span className="consultation-card-icon" aria-hidden="true">
-          <ShieldAlert size={18} />
-        </span>
         <div>
-          <span className="eyebrow">外发确认</span>
-          <h3 id={`consultation-${consultation.id}`}>需要你的确认才能继续协查</h3>
+          <span className="eyebrow">外部协查</span>
+          <h3 id={`consultation-${consultation.id}`}>Compass 全栈协查记录</h3>
         </div>
-        <span className="consultation-status">等待确认</span>
+        <span className="consultation-status">{STATUS_LABELS[consultation.status] ?? consultation.status}</span>
       </header>
 
       <dl className="consultation-meta">
@@ -43,57 +42,24 @@ export function ConsultationCard({
         </div>
         <div>
           <dt>协查原因</dt>
-          <dd>{consultation.reason || '为继续排查当前问题，需要请求 Compass 协助。'}</dd>
+          <dd>{consultation.reason || '排查当前问题需要 Compass 协助。'}</dd>
         </div>
         <div>
-          <dt>过期时间</dt>
-          <dd>{consultation.expires_at ? formatDate(consultation.expires_at) : '未提供'}</dd>
+          <dt>更新时间</dt>
+          <dd>{consultation.updated_at ? formatDate(consultation.updated_at) : '未提供'}</dd>
         </div>
       </dl>
 
-      <div className="consultation-outbound-block">
-        <span>将完整发送以下内容</span>
-        {hasOutboundText ? (
+      {hasOutboundText && (
+        <div className="consultation-outbound-block">
+          <span>发送内容</span>
           <pre className="consultation-outbound">{outboundText}</pre>
-        ) : (
-          <p className="consultation-missing-content" role="alert">
-            暂时无法读取外发内容，请刷新会话后再操作。
-          </p>
-        )}
-      </div>
+        </div>
+      )}
 
       <p className="consultation-card-note">
-        请仔细核对。确认后只会发送这里展示的文字；外发内容不能在本页面修改。
+        远端结论未经本地验证，只能作为待验证线索。
       </p>
-
-      <footer className="consultation-card-actions">
-        <button
-          type="button"
-          className="secondary-button"
-          disabled={buttonsDisabled}
-          onClick={() => onDecision(consultation.id, 'reject')}
-        >
-          {actionPending === 'reject' ? (
-            <LoaderCircle className="spin" size={15} />
-          ) : (
-            <X size={15} />
-          )}
-          拒绝外发
-        </button>
-        <button
-          type="button"
-          className="primary-button"
-          disabled={buttonsDisabled}
-          onClick={() => onDecision(consultation.id, 'approve')}
-        >
-          {actionPending === 'approve' ? (
-            <LoaderCircle className="spin" size={15} />
-          ) : (
-            <SendHorizonal size={15} />
-          )}
-          确认发送并继续排查
-        </button>
-      </footer>
     </section>
   );
 }

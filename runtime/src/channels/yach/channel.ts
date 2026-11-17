@@ -4,9 +4,10 @@ import type { RuntimeConfig } from '../../config.js';
 import type { CapabilityMcp } from '../../capabilities/mcp.js';
 import type { DiagnosisAgent } from '../../diagnosis/agent.js';
 import { runDiagnosisRound, type RunDiagnosisRoundOptions } from '../../diagnosis/run-round.js';
+import { parseVerdictMarker } from '../../diagnosis/final-answer-validator.js';
 import type { ModelConfiguration } from '../../model/configuration.js';
 import type { ProductStore } from '../../product/store.js';
-import type { ConversationRecord, DiagnosisReport } from '../../domain/schemas.js';
+import type { ConversationRecord } from '../../domain/schemas.js';
 import { IM_MESSAGE_LIMIT, YachCli } from './cli.js';
 import { buildGroupDiagnosisContent, summarizeGroupHistory } from './history.js';
 import { yachHistory, yachInbound, yachInboundSkipped, yachOutbound } from './log.js';
@@ -32,60 +33,19 @@ function truncateReply(text: string, workbenchUrl: string): string {
   return `${text.slice(0, budget).trimEnd()}\n\n…（已截断）${suffix}`;
 }
 
-const VERDICT_LABELS: Record<DiagnosisReport['verdict'], string> = {
-  located: '已定位',
-  probable: '可能定位',
-  insufficient_evidence: '证据不足',
-  tool_error: '工具异常',
-};
-
-const RESPONSIBILITY_LABELS: Record<NonNullable<DiagnosisReport['responsibility']>, string> = {
-  client: '客户端',
-  server: '服务端',
-  shared: '跨侧共同影响',
-  unknown: '暂无法确认',
-};
-
-function clipSummary(value: string, max = 900): string {
-  const chars = Array.from(value.trim());
-  return chars.length <= max ? value.trim() : `${chars.slice(0, max).join('')}…`;
-}
-
-/** 只用最终结构化报告生成 IM 正文，避免把协查前的模型草稿发给知音楼。 */
+/**
+ * 知音楼最终回复：直接使用经校验的最终回答文本（首行「判定：」锚点即结论标签）。
+ * 锚点缺失说明该文本未通过校验约定，只发兜底句引导到工作台，避免放出未校验内容。
+ */
 export function formatYachFinalReply(
-  report: DiagnosisReport | null | undefined,
-  fallback: string,
+  text: string | null | undefined,
   workbenchUrl: string,
 ): string {
-  if (!report) return truncateReply(fallback, workbenchUrl);
-
-  const lines = ['**最终诊断结论**', clipSummary(report.summary)];
-  lines.push('', `- 判定：${VERDICT_LABELS[report.verdict]}`);
-  lines.push(`- 责任范围：${RESPONSIBILITY_LABELS[report.responsibility ?? 'unknown']}`);
-  if (report.likely_location) lines.push(`- 位置：${report.likely_location}`);
-
-  if (report.root_cause_candidates.length > 0) {
-    lines.push('', '**已验证或本地支持的候选**');
-    for (const candidate of report.root_cause_candidates.slice(0, 3)) {
-      lines.push(`- ${clipSummary(candidate.title, 180)}：${clipSummary(candidate.explanation, 420)}`);
-    }
+  const body = text?.trim() ?? '';
+  if (!body || !parseVerdictMarker(body)) {
+    return truncateReply('诊断已完成，请打开工作台查看详情。', workbenchUrl);
   }
-
-  const remoteCandidates = report.joint_assessment?.unverified_claims.length
-    ? report.joint_assessment.unverified_claims
-    : report.external_findings?.map((finding) => `仅来自远端 Agent 报告：${finding.text}`) ?? [];
-  if (remoteCandidates.length > 0) {
-    lines.push('', '**外部候选原因（未验证）**');
-    for (const candidate of remoteCandidates.slice(0, 3)) lines.push(`- ${clipSummary(candidate, 700)}`);
-  }
-
-  const gaps = [...report.missing_information, ...(report.joint_assessment?.next_actions ?? [])];
-  if (gaps.length > 0) {
-    lines.push('', '**仍需补充**');
-    for (const gap of gaps.slice(0, 4)) lines.push(`- ${clipSummary(gap, 300)}`);
-  }
-  lines.push('', `完整报告请打开工作台：${workbenchUrl}`);
-  return truncateReply(lines.join('\n'), workbenchUrl);
+  return truncateReply(body, workbenchUrl);
 }
 
 export interface YachChannelDeps {
@@ -398,11 +358,7 @@ export class YachChannel {
         });
       await progress.finish(result.terminal === 'completed' ? '诊断完成' : '诊断失败');
       const body = result.terminal === 'completed'
-        ? formatYachFinalReply(
-          result.assistantMessage.report,
-          '诊断已完成，但未生成最终结构化报告，请打开工作台查看详情。',
-          this.workbenchUrl(),
-        )
+        ? formatYachFinalReply(result.text, this.workbenchUrl())
         : (result.assistantMessage.error || '诊断失败，请稍后重试或打开网页工作台。');
       await this.reply(event, body);
     } catch (error) {

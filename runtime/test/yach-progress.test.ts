@@ -10,14 +10,17 @@ import {
 } from '../src/channels/yach/progress-map.js';
 import { YachProgressCard, type YachCardApi } from '../src/channels/yach/progress.js';
 
-test('progressStepForTool 区分学员/日志/源码/知识', () => {
+test('progressStepForTool 区分学员/日志/源码/知识/协查', () => {
   assert.equal(progressStepForTool('lookup_learner'), 'learner');
   assert.equal(progressStepForTool('resolve_log_target'), 'logs');
   assert.equal(progressStepForTool('search_cloud_logs'), 'logs');
   assert.equal(progressStepForTool('search_project_text'), 'source');
   assert.equal(progressStepForTool('search_knowledge'), 'knowledge');
-  assert.equal(progressStepForTool('submit_diagnosis_report'), 'report');
+  assert.equal(progressStepForTool('prepare_source'), 'source');
+  assert.equal(progressStepForTool('consult_compass'), 'consult');
   assert.equal(progressLabelForTool('lookup_learner'), '正在查询学员信息');
+  assert.equal(progressLabelForTool('prepare_source'), '正在绑定源码快照');
+  assert.equal(progressLabelForTool('consult_compass'), '正在请求外部协查');
 });
 
 test('applyProgressEvent 按工具起止勾选清单', () => {
@@ -58,7 +61,7 @@ test('renderProgressChecklist 输出任务进度摘要', () => {
   checklist.learner = 'done';
   checklist.logs = 'active';
   const text = renderProgressChecklist(checklist, '正在查询远程日志', 12);
-  assert.match(text, /已完成 1\/5/);
+  assert.match(text, /已完成 1\/6/);
   assert.match(text, /✓ 查询学员信息/);
   assert.match(text, /→ 检索线上日志/);
   assert.match(text, /正在查询远程日志（12 秒）/);

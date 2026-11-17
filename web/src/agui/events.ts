@@ -1,9 +1,5 @@
 import type {
   ChatConversation,
-  ExternalConsultation,
-  InvestigationPlan,
-  JointAssessment,
-  Responsibility,
   ToolEvent,
 } from '../types';
 
@@ -17,10 +13,6 @@ export const AGUI_EVENT_TYPES = [
   'TEXT_MESSAGE_START',
   'TEXT_MESSAGE_CONTENT',
   'TEXT_MESSAGE_END',
-  'INVESTIGATION_PLAN',
-  'BRANCH_STATUS',
-  'EXTERNAL_CONSULTATION_REQUIRED',
-  'JOINT_ASSESSMENT',
 ] as const;
 
 export type AguiEventType = (typeof AGUI_EVENT_TYPES)[number];
@@ -86,34 +78,6 @@ export interface TextMessageEndEvent extends AguiEventBase {
   message_id: string;
 }
 
-export interface InvestigationPlanEvent extends AguiEventBase {
-  type: 'INVESTIGATION_PLAN';
-  plan?: InvestigationPlan;
-  mode?: InvestigationPlan['mode'];
-  branches?: InvestigationPlan['branches'];
-  reason?: string;
-  resumed?: boolean;
-}
-
-export interface BranchStatusEvent extends AguiEventBase {
-  type: 'BRANCH_STATUS';
-  branch: 'client' | 'server';
-  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped';
-  summary?: string;
-}
-
-export interface ExternalConsultationRequiredEvent extends AguiEventBase {
-  type: 'EXTERNAL_CONSULTATION_REQUIRED';
-  consultation?: ExternalConsultation;
-  consultation_id?: string;
-}
-
-export interface JointAssessmentEvent extends AguiEventBase {
-  type: 'JOINT_ASSESSMENT';
-  responsibility: Responsibility;
-  assessment?: JointAssessment | null;
-}
-
 export type AguiEvent =
   | RunStartedEvent
   | ToolCallStartEvent
@@ -123,11 +87,7 @@ export type AguiEvent =
   | RunErrorEvent
   | TextMessageStartEvent
   | TextMessageContentEvent
-  | TextMessageEndEvent
-  | InvestigationPlanEvent
-  | BranchStatusEvent
-  | ExternalConsultationRequiredEvent
-  | JointAssessmentEvent;
+  | TextMessageEndEvent;
 
 const EVENT_TYPE_SET = new Set<string>(AGUI_EVENT_TYPES);
 

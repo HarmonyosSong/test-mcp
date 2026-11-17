@@ -211,10 +211,6 @@ function App() {
               onStop={chat.stop}
               onModelChange={(spec) => void chat.setModelOverride(spec)}
               progress={chat.progress}
-              consultationAction={chat.consultationAction}
-              onConsultationDecision={(consultationId, decision) =>
-                void chat.decideConsultation(consultationId, decision)
-              }
             />
           ) : (
             <div className="chat-guide" role="status">

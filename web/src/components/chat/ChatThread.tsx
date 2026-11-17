@@ -2,21 +2,18 @@ import { Select } from '@arco-design/web-react';
 import {
   AlertTriangle,
   Check,
-  Clock3,
   Copy,
   LoaderCircle,
   MessageSquare,
   Wrench,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { InvestigationProgress } from '../../agui/progress';
+import type { ChatProgress } from '../../hooks/useChatSessions';
 import { api } from '../../api';
-import { pendingConsultations as getPendingConsultations } from '../../consultation';
 import { estimateCost, formatCost, formatDate, formatTokens } from '../../format';
 import type {
   ChatConversation,
   ChatMessage,
-  ConsultationAction,
   ModelStatus,
 } from '../../types';
 import { ChatComposer } from './ChatComposer';
@@ -35,12 +32,7 @@ interface ChatThreadProps {
   onSend: (content: string) => void;
   onStop: () => void;
   onModelChange: (spec: string) => void;
-  progress: InvestigationProgress | null;
-  consultationAction: ConsultationAction | null;
-  onConsultationDecision: (
-    consultationId: string,
-    decision: ConsultationAction['decision'],
-  ) => void;
+  progress: ChatProgress | null;
 }
 
 /** 从模型名解析上下文窗口的兜底：如 k3-256k → 256k，k3-1m → 1M。 */
@@ -174,15 +166,13 @@ export function ChatThread({
   onStop,
   onModelChange,
   progress,
-  consultationAction,
-  onConsultationDecision,
 }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const fetchingModels = useRef(false);
   const messageCount = conversation.messages.length;
   const lastMessage = conversation.messages.at(-1);
-  const pendingConsultations = getPendingConsultations(conversation);
+  const consultations = conversation.consultations ?? [];
 
   const activeModelName = useMemo(() => {
     const override = conversation.model_override;
@@ -239,7 +229,7 @@ export function ChatThread({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [messageCount, lastMessage?.content, lastMessage?.steps.length, pendingConsultations.length, progress?.text]);
+  }, [messageCount, lastMessage?.content, lastMessage?.steps.length, consultations.length, progress?.text]);
 
   const modelOptions = useMemo(() => {
     const options = new Set(availableModels);
@@ -309,12 +299,8 @@ export function ChatThread({
       </header>
 
       {progress && (
-        <div className={`investigation-progress investigation-progress-${progress.state}`} role="status">
-          {progress.state === 'waiting' ? (
-            <Clock3 size={15} aria-hidden="true" />
-          ) : (
-            <LoaderCircle className="spin" size={15} aria-hidden="true" />
-          )}
+        <div className="investigation-progress investigation-progress-active" role="status">
+          <LoaderCircle className="spin" size={15} aria-hidden="true" />
           <span>{progress.text}</span>
         </div>
       )}
@@ -347,20 +333,14 @@ export function ChatThread({
             ),
           )
         )}
-        {pendingConsultations.map((consultation) => (
-          <ConsultationCard
-            key={consultation.id}
-            consultation={consultation}
-            action={consultationAction}
-            disabled={sending}
-            onDecision={onConsultationDecision}
-          />
+        {consultations.map((consultation) => (
+          <ConsultationCard key={consultation.id} consultation={consultation} />
         ))}
         <div ref={bottomRef} />
       </div>
 
       <ChatComposer
-        disabled={composerDisabled || pendingConsultations.length > 0}
+        disabled={composerDisabled}
         sending={sending}
         toolbarExtra={toolbarExtra}
         onSend={onSend}

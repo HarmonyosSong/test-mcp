@@ -47,36 +47,6 @@ export function reduceChatEvent(
       });
     case 'RUN_ERROR':
       return event.conversation ?? current;
-    case 'INVESTIGATION_PLAN': {
-      if (!current) return current;
-      const plan =
-        event.plan ??
-        (event.mode && event.branches
-          ? { mode: event.mode, branches: event.branches, reason: event.reason ?? '' }
-          : null);
-      if (!plan) return current;
-      return {
-        ...current,
-        investigation: { ...(current.investigation ?? {}), currentPlan: plan },
-      };
-    }
-    case 'EXTERNAL_CONSULTATION_REQUIRED': {
-      if (!current) return current;
-      const consultations = current.consultations ?? [];
-      const consultation = event.consultation;
-      const hasConsultation = consultation
-        ? consultations.some((item) => item.id === consultation.id)
-        : false;
-      return {
-        ...current,
-        run_state: 'waiting_confirmation',
-        consultations: consultation
-          ? hasConsultation
-            ? consultations.map((item) => (item.id === consultation.id ? consultation : item))
-            : [...consultations, consultation]
-          : consultations,
-      };
-    }
     default:
       return current;
   }

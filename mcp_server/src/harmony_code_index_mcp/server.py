@@ -27,6 +27,21 @@ class IndexPath(BaseModel):
     line_end: int | None = Field(default=None, ge=1)
     terms: list[str] = Field(default_factory=list)
 
+    @classmethod
+    def model_validate(cls, obj: Any, *args: Any, **kwargs: Any) -> IndexPath:
+        value = super().model_validate(obj, *args, **kwargs)
+        path = value.path.replace("\\", "/")
+        if path.startswith("/") or any(part in {"", ".", ".."} for part in path.split("/")):
+            raise ValueError("code index path must be a safe relative path")
+        if (
+            value.line_end is not None
+            and value.line_start is not None
+            and value.line_end < value.line_start
+        ):
+            raise ValueError("line_end must not precede line_start")
+        value.path = path
+        return value
+
 
 class IndexEntry(BaseModel):
     schema_version: int = Field(default=1, ge=1)
@@ -47,6 +62,8 @@ class IndexEntry(BaseModel):
     related_modules: list[str] = Field(default_factory=list)
     source: str = Field(default="generated", min_length=1)
     generated_at: str | None = None
+    matched_file_count: int | None = Field(default=None, ge=1)
+    mapping_method: str = Field(default="lexical-source-scan", min_length=1)
 
     def searchable_text(self) -> str:
         values: list[str] = [
@@ -115,6 +132,8 @@ def _scope_key(form_factor: str | None) -> str:
 
 
 def _allowed_versions(scope: dict[str, list[str]], form_factor: str | None) -> set[str]:
+    if form_factor is None:
+        return set(scope.get("default", [])) | set(scope.get("hd", []))
     return set(scope.get(_scope_key(form_factor), scope["default"]))
 
 
@@ -183,7 +202,8 @@ def create_code_index_server(
         allowed = _allowed_versions(scope, form_factor)
         candidates: list[tuple[int, IndexEntry]] = []
         for entry in entries:
-            if entry.version not in allowed:
+            entry_allowed = _allowed_versions(scope, entry.form_factor)
+            if entry.version not in entry_allowed or entry.version not in allowed:
                 continue
             if platform and entry.platform != platform:
                 continue

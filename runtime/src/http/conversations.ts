@@ -261,7 +261,6 @@ export function createConversationRoutes(
       if (conversation.channel === 'yach_im') return jsonError('conversation not found', 404);
       if (parsed.data.title != null) conversation.title = parsed.data.title;
       if (parsed.data.model_override !== undefined) conversation.model_override = parsed.data.model_override || null;
-      if (parsed.data.consult_compass !== undefined) conversation.consult_compass = parsed.data.consult_compass;
       conversation.updated_at = new Date().toISOString();
       await saveConversation(conversation);
       return context.json(publicView(redactRecord(conversation, redact)));
