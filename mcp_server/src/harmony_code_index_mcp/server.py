@@ -24,8 +24,10 @@ CODE_INDEX_TOOL_NAMES = [
 class IndexPath(BaseModel):
     path: str = Field(min_length=1)
     symbol: str | None = None
+    role: str | None = None
     line_start: int | None = Field(default=None, ge=1)
     line_end: int | None = Field(default=None, ge=1)
+    key_symbols: list[str] = Field(default_factory=list)
     terms: list[str] = Field(default_factory=list)
 
     @field_validator("path")
@@ -63,6 +65,7 @@ class IndexEntry(BaseModel):
     repository_id: str = Field(min_length=1)
     resolved_commit: str = Field(min_length=1)
     paths: list[IndexPath] = Field(min_length=1)
+    data_flow: dict[str, list[str]] = Field(default_factory=dict)
     related_modules: list[str] = Field(default_factory=list)
     source: str = Field(default="generated", min_length=1)
     generated_at: str | None = None

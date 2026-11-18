@@ -19,6 +19,96 @@ EXTENSIONS = {".ets", ".ts", ".tsx", ".js", ".jsx", ".kt", ".kts", ".java", ".sw
 SKIP = {".git", ".idea", ".hvigor", ".codebuddy", ".codex", ".claude", "AI", "build", "dist", "node_modules", "oh_modules", "Pods"}
 DECLARATION = re.compile(r"\b(?:class|interface|struct|enum|object|function|func|def|const|let|var)\s+([A-Za-z_$][\w$]*)")
 EXPORTED_DECLARATION = re.compile(r"\bexport\s+(?:default\s+)?(?:class|interface|struct|enum|object|function|func)\s+([A-Za-z_$][\w$]*)")
+OBJC_DECLARATION = re.compile(r"@(?:interface|implementation|protocol)\s+([A-Za-z_][\w]*)")
+
+# 角色按平台命名习惯判定（L1）：模型拿到入口后不再盲探文件职责。
+ROLE_RULES: dict[str, list[tuple[re.Pattern[str], str]]] = {
+    "harmony": [
+        (re.compile(r"Page$"), "页面"),
+        (re.compile(r"ViewModel$"), "视图模型"),
+        (re.compile(r"(?:NetApi|NetService|Api)$"), "网络请求"),
+        (re.compile(r"(?:ListItem|ItemView|Item)$"), "列表项视图"),
+        (re.compile(r"(?:Dialog|DialogView|Pop)"), "弹窗"),
+        (re.compile(r"(?:Bean|Model|Entity|Dto)$"), "数据模型"),
+        (re.compile(r"Manager$"), "业务管理"),
+        (re.compile(r"(?:Util|Utils|Helper)"), "工具"),
+    ],
+    "android": [
+        (re.compile(r"Activity$"), "页面"),
+        (re.compile(r"Fragment$"), "页面片段"),
+        (re.compile(r"ViewModel$"), "视图模型"),
+        (re.compile(r"Repository$"), "数据仓库"),
+        (re.compile(r"(?:Bean|Model|Entity|Dto)$"), "数据模型"),
+        (re.compile(r"(?:Api|ApiService)$"), "网络请求"),
+        (re.compile(r"Service$"), "业务服务"),
+        (re.compile(r"Manager$"), "业务管理"),
+        (re.compile(r"(?:Adapter|ViewHolder)$"), "列表适配"),
+        (re.compile(r"(?:Util|Utils|Helper)"), "工具"),
+    ],
+    "ios": [
+        (re.compile(r"(?:VC|ViewController|Controller)$"), "页面控制器"),
+        (re.compile(r"ViewModel$"), "视图模型"),
+        (re.compile(r"(?:Model|Entity|Dto)$"), "数据模型"),
+        (re.compile(r"Cell$"), "列表项视图"),
+        (re.compile(r"View$"), "视图"),
+        (re.compile(r"(?:API|Api|Request|NetApi)$"), "网络请求"),
+        (re.compile(r"Manager$"), "业务管理"),
+        (re.compile(r"Service$"), "业务服务"),
+        (re.compile(r"(?:Helper|Util)"), "工具"),
+    ],
+}
+
+# data_flow（L2）类目 ← 角色；按类目挑代表文件，让模型直接看到链路入口。
+FLOW_CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
+    ("net_api", ("网络请求",)),
+    ("model", ("数据模型", "数据仓库")),
+    ("view_model", ("视图模型",)),
+    ("page", ("页面", "页面控制器", "页面片段")),
+    ("view", ("列表项视图", "列表适配", "视图", "弹窗")),
+]
+
+
+def role_of(platform: str, stem: str) -> str | None:
+    for pattern, role in ROLE_RULES.get(platform, []):
+        if pattern.search(stem):
+            return role
+    return None
+
+
+def key_symbols(text: str, stem: str, limit: int = 4) -> list[str]:
+    """提取文件关键符号（Name@行号）：优先与文件名同名的导出声明，再按出现顺序补齐。"""
+    found: list[tuple[str, int]] = []
+    seen: set[str] = set()
+
+    def collect(pattern: re.Pattern[str], only_stem: bool, skip_locals: bool = False) -> None:
+        for match in pattern.finditer(text):
+            name = match.group(1)
+            # 兜底遍历时跳过小写开头的局部变量（const params / let bean 之类）
+            if name in seen or (only_stem and norm(name) != norm(stem)) or (skip_locals and name[0].islower()):
+                continue
+            seen.add(name)
+            found.append((name, text[: match.start()].count("\n") + 1))
+            if len(found) >= limit:
+                return
+
+    collect(EXPORTED_DECLARATION, only_stem=True)
+    collect(OBJC_DECLARATION, only_stem=True)
+    if len(found) < limit:
+        collect(EXPORTED_DECLARATION, only_stem=False)
+    if len(found) < limit:
+        collect(OBJC_DECLARATION, only_stem=False)
+    if len(found) < limit:
+        collect(DECLARATION, only_stem=False, skip_locals=True)
+    return [f"{name}@{line}" for name, line in sorted(found[:limit], key=lambda item: item[1])]
+
+
+def data_flow(paths: list[dict[str, Any]], per_category: int = 2) -> dict[str, list[str]]:
+    flow: dict[str, list[str]] = {}
+    for category, roles in FLOW_CATEGORIES:
+        members = [item["path"] for item in paths if item.get("role") in roles]
+        if members:
+            flow[category] = members[:per_category]
+    return flow
 
 
 def norm(value: str) -> str:
@@ -55,7 +145,7 @@ def matches(rule: dict[str, Any], relative: str, content: str) -> list[str]:
     return keywords + hints
 
 
-def pointers(root: Path, paths: list[tuple[Path, list[str]]]) -> list[dict[str, Any]]:
+def pointers(root: Path, platform: str, paths: list[tuple[Path, list[str]]]) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     for path, terms in paths[:12]:
         try:
@@ -67,14 +157,17 @@ def pointers(root: Path, paths: list[tuple[Path, list[str]]]) -> list[dict[str, 
         declaration = next((match for match in EXPORTED_DECLARATION.finditer(text)
                             if norm(match.group(1)) == stem), None)
         declaration = declaration or next(EXPORTED_DECLARATION.finditer(text), None)
+        declaration = declaration or next(OBJC_DECLARATION.finditer(text), None)
         declaration = declaration or next(DECLARATION.finditer(text), None)
         symbol = declaration.group(1) if declaration else path.stem
         line_start = text[: declaration.start()].count("\n") + 1 if declaration else 1
         output.append({
             "path": path.relative_to(root).as_posix(),
             "symbol": symbol,
+            "role": role_of(platform, path.stem),
             "line_start": line_start,
             "line_end": min(len(lines), line_start + 80),
+            "key_symbols": key_symbols(text, path.stem),
             "terms": sorted(set(terms))[:12],
         })
     return output
@@ -120,12 +213,15 @@ def main() -> None:
             if not hits:
                 continue
             hits.sort(key=lambda item: (-item[2], item[0].as_posix()))
-            pointers_value = pointers(root, [(path, terms) for path, terms, _ in hits])
+            pointers_value = pointers(root, base["platform"], [(path, terms) for path, terms, _ in hits])
+            if not pointers_value:
+                continue
             entry_id = hashlib.sha256(f"{rule['module_id']}|{base['platform']}|{base['product_line']}|{base['form_factor']}|{base['version']}|{base['repository_id']}|{base['resolved_commit']}".encode()).hexdigest()[:24]
             records.append({
                 "schema_version": 1, "entry_id": entry_id, "record_type": "module",
                 "title": rule["title"], "module_id": rule["module_id"], "aliases": rule.get("aliases", []),
                 "keywords": rule.get("keywords", []), **base, "paths": pointers_value,
+                "data_flow": data_flow(pointers_value),
                 "related_modules": [], "source": "generated", "generated_at": generated,
                 "matched_file_count": len(hits), "mapping_method": "lexical-source-scan",
             })
