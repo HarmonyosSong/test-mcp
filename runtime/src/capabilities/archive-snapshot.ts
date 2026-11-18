@@ -134,15 +134,8 @@ async function findArchiveLinks(archivePath: string): Promise<ArchiveLink[]> {
       .split(/\r?\n/)
       .filter(Boolean)
       .flatMap((line) => {
-        const type = line[0];
-        if (type !== 'l' && type !== 'h') return [];
-        const delimiter = type === 'l' ? ' -> ' : ' link to ';
-        const delimiterIndex = line.indexOf(delimiter);
-        const name = delimiterIndex >= 0 ? archiveListingName(line.slice(0, delimiterIndex)) : null;
-        if (!name) {
-          throw new ArchiveSnapshotError('invalid_archive', '无法解析 archive 的链接条目');
-        }
-        return [{ name, kind: type === 'l' ? 'symbolic' : 'hard' }];
+        const entry = parseArchiveLinkEntry(line);
+        return entry ? [entry] : [];
       });
   } catch (error) {
     if (error instanceof ArchiveSnapshotError) throw error;
@@ -150,10 +143,24 @@ async function findArchiveLinks(archivePath: string): Promise<ArchiveLink[]> {
   }
 }
 
+/** 解析单行 `tar -tv` 输出；导出供测试覆盖 BSD/GNU 两种格式。 */
+export function parseArchiveLinkEntry(line: string): ArchiveLink | null {
+  const type = line[0];
+  if (type !== 'l' && type !== 'h') return null;
+  const delimiter = type === 'l' ? ' -> ' : ' link to ';
+  const delimiterIndex = line.indexOf(delimiter);
+  const name = delimiterIndex >= 0 ? archiveListingName(line.slice(0, delimiterIndex)) : null;
+  if (!name) {
+    throw new ArchiveSnapshotError('invalid_archive', '无法解析 archive 的链接条目');
+  }
+  return { name, kind: type === 'l' ? 'symbolic' : 'hard' };
+}
+
 function archiveListingName(metadata: string): string | null {
-  // BSD tar and GNU tar both place the path after the month/day/time fields.
+  // BSD tar prints month-name dates ("Nov 12 10:00"); GNU tar prints ISO
+  // dates ("2026-11-12 10:00"). Both place the path after the time fields.
   const match = metadata.match(
-    /\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+(?:\d{2}:\d{2}(?::\d{2})?|\d{4})\s+(.+)$/,
+    /\s(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+(?:\d{2}:\d{2}(?::\d{2})?|\d{4})|\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)\s+(.+)$/,
   );
   return match?.[1]?.trim() || null;
 }
