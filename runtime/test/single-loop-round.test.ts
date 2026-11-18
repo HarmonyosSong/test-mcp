@@ -163,7 +163,7 @@ test('unmatched tool calls close as failed once with unknown result semantics', 
 });
 
 test('duplicate provider tool-call IDs fail without duplicating or mispairing events', async () => {
-  const duplicate = { tool: 'load_skill', args: { name: 'locate-harmony-issue' }, id: 'provider-duplicate-id' } as const;
+  const duplicate = { tool: 'load_skill', args: { name: 'locate-app-issue' }, id: 'provider-duplicate-id' } as const;
   const { diagnosis } = await setup([duplicate, duplicate]);
   const events = await run(diagnosis, '检查登录页白屏');
   const starts = events.filter((event) => event.type === 'tool-start');
@@ -500,7 +500,7 @@ test('多轮澄清：问题与回答跨轮保留在提示里', async () => {
   const question = sample.question!;
   const answer = sample.answer!;
   const { diagnosis, scripted } = await setup([
-    { tool: 'load_skill', args: { name: 'locate-harmony-issue' } },
+    { tool: 'load_skill', args: { name: 'locate-app-issue' } },
     { tool: 'lookup_issue', args: { query: sample.description } },
     { text: anchored('insufficient_evidence', question) },
     { text: anchored('insufficient_evidence', '已收窄到鸿蒙的历史录音回看入口，不是新评测；当前仍缺少实际日志，不能确定根因。') },

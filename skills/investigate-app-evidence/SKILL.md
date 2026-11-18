@@ -1,13 +1,13 @@
 ---
-name: investigate-harmony-evidence
-description: Test HarmonyOS issue hypotheses against pasted logs and authorized project files. Use after initial location clues exist; do not use for code changes or runtime verification.
+name: investigate-app-evidence
+description: Test App issue hypotheses (HarmonyOS / Android / iOS) against pasted logs, online log queries, and authorized project files. Use after initial location clues exist; do not use for code changes or runtime verification.
 metadata:
   version: "0.2.0"
   stage: investigate
   modes: [chat]
 ---
 
-# Investigate Harmony Evidence
+# Investigate App Evidence
 
 Build a small set of competing root-cause candidates and test each against accessible evidence.
 Prefer direct relationships such as a stack frame to source context, a resource reference to its

@@ -38,7 +38,7 @@ export function ChatComposer({
           }
         }}
         placeholder={
-          disabled ? '配置模型后即可开始对话' : '描述你遇到的 HarmonyOS 问题，可粘贴日志或代码…'
+          disabled ? '配置模型后即可开始对话' : '描述你遇到的 App 问题（鸿蒙/Android/iOS），可粘贴日志或代码…'
         }
         disabled={disabled || sending}
         rows={3}

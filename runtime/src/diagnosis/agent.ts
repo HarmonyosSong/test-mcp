@@ -323,7 +323,7 @@ export class DiagnosisAgent {
     });
 
     const agent = new Agent({
-      id: "harmony-diagnosis",
+      id: "app-diagnosis",
       name: "Peiyou Troubleshooting",
       description: "学而思 App 问题总入口：故障排查与功能实现说明，本地客户端取证并按需委派全栈协查",
       instructions: promptFor(

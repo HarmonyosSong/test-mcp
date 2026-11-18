@@ -1,6 +1,6 @@
 ---
-name: locate-harmony-issue
-description: Structure a reported HarmonyOS symptom and locate the smallest evidence-backed project area to inspect. Use at the start of a read-only diagnosis; do not use to propose or apply fixes.
+name: locate-app-issue
+description: Structure a reported App symptom (HarmonyOS / Android / iOS 任一客户端) and locate the smallest evidence-backed project area to inspect. Use at the start of a read-only diagnosis; do not use to propose or apply fixes.
 metadata:
   version: "0.2.0"
   stage: locate
@@ -8,7 +8,7 @@ metadata:
   required_tools: [lookup_issue, search_knowledge, get_knowledge_entry]
 ---
 
-# Locate Harmony Issue
+# Locate App Issue
 
 Convert the user's symptom into a bounded diagnosis target. Extract the affected behavior, trigger,
 expected result, actual result, environment clues, error identifiers, file paths, symbols, modules,
@@ -61,15 +61,15 @@ Two situations change this default path:
 First reuse answers in conversation history and inspect supplied URLs, logs, or a justified bounded
 source lookup. Ask only for information not already available. In chat, ask the next 1-2 questions
 whose answers separate the remaining candidates, explain what each answer would narrow, and wait
-for the reply. Missing platform or entry route stays unknown, even though this agent targets
-HarmonyOS. Do not dump the whole symptom checklist or ask for a generic bundle of logs.
+for the reply. Missing platform or entry route stays unknown — this agent covers HarmonyOS,
+Android, and iOS; never assume the platform without an observed clue. Do not dump the whole symptom checklist or ask for a generic bundle of logs.
 On the next turn, state the newly narrowed scope before continuing; a route being identified is
 not a root cause being confirmed. 单次回复必须收尾时，把这些追问写进最终回答的「仍需补充」，
 并在范围未收敛时判 `证据不足`。
 
 Return a short location summary that separates observed facts from hypotheses. If the input contains
 no error, location, reproduction, or project evidence, mark the scope as unresolved and name the
-minimum missing evidence. Do not infer a file, API, or HarmonyOS version that was not observed.
+minimum missing evidence. Do not infer a file, API, or platform version that was not observed.
 Do not fill a location with a list of plausible components (for example, H5, WebView, backend, or
 bridge) when observations do not distinguish them. Keep those as clearly labeled knowledge leads and
 ask the discriminating question; leave the location unresolved.

@@ -29,7 +29,7 @@ Use the source instructions.
 test('diagnosis report Skill keeps knowledge leads out of unsupported root-cause candidates', async () => {
   const registry = new SkillRegistry(resolve(process.cwd(), '../skills'));
   await registry.load();
-  const skill = registry.get('report-harmony-diagnosis');
+  const skill = registry.get('report-app-diagnosis');
 
   assert.ok(skill);
   // 自由文本契约：判定锚点首行强制、ev-ID 引用纪律、条件行为与已观察事故区分。
@@ -43,7 +43,7 @@ test('diagnosis report Skill keeps knowledge leads out of unsupported root-cause
 test('location Skill preserves conflicting static rules as unresolved', async () => {
   const registry = new SkillRegistry(resolve(process.cwd(), '../skills'));
   await registry.load();
-  const locate = registry.get('locate-harmony-issue');
+  const locate = registry.get('locate-app-issue');
   assert.ok(locate);
   assert.match(locate.instructions, /If relevant entries conflict, do not choose one as the current rule/);
   assert.match(locate.instructions, /Do not fill a location with a list of plausible components/);

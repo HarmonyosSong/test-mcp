@@ -58,7 +58,7 @@
 | 字面与概念打分 | [retriever.py](../mcp_server/src/harmony_knowledge_mcp/retriever.py)、[concepts.py](../mcp_server/src/harmony_knowledge_mcp/concepts.py) |
 | 默认入口与预览 | [server.py](../mcp_server/src/harmony_knowledge_mcp/server.py) 的 `lookup_issue` |
 | 遥测与建设清单 | [query_log.py](../mcp_server/src/harmony_knowledge_mcp/query_log.py) |
-| Agent 操作指引 | [定位 Skill](../skills/locate-harmony-issue/SKILL.md) |
+| Agent 操作指引 | [定位 Skill](../skills/locate-app-issue/SKILL.md) |
 
 `create_knowledge_server()` 创建时载入一次内容，现有实例不会自动热更新；独立 stdio 服务需要重启才能读取修改。聊天下一轮重新构造工具集，因此会重新加载。设计不得声称已有文件监听或持久化索引更新机制。
 
