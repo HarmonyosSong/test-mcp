@@ -51,50 +51,6 @@ test('提示词版本有歧义时拒绝自动绑定', () => {
   );
 });
 
-test('提示词没有端和版本时使用已关联 LogCenter 事实补齐上下文', () => {
-  assert.deepEqual(resolvePromptSourceContext('请排查学而思英语绘本问题', {
-    platform: null,
-    product_line: 'xueersi',
-    form_factor: null,
-    version: null,
-    build: null,
-    evidence_state: {
-      entries: [{
-        observation_context: {
-          environment: 'prod',
-          storage_alias: 'prod-android',
-          account: 'account',
-          collection: 'collection',
-          store_id: 'store',
-          topic: 'topic',
-          appid: 'appid',
-          query: 'learner_id',
-          start: 1,
-          end: 2,
-          page: 1,
-          entry_id: 'log-0123456789abcdef01234567',
-          redaction_version: 'v1',
-          matched_identifiers: [{ kind: 'learner_id', matched: true }],
-          matched_error_features: [],
-          service_binding: { status: 'confirmed', method: 'observed_client_session' },
-          observed_platform: 'android',
-          observed_product_line: 'xueersi',
-          observed_version: '7.106.5',
-          device_ref: null,
-          session_ref: 'session-1',
-          platform_conflict: false,
-        },
-      }],
-    },
-  }), {
-    platform: 'android',
-    productLine: 'xueersi',
-    formFactor: null,
-    version: '7.106.5',
-    build: null,
-  });
-});
-
 test('显式切换平台时不继承历史平台的版本和形态', () => {
   assert.deepEqual(resolvePromptSourceContext('请查 Android 代码', {
     platform: null,

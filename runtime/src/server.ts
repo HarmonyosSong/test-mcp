@@ -1,35 +1,19 @@
-import { existsSync } from 'node:fs';
-
 import { serve } from '@hono/node-server';
 import { loadRuntimeConfig } from './config.js';
 import { createRuntimeApp } from './app.js';
 import { isCompassA2AConfigured } from './capabilities/compass-a2a.js';
-import { isLogCenterConfigured, logCatalogPath } from './capabilities/log-center.js';
-import { integrationInfo, integrationWarn } from './observability/integration-log.js';
+import { integrationInfo } from './observability/integration-log.js';
 import { drainHttpServer } from './shutdown.js';
 
 const config = loadRuntimeConfig();
 const { app, mastra, store, capabilities, yachChannel } = await createRuntimeApp(config);
 
-const catalogPath = logCatalogPath(config);
-const catalogExists = existsSync(catalogPath);
 integrationInfo('auth', 'startup auth mode', {
   runMode: config.runMode,
   authMode: config.authMode,
   publicBaseUrl: config.publicBaseUrl || '(empty)',
   ssoConfigured: Boolean(config.ssoBaseUrl && config.ssoAppId && config.ssoAppKey),
 });
-integrationInfo('logcenter', 'startup config', {
-  credentialsConfigured: isLogCenterConfigured(config),
-  baseUrl: config.logcenterBaseUrl,
-  catalogPath,
-  catalogExists,
-});
-if (isLogCenterConfigured(config) && !catalogExists) {
-  integrationWarn('logcenter', 'credentials present but catalog file missing; tools will fail to mount', {
-    catalogPath,
-  });
-}
 integrationInfo('a2a', 'startup config', {
   configured: isCompassA2AConfigured(config.a2aToken),
   baseUrl: config.a2aBaseUrl,

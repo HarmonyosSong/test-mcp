@@ -4,10 +4,7 @@ import { MCPClient } from '@mastra/mcp';
 import { noopLogger } from '@mastra/core/logger';
 import type { RuntimeConfig } from '../config.js';
 import { integrationError } from '../observability/integration-log.js';
-import { createLogCatalogTools, type LogToolCorrelation } from './log-center.js';
 import { createLearnerLookupTools, type LearnerLookupToolset } from './ucenter.js';
-
-type LogCatalogTools = NonNullable<Awaited<ReturnType<typeof createLogCatalogTools>>>;
 
 const REPOSITORY_MCP_DEFAULT_TIMEOUT_MS = 30_000;
 const CODE_INDEX_PROCESS_GRACE_SECONDS = 10;
@@ -157,19 +154,6 @@ export class CapabilityMcp {
     } catch (error) {
       await client.disconnect();
       throw error;
-    }
-  }
-
-  async createLogCatalogTools(options: {
-    abortSignal?: AbortSignal;
-    correlation?: LogToolCorrelation;
-  } = {}): Promise<{ tools: LogCatalogTools } | null> {
-    try {
-      const tools = await createLogCatalogTools(this.config, options);
-      return tools ? { tools } : null;
-    } catch (error) {
-      integrationError('logcenter', 'createLogCatalogTools failed; tools unavailable this round', error);
-      return null;
     }
   }
 

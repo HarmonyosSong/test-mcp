@@ -357,5 +357,5 @@ make dev-web
 - [编排层设计与实现](orchestration-layer-design.md)
 - [后续能力规划](multi-capability-expansion-plan.md)
 - [Compass A2A 接入规格](../spec/compass-a2a-integration.md)
-- [日志目录与查询能力规格](../spec/log-catalog-query-capability.md)
+- [log-mcp README](../log-mcp/README.md)
 - [Runtime 知识预算与证据约束](decisions/0002-runtime-knowledge-budget.md)

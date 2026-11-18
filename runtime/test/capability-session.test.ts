@@ -182,65 +182,24 @@ test('close aborts capability requests and tries every client even when one clea
   assert.equal(secondClosed, true);
 });
 
-test('round factory keeps unconfigured logs absent and does not expose configured A2A', async () => {
-  for (const configured of [false, true]) {
-    const provider = new CapabilityMcp(loadRuntimeConfig({
-      HARMONY_AGENT_A2A_TOKEN: 'test-a2a-token',
-      HARMONY_AGENT_LOGCENTER_APP_ID: configured ? 'test-app' : '',
-      HARMONY_AGENT_LOGCENTER_APP_SECRET: configured ? 'test-secret' : '',
-      HARMONY_AGENT_LOGCENTER_BASE_URL: 'https://unused.example.test/api',
-      HARMONY_AGENT_UCENTER_BASE_URL: 'https://ucenter.example.test',
-    }));
-    provider.createKnowledgeSession = async () => null;
-    const session = await createRoundCapabilitySession(provider, {
-      conversationId: 'conv-1', messageId: 'msg-1', runId: 'run-1', workspacePath: null,
-    });
-    try {
-      assert.deepEqual(Object.keys(session.toolsets).sort(), configured
-        ? ['code_index', 'learner', 'log_catalog']
-        : ['code_index', 'learner']);
-      assert.deepEqual(Object.keys(session.toolsets.code_index!), [
-        'list_code_index_scopes',
-        'search_code_index',
-        'get_code_index_entry',
-      ]);
-      assert.deepEqual(Object.keys(session.toolsets.learner!), ['lookup_learner']);
-      if (configured) {
-        assert.deepEqual(Object.keys(session.toolsets.log_catalog!), [
-          'resolve_log_target',
-          'count_cloud_logs',
-          'search_cloud_logs',
-          'count_logs',
-          'query_logs',
-        ]);
-      } else {
-        assert.deepEqual(session.unavailable, ['knowledge', 'log_catalog']);
-      }
-    } finally {
-      await session.close();
-    }
-  }
-});
-
-test('日志关联上下文只通过私有 capability 参数透传', async () => {
-  const provider = new CapabilityMcp(loadRuntimeConfig({}));
+test('round factory mounts learner without log catalog and does not expose configured A2A', async () => {
+  const provider = new CapabilityMcp(loadRuntimeConfig({
+    HARMONY_AGENT_A2A_TOKEN: 'test-a2a-token',
+    HARMONY_AGENT_UCENTER_BASE_URL: 'https://ucenter.example.test',
+  }));
   provider.createKnowledgeSession = async () => null;
-  let received: unknown;
-  provider.createLogCatalogTools = async (options) => {
-    received = options;
-    return null;
-  };
-  const correlation = {
-    identifiers: { learner_id: 'student-fixture-001' },
-    sourceText: '学员编号: student-fixture-001',
-  };
   const session = await createRoundCapabilitySession(provider, {
     conversationId: 'conv-1', messageId: 'msg-1', runId: 'run-1', workspacePath: null,
-    logCorrelation: correlation,
   });
   try {
-    assert.deepEqual(received, { abortSignal: session.context.abortSignal, correlation });
-    assert.equal(JSON.stringify(session.toolsets).includes('student-fixture-001'), false);
+    assert.deepEqual(Object.keys(session.toolsets).sort(), ['code_index', 'learner']);
+    assert.deepEqual(Object.keys(session.toolsets.code_index!), [
+      'list_code_index_scopes',
+      'search_code_index',
+      'get_code_index_entry',
+    ]);
+    assert.deepEqual(Object.keys(session.toolsets.learner!), ['lookup_learner']);
+    assert.deepEqual(session.unavailable, ['knowledge']);
   } finally {
     await session.close();
   }

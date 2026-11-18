@@ -16,7 +16,6 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 - 证据账本：正向根因只能引用本轮或历史工具实际观测到的源码/日志证据；绑定固定快照时，源码证据还携带 `repository_id + resolved_commit + path`，避免跨版本混用。
 - 本地 Markdown 知识库和声明式 `skills/*/SKILL.md`。
 - 客户端本地 Markdown 知识库通过 Knowledge MCP 提供检索；云学习知识能力由后续 A2A 对端 Agent 提供，不在客户端直连第二套知识 MCP。
-- 可选 LogCenter / Aliyun SLS 四工具：私有身份发现、用户原文目标绑定、超时取消和脱敏观察已接入共享能力会话；目标绑定且身份匹配的远程日志可携带 Runtime 观察上下文进入证据账本。上述链路已有合成 mock 测试，真实生产字段覆盖和真实学员联调尚未验收，Catalog 的 appid 查询兼容性仍需修正。
 - 动态源码绑定：按平台、产品线、形态、版本和构建号选择 `version-registry/` 中已核验的 ref/commit；缺少版本时选择唯一范围内最新已核验构建，产品线或形态只有在无法唯一判断时才追问。
 - 可选的 codebase-memory-mcp 已封装在 Repository MCP 内部，提供符号搜索、文件 outline 和调用路径候选；未配置时继续使用文本搜索，任何图结果都必须回读源码后才能成为证据。
 - 正式支持 DeepSeek `deepseek-flash`；同时保留 OpenAI、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 配置入口作为实验/未验收选项。可配置不等于正式支持；评估入口和口径见 [`docs/triage-feedback-and-evaluation.md`](docs/triage-feedback-and-evaluation.md)。
@@ -168,13 +167,8 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE` | `true` | Mastra 观测开关；默认按会话写入精简 JSON（见下），终端不刷 span。设 `false` 关闭 |
 | `HARMONY_AGENT_MASTRA_OBSERVABILITY_DIR` | `<data-dir>/observability` | 观测文件根目录；按 `conversations/<日期>_<会话ID>/` 存放 |
 | `HARMONY_AGENT_MASTRA_OBSERVABILITY_PREVIEW_CHARS` | `0` | 观测正文最大字符数；`0` 表示尽量全文（硬顶约 2MB/字段）；需要截断时再设正整数 |
-| `HARMONY_AGENT_LOG_CATALOG` | `runtime/contracts/log-catalog/catalog.yaml` | 日志业务目录路径 |
-| `HARMONY_AGENT_LOGCENTER_APP_ID` | 空 | LogCenter 应用 ID；与 Secret 同时配置才挂载工具 |
-| `HARMONY_AGENT_LOGCENTER_APP_SECRET` | 空 | LogCenter 应用密钥，只在本地配置 |
-| `HARMONY_AGENT_LOGCENTER_BASE_URL` | `https://logcenter-api.tal.com/api` | 日志平台网关地址 |
-| `HARMONY_AGENT_LOGCENTER_TIMEOUT_MS` | `15000` | 单次日志 HTTP 请求超时，范围 100–120000 毫秒；随诊断轮取消 |
-| `HARMONY_AGENT_UCENTER_BASE_URL` | `https://ucenter-one-inner.speiyou.cn` | 学员编号转 uid 的内网服务；转换失败时 Runtime 阻止日志查询 |
-| `HARMONY_AGENT_UCENTER_TIMEOUT_MS` | `10000` | 学员编号转 uid 请求超时 |
+| `HARMONY_AGENT_UCENTER_BASE_URL` | `https://ucenter-one-inner.speiyou.cn` | 学员档案查询（lookup_learner）内网服务 |
+| `HARMONY_AGENT_UCENTER_TIMEOUT_MS` | `10000` | 学员档案查询超时 |
 | `LOG_MCP_*` | 见 `.env.example` | 独立日志查询 MCP（`log-mcp/`，默认 `:8766`）；与 Agent Node 互不影响。配置只认根目录 `.env`，调用日志按日写入 `<data>/log-mcp/logs/log-mcp-YYYY-MM-DD.log`。说明见 [`log-mcp/README.md`](log-mcp/README.md) |
 
 网页设置写入 `<data-root>/model-config.json`（默认 `.data/model-config.json`），文件权限为 `0600`。容器部署见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)：只设 `HARMONY_AGENT_DATA_ROOT=/data/troubleshoot-odyssey`，由平台挂卷，勿再写相对 `.data/...` 单项。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key。默认开启官方 Mastra Observability（`Observability` + `SensitiveDataFilter`），并由按会话落盘的 exporter 写入可读 JSON：`.data/mastra/observability/conversations/<日期>_<会话ID>/traces/*.json`（另有 `manifest.jsonl` 索引；日期为落盘当天本地日历日）。文件按「用户输入 → steps[]（每轮模型话术 + 工具入出参）→ 最终回答」组织；`processor_run` / `mapping` / `model_chunk` 视为噪音丢弃。终端默认安静（`logger: false`）。不改 knowledge JSONL/cases。需要关闭时设 `HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE=false`。应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。
@@ -185,17 +179,17 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 启用时在部署环境放置 **codebase-memory-mcp 0.12.1** 二进制，并在 `.env` 填写 `HARMONY_AGENT_CODE_INDEX_COMMAND=/absolute/path/to/codebase-memory-mcp`，重启 Runtime 后生效；不需要额外配置一个 MCP 服务。索引只处理当前动态绑定快照中的代码副本，排除已知依赖目录、符号链接和超大文件；查询前后核对源码内容指纹，快照变化时拒绝旧图查询。`.data/codebase-memory` 下的 `source-views/` 和 `engine/` 分别保存源码副本与派生索引，Docker 部署应挂载持久卷；缓存可清理重建，不替代会话和证据数据的持久化。真实 HarmonyOS 工程已验证导航与源码回读，iOS/Android 的关系精度及真实诊断效果仍待验收。
 
-学员档案：配置 `HARMONY_AGENT_UCENTER_BASE_URL` 后挂载 `lookup_learner`（按学员编号查 uid/姓名/年级等）；用户问「查用户信息」时走此工具，不走日志目录。LogCenter 能力：Catalog 双 source（阿里云 SLS 产品埋点 + 未来云 APM `service_id`）。AppID / AppSecret 留空即可使用其余功能；框架验收使用本机模拟 HTTP。工具为 `resolve_log_target`、`count_cloud_logs`、`search_cloud_logs`、`count_logs`、`query_logs`。不等于动态服务发现或日志证据门禁，契约见 [`日志目录与查询规格`](spec/log-catalog-query-capability.md)。
+学员档案：配置 `HARMONY_AGENT_UCENTER_BASE_URL` 后挂载 `lookup_learner`（按学员编号查 uid/姓名/年级等）；用户问「查用户信息」时走此工具。远程日志查询由独立 `log-mcp` 提供，当前未挂入 Runtime 工具会话。
 
 ## 动态源码快照
 
 源码流程是：
 
 ```text
-用户提示词/关联日志 -> 解析端与版本 -> version-registry 选择 ref/commit -> GitLab archive -> 固定快照 -> 只读 MCP 检查
+用户提示词 -> 解析端与版本 -> version-registry 选择 ref/commit -> GitLab archive -> 固定快照 -> 只读 MCP 检查
 ```
 
-版本登记表使用 `version-registry/<platform>/<product-line>.yaml`，Runtime 启动时加载并只接受 `verified: true` 的 commit。Web 新建会话不要求预选端、仓库或版本：Runtime 先读取用户提示词中的显式平台、产品线、形态、版本和构建，再使用已关联 LogCenter 事实补齐上下文；如果产品线未写出但平台、版本和形态只命中一条登记范围，也会自动补齐。未提供版本时选择唯一范围内最新已核验版本/构建；上下文不足或冲突时不猜测，也不在用户发送消息时直接返回版本错误，有学员编号/uid 时先查询关联日志，仍无法消歧再由助手追问。随后校验 GitLab commit，物化登记的 shell 与 component/config archive，生成只读组合工作区；快照暂未准备时本轮先保留日志调查，确认上下文后下一轮自动重试。鸿蒙精确版本未登记时会查询同仓精确版本 tag（如 `7.105.0`），按返回的固定 commit 下载快照；查询或下载失败时保留实际错误，不改绑其它版本。安卓未登记版本按 `V版本-构建号-类型` 查询发布 tag；没有构建号时选同版本最新构建并注明现场构建尚未确认，手机/平板按实际命中消歧。旧会话中版本不匹配的鸿蒙或安卓对照快照会在下一轮重试精确绑定。iOS 精确版本未登记时也会查询同仓发布 tag；主工程下载后自动解析 Podfile.lock / Podfile，并按组件自身的 tag/commit 挂载 components/<组件名>，不要求包名或完整构建号。没有锁文件的声明版本仅供源码对照，缺失组件逐项记录，已成功的源码继续可用；规则详见 [`version-registry/README.md`](version-registry/README.md)。Web 在源码准备前建立流式连接并持续发送心跳。会话一旦绑定固定 commit，后续不会被远端分支变化影响。详细设计见 [`docs/multi-platform-version-snapshot-design.md`](docs/multi-platform-version-snapshot-design.md)。
+版本登记表使用 `version-registry/<platform>/<product-line>.yaml`，Runtime 启动时加载并只接受 `verified: true` 的 commit。Web 新建会话不要求预选端、仓库或版本：Runtime 先读取用户提示词中的显式平台、产品线、形态、版本和构建；如果产品线未写出但平台、版本和形态只命中一条登记范围，也会自动补齐。未提供版本时选择唯一范围内最新已核验版本/构建；上下文不足或冲突时不猜测，也不在用户发送消息时直接返回版本错误，无法消歧时由助手追问。随后校验 GitLab commit，物化登记的 shell 与 component/config archive，生成只读组合工作区；快照暂未准备时确认上下文后下一轮自动重试。鸿蒙精确版本未登记时会查询同仓精确版本 tag（如 `7.105.0`），按返回的固定 commit 下载快照；查询或下载失败时保留实际错误，不改绑其它版本。安卓未登记版本按 `V版本-构建号-类型` 查询发布 tag；没有构建号时选同版本最新构建并注明现场构建尚未确认，手机/平板按实际命中消歧。旧会话中版本不匹配的鸿蒙或安卓对照快照会在下一轮重试精确绑定。iOS 精确版本未登记时也会查询同仓发布 tag；主工程下载后自动解析 Podfile.lock / Podfile，并按组件自身的 tag/commit 挂载 components/<组件名>，不要求包名或完整构建号。没有锁文件的声明版本仅供源码对照，缺失组件逐项记录，已成功的源码继续可用；规则详见 [`version-registry/README.md`](version-registry/README.md)。Web 在源码准备前建立流式连接并持续发送心跳。会话一旦绑定固定 commit，后续不会被远端分支变化影响。详细设计见 [`docs/multi-platform-version-snapshot-design.md`](docs/multi-platform-version-snapshot-design.md)。
 
 ## 数据迁移
 

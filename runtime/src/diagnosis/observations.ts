@@ -4,7 +4,6 @@ import type {
   SourceRepositoryBinding,
   SourceSnapshotIdentity,
 } from '../domain/schemas.js';
-import type { ClientLogPrivacy } from '../security/log-privacy.js';
 
 /**
  * 瘦观测注册表：去编排化后的证据机制（替代 EvidenceLedger）。
@@ -12,7 +11,7 @@ import type { ClientLogPrivacy } from '../security/log-privacy.js';
  * 职责收窄为三件事：
  * 1. 给真实观测发放稳定 ev-ID（内容哈希，跨进程/跨轮同内容同 ID）；
  * 2. 保留观测元数据（kind/source/location/observation_context/source_context），
- *    供平台版本提取（prompt-version-context）与防伪存在性校验使用；
+ *    供防伪存在性校验与协查上下文使用；
  * 3. 跨轮恢复：append-only、无淘汰、无墓碑——观测一经登记永不"过期"。
  *
  * 不再承担：excerpt 逐字校验、报告 draft 解析、容量淘汰。最终答案的证据引用
@@ -28,7 +27,6 @@ export type ObservationEntry = {
   source_context?: SourceSnapshotIdentity & { path: string };
 };
 
-/** 快照形状保持 {entries:[{observation_context,...}]} 兼容：observedLogContext 零改动读取。 */
 export type ObservationSnapshot = {
   entries: ObservationEntry[];
   registry_version: 1;
@@ -94,26 +92,21 @@ function isSafeRelativePath(value: string): boolean {
 export class ObservationRegistry {
   readonly entries = new Map<string, ObservationEntry>();
   readonly userRefs = new Map<string, string>();
-  /** Remote log entry IDs are presentation IDs; resolve them only when observed here. */
-  readonly evidenceAliases = new Map<string, string>();
   readonly inputTexts: string[];
 
   constructor(options: {
     inputTexts?: string[];
-    privacy?: ClientLogPrivacy;
     sourceContext?: SourceSnapshotIdentity;
     sourceContexts?: readonly SourceRepositoryBinding[];
     /** 对照端绑定在轮内由 prepare_source 晚于注册表构造发生，故用 thunk 延迟读取。 */
     compareSourceContexts?: () => readonly SourceRepositoryBinding[];
   } = {}) {
     this.inputTexts = [...(options.inputTexts ?? [])];
-    this.privacy = options.privacy;
     this.sourceContext = options.sourceContext;
     this.sourceContexts = [...(options.sourceContexts ?? [])];
     this.compareSourceContexts = options.compareSourceContexts;
   }
 
-  private readonly privacy?: ClientLogPrivacy;
   private readonly sourceContext?: SourceSnapshotIdentity;
   private readonly sourceContexts: readonly SourceRepositoryBinding[];
   private readonly compareSourceContexts?: () => readonly SourceRepositoryBinding[];
@@ -126,9 +119,9 @@ export class ObservationRegistry {
     });
   }
 
-  /** 最终答案校验器的存在性查询：注册表条目、用户引用与日志别名均可引用。 */
+  /** 最终答案校验器的存在性查询：注册表条目与用户引用均可引用。 */
   has(id: string): boolean {
-    return this.entries.has(id) || this.userRefs.has(id) || this.evidenceAliases.has(id);
+    return this.entries.has(id) || this.userRefs.has(id);
   }
 
   /** 元数据查询（如按 id 取 location），供校验器生成纠错反馈。 */
@@ -142,21 +135,6 @@ export class ObservationRegistry {
 
   private add(entry: ObservationEntry): void {
     this.entries.set(entry.id, entry);
-    if (entry.kind === 'log' && isRecord(entry.observation_context)) {
-      const entryId = entry.observation_context.entry_id;
-      if (typeof entryId === 'string') {
-        const aliases = [
-          entryId,
-          entryId.startsWith('log-') ? `ev-${entryId.slice('log-'.length)}` : '',
-          typeof entry.location === 'string' ? entry.location.split('#').at(-1) ?? '' : '',
-        ];
-        for (const alias of aliases) {
-          if (alias && alias !== entry.id && !this.evidenceAliases.has(alias)) {
-            this.evidenceAliases.set(alias, entry.id);
-          }
-        }
-      }
-    }
   }
 
   snapshot(): ObservationSnapshot {
@@ -176,7 +154,6 @@ export class ObservationRegistry {
     state: unknown,
     options: {
       inputTexts?: string[];
-      privacy?: ClientLogPrivacy;
       sourceContext?: SourceSnapshotIdentity;
       sourceContexts?: readonly SourceRepositoryBinding[];
       compareSourceContexts?: () => readonly SourceRepositoryBinding[];
@@ -207,9 +184,6 @@ export class ObservationRegistry {
    * 与 EvidenceLedger.capture 的 ID 生成逻辑逐字节一致（内容哈希契约）。
    */
   capture(name: string, arguments_: Record<string, unknown>, result: unknown): unknown {
-    if (name === 'search_cloud_logs' || name === 'query_logs' || name === 'discover_client_sessions') {
-      return this.captureRemoteLogs(name, result);
-    }
     if (name === 'consult_compass') {
       return this.captureConsult(result);
     }
@@ -251,11 +225,8 @@ export class ObservationRegistry {
     let sourcePathsRejected = 0;
     for (const row of rows) {
       if (!isRecord(row)) continue;
-      const rawText = row.content ?? row.excerpt ?? '';
-      if (typeof rawText !== 'string' || !rawText.trim()) continue;
-      const text = name === 'parse_hilog' && this.privacy
-        ? String(this.privacy.sanitize(rawText).value)
-        : rawText;
+      const text = row.content ?? row.excerpt ?? '';
+      if (typeof text !== 'string' || !text.trim()) continue;
       const path = String(row.path ?? 'pasted-hilog').trim() || 'pasted-hilog';
       const line = row.line ?? row.start_line ?? 1;
       const location = `${String(path)}:${String(line)}`;
@@ -353,70 +324,4 @@ export class ObservationRegistry {
     };
   }
 
-  private captureRemoteLogs(name: string, result: unknown): unknown {
-    if (!isRecord(result)) return { evidence_refs: [], result };
-    const rows = name === 'search_cloud_logs' || name === 'query_logs'
-      ? result.entries
-      : Array.isArray(result.candidates)
-        ? result.candidates.flatMap((candidate) => isRecord(candidate) && Array.isArray(candidate.entries)
-          ? candidate.entries
-          : [])
-        : [];
-    if (!Array.isArray(rows)) return { evidence_refs: [], result };
-
-    const evidenceRefs: ObservationEntry[] = [];
-    let rejected = 0;
-    for (const row of rows) {
-      if (!isRecord(row) || !isRecord(row.observation_context)) {
-        rejected += 1;
-        continue;
-      }
-      const context = row.observation_context;
-      const correlated = context.service_binding !== undefined
-        && isRecord(context.service_binding)
-        && context.service_binding.status === 'confirmed'
-        && Array.isArray(context.matched_identifiers)
-        && context.matched_identifiers.length > 0;
-      const text = row.excerpt;
-      if (!correlated || typeof text !== 'string' || !text.trim()) {
-        rejected += 1;
-        continue;
-      }
-      const location = typeof row.location === 'string' ? row.location : null;
-      // 不用模型工具参数生成 ID，避免原始学员标识进入观测快照。
-      const idPayload = pythonJson([
-        name,
-        {
-          entry_id: context.entry_id,
-          store_id: context.store_id,
-          appid: context.appid,
-          start: context.start,
-          end: context.end,
-          page: context.page,
-        },
-        location,
-        text,
-      ]);
-      const entry: ObservationEntry = {
-        id: `ev-${sha256(idPayload).slice(0, 16)}`,
-        kind: 'log',
-        source: `logcenter:${name}`,
-        location,
-        observation_context: context,
-      };
-      this.add(entry);
-      evidenceRefs.push(entry);
-    }
-    const softLimitReached = this.entries.size > SOFT_ENTRY_LIMIT;
-    return {
-      evidence_refs: evidenceRefs,
-      result,
-      ...(rejected > 0 ? { uncorrelated_entries_rejected: rejected } : {}),
-      ...(softLimitReached
-        ? { observation_soft_limit: true, limitation: '观测条目已超过 500 条软上限，请停止泛化取证、用已有观测收尾。' }
-        : evidenceRefs.length === 0 && rows.length > 0
-          ? { limitation: '日志未完成当前学员身份匹配或目标绑定，未登记为观测；不能据此确认平台或根因。' }
-          : {}),
-    };
-  }
 }

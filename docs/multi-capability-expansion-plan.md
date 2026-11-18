@@ -26,7 +26,7 @@
 - 单轮随机密钥不持久化，不承诺跨轮伪名或日志证据 ID 可重放。
 - 学员标识不能自动满足 Compass 的 `correlationReady`；请求级 traceId/requestId 仍是另一维度。
 
-**框架已实现：**`client-identity.ts`、`client-context.ts`、`log-privacy.ts` 已接入每轮能力会话，并有合成测试。后续仍需用真实授权、脱敏 fixture 验证提取和脱敏覆盖。
+**框架已实现：**`client-identity.ts` 身份提取仍在使用。Runtime 内嵌 LogCenter/`log-privacy` 链路已下线；远程日志由独立 `log-mcp` 提供。
 
 ### 2.2 LogCenter 目标绑定与设备/会话发现
 

@@ -3,11 +3,9 @@ import test from 'node:test';
 
 import {
   UcenterClient,
-  applyResolvedUidQuery,
   createLearnerLookupTools,
   looksLikeLearnerCard,
   lookupLearnerByCard,
-  resolveLearnerUid,
 } from '../src/capabilities/ucenter.js';
 import { extractClientIdentity } from '../src/orchestration/client-identity.js';
 import { loadRuntimeConfig } from '../src/config.js';
@@ -75,61 +73,6 @@ test('card 回显不一致或空 data 时失败', async () => {
     }), { status: 200 }),
   });
   await assert.rejects(() => client.getUserByCard('233021794099'), /card/i);
-});
-
-test('resolveLearnerUid：card 转 uid；已是 uid 原样返回；转换失败返回 null', async () => {
-  const client = new UcenterClient({
-    baseUrl: 'https://ucenter.example.test',
-    fetchImpl: async () => new Response(JSON.stringify({
-      rlt: true,
-      data: { id: 17524748, card: '233021794099' },
-    }), { status: 200 }),
-  });
-  assert.equal(await resolveLearnerUid({ learnerId: '17524748', learnerIdSource: 'uid' }, client), '17524748');
-  assert.equal(
-    await resolveLearnerUid({ learnerId: '233021794099', learnerIdSource: 'card' }, client),
-    '17524748',
-  );
-  assert.equal(
-    await resolveLearnerUid({ learnerId: 'student-fixture-001', learnerIdSource: 'card' }, client),
-    null,
-  );
-  const failing = new UcenterClient({
-    baseUrl: 'https://ucenter.example.test',
-    fetchImpl: async () => new Response(JSON.stringify({ rlt: false, data: null }), { status: 200 }),
-  });
-  assert.equal(
-    await resolveLearnerUid({ learnerId: '233021794099', learnerIdSource: 'card' }, failing),
-    null,
-  );
-});
-
-test('applyResolvedUidQuery 强制带上转换后的 uid，并替换错误 uid 子句', () => {
-  assert.equal(applyResolvedUidQuery(undefined, '17524748'), 'uid: "17524748"');
-  assert.equal(applyResolvedUidQuery('*', '17524748'), 'uid: "17524748"');
-  assert.equal(applyResolvedUidQuery('uid:233021794099', '17524748'), 'uid: "17524748"');
-  assert.equal(applyResolvedUidQuery('uid: "233021794099"', '17524748'), 'uid: "17524748"');
-  assert.equal(
-    applyResolvedUidQuery('level:ERROR AND uid:233021794099', '17524748'),
-    '(level:ERROR) AND uid: "17524748"',
-  );
-  assert.equal(
-    applyResolvedUidQuery('message:quiz', '17524748'),
-    '(message:quiz) AND uid: "17524748"',
-  );
-  assert.equal(applyResolvedUidQuery('message:quiz', undefined), 'message:quiz');
-});
-
-test('applyResolvedUidQuery fulltext 用短语注入 uid（cloudlearn）', () => {
-  assert.equal(applyResolvedUidQuery(undefined, '5570040', 'fulltext'), '"5570040"');
-  assert.equal(
-    applyResolvedUidQuery('"log-eagle-0016-prod"', '5570040', 'fulltext'),
-    '("log-eagle-0016-prod") AND "5570040"',
-  );
-  assert.equal(
-    applyResolvedUidQuery('"log-eagle-0016-prod" AND uid: "bad"', '5570040', 'fulltext'),
-    '("log-eagle-0016-prod") AND "5570040"',
-  );
 });
 
 test('lookupLearnerByCard：编号查档案；短 uid / 非法输入拒绝', async () => {

@@ -2,7 +2,6 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 
 import type { RuntimeConfig } from '../config.js';
-import type { ClientIdentity } from '../orchestration/client-identity.js';
 import { integrationInfo, integrationWarn } from '../observability/integration-log.js';
 
 export const UCENTER_DEFAULT_BASE_URL = 'https://ucenter-one-inner.speiyou.cn';
@@ -31,46 +30,6 @@ export type UcenterClientOptions = {
 /** 学员编号多为较长纯数字；夹杂字母的 fixture 不做外呼。 */
 export function looksLikeLearnerCard(value: string): boolean {
   return /^\d{8,20}$/.test(value.trim());
-}
-
-/** SLS KV vs 全文：prod-cloudlearn 等库 appid/uid 未建 KV 索引时必须用 fulltext。 */
-export type LogQueryStyle = 'kv' | 'fulltext';
-
-function stripUidClauses(base: string, uid: string, style: LogQueryStyle): string {
-  let next = base
-    .replace(/\buid\s*:\s*"?[A-Za-z0-9_-]+"?/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (style === 'fulltext') {
-    const escaped = uid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    next = next
-      .replace(new RegExp(`"${escaped}"`, 'g'), ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-  return next
-    .replace(/^(?:AND\s+)+/i, '')
-    .replace(/(?:\s+AND)+$/i, '')
-    .trim();
-}
-
-/**
- * 日志查询强制带上已解析 uid；若模型误传学员编号当 uid，一律替换。
- * - kv：`uid: "<id>"`（默认，适合已建 KV 索引的库 / APM Lucene）
- * - fulltext：`"<id>"`（对齐 logcenterskill 在 cloudlearn 上的成功路径）
- */
-export function applyResolvedUidQuery(
-  query: string | undefined,
-  uid: string | undefined,
-  style: LogQueryStyle = 'kv',
-): string | undefined {
-  if (!uid) return query?.trim() || undefined;
-  const uidClause = style === 'fulltext' ? `"${uid}"` : `uid: "${uid}"`;
-  let base = (query ?? '').trim();
-  if (!base || base === '*') return uidClause;
-  base = stripUidClauses(base, uid, style);
-  if (!base || base === '*') return uidClause;
-  return `(${base}) AND ${uidClause}`;
 }
 
 export class UcenterClient {
@@ -125,31 +84,6 @@ export class UcenterClient {
   }
 }
 
-/** card → uid；显式 uid 原样返回；无法转换返回 null（禁止把学员编号当 uid 查日志）。 */
-export async function resolveLearnerUid(
-  identity: Pick<ClientIdentity, 'learnerId' | 'learnerIdSource'>,
-  client: UcenterClient | null,
-  signal?: AbortSignal,
-): Promise<string | null> {
-  const learnerId = identity.learnerId?.trim();
-  if (!learnerId) return null;
-  if (identity.learnerIdSource === 'uid') return learnerId;
-  if (identity.learnerIdSource !== 'card') return null;
-  if (!looksLikeLearnerCard(learnerId)) return null;
-  if (!client) return null;
-  try {
-    const user = await client.getUserByCard(learnerId, signal);
-    integrationInfo('ucenter', 'card resolved to uid', { card: learnerId, uid: user.uid });
-    return user.uid;
-  } catch (error) {
-    integrationWarn('ucenter', 'card to uid failed', {
-      card: learnerId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
-}
-
 export function createUcenterClient(config: {
   ucenterBaseUrl: string;
   ucenterTimeoutMs: number;
@@ -177,7 +111,7 @@ export async function lookupLearnerByCard(
     return {
       status: 'invalid_request',
       learner: null,
-      message: '当前仅支持用学员编号(card，8–20 位纯数字)查询档案；日志 uid 请直接用于查日志，不要当档案主键',
+      message: '当前仅支持用学员编号(card，8–20 位纯数字)查询档案',
     };
   }
   try {
@@ -215,7 +149,7 @@ export function createLearnerLookupTools(
       id: 'lookup_learner',
       description:
         '按学员编号(card)查询学员档案（uid、姓名、年级等）。用户问“查用户信息/学员信息”时调用；'
-        + '不要用 resolve_log_target。仅接受学员编号，不接受日志 uid。不返回手机号。',
+        + '仅接受学员编号。不返回手机号。',
       inputSchema: z.object({
         learner_id: z.string().min(1).describe('学员编号 card（8–20 位纯数字）'),
       }),

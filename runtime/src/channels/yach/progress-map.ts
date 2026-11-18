@@ -30,17 +30,6 @@ export function createProgressChecklist(): ProgressChecklist {
 export function progressStepForTool(toolName: string): ProgressStepId | null {
   const name = toolName.toLowerCase();
   if (name.includes('lookup_learner') || name.includes('ucenter')) return 'learner';
-  if (
-    name.includes('log_target')
-    || name.includes('cloud_logs')
-    || name === 'count_logs'
-    || name === 'query_logs'
-    || name.includes('log_catalog')
-    || name.includes('logcenter')
-    || name.includes('client_sessions')
-  ) {
-    return 'logs';
-  }
   if (name.includes('prepare_source')) return 'source';
   if (name.includes('consult_compass')) return 'consult';
   if (

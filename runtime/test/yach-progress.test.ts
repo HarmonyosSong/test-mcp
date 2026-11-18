@@ -10,10 +10,8 @@ import {
 } from '../src/channels/yach/progress-map.js';
 import { YachProgressCard, type YachCardApi } from '../src/channels/yach/progress.js';
 
-test('progressStepForTool 区分学员/日志/源码/知识/协查', () => {
+test('progressStepForTool 区分学员/源码/知识/协查', () => {
   assert.equal(progressStepForTool('lookup_learner'), 'learner');
-  assert.equal(progressStepForTool('resolve_log_target'), 'logs');
-  assert.equal(progressStepForTool('search_cloud_logs'), 'logs');
   assert.equal(progressStepForTool('search_project_text'), 'source');
   assert.equal(progressStepForTool('search_knowledge'), 'knowledge');
   assert.equal(progressStepForTool('prepare_source'), 'source');

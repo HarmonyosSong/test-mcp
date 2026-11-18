@@ -115,12 +115,7 @@ export const runtimeConfigSchema = z.object({
   yachAppSecret: z.string().default(''),
   yachCliPath: z.string().default('yach-cli'),
   yachRobotId: z.string().default(''),
-  logCatalogPath: z.string().default(''),
-  logcenterAppId: z.string().default(''),
-  logcenterAppSecret: z.string().default(''),
-  logcenterBaseUrl: z.string().default('https://logcenter-api.tal.com/api'),
-  logcenterTimeoutMs: z.coerce.number().int().min(100).max(120_000).default(15_000),
-  /** 学员编号默认通过内网 UCenter 转成 uid 后才允许查日志。 */
+  /** 学员编号通过内网 UCenter 查档案（lookup_learner）。 */
   ucenterBaseUrl: z.string().default(UCENTER_DEFAULT_BASE_URL),
   ucenterTimeoutMs: z.coerce.number().int().min(100).max(60_000).default(10_000),
 });
@@ -211,11 +206,6 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     yachAppSecret: env.HARMONY_AGENT_YACH_APP_SECRET ?? env.YACH_APP_SECRET,
     yachCliPath: env.HARMONY_AGENT_YACH_CLI_PATH,
     yachRobotId: env.HARMONY_AGENT_YACH_ROBOT_ID ?? env.YACH_ROBOT_ID,
-    logCatalogPath: env.HARMONY_AGENT_LOG_CATALOG,
-    logcenterAppId: env.HARMONY_AGENT_LOGCENTER_APP_ID,
-    logcenterAppSecret: env.HARMONY_AGENT_LOGCENTER_APP_SECRET,
-    logcenterBaseUrl: env.HARMONY_AGENT_LOGCENTER_BASE_URL,
-    logcenterTimeoutMs: env.HARMONY_AGENT_LOGCENTER_TIMEOUT_MS,
     ucenterBaseUrl: env.HARMONY_AGENT_UCENTER_BASE_URL,
     ucenterTimeoutMs: env.HARMONY_AGENT_UCENTER_TIMEOUT_MS,
   });
@@ -284,12 +274,6 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     yachAppSecret: config.yachAppSecret.trim(),
     yachCliPath: config.yachCliPath.trim() || 'yach-cli',
     yachRobotId: config.yachRobotId.trim(),
-    logCatalogPath: config.logCatalogPath.trim()
-      ? (config.logCatalogPath.startsWith('/') ? config.logCatalogPath.trim() : fromRoot(config.logCatalogPath.trim()))
-      : '',
-    logcenterAppId: config.logcenterAppId.trim(),
-    logcenterAppSecret: config.logcenterAppSecret.trim(),
-    logcenterBaseUrl: (config.logcenterBaseUrl.trim() || 'https://logcenter-api.tal.com/api').replace(/\/+$/, ''),
     ucenterBaseUrl: (config.ucenterBaseUrl.trim() || UCENTER_DEFAULT_BASE_URL).replace(/\/+$/, ''),
     ucenterTimeoutMs: config.ucenterTimeoutMs,
   };

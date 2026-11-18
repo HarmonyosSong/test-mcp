@@ -6,7 +6,6 @@ import test from 'node:test';
 
 import { ConversationRecordSchema } from '../src/domain/schemas.js';
 import { appendDiagnosisOutcome, archiveDiagnosisCase } from '../src/observability/cases.js';
-import { createClientLogPrivacy, redactClientText } from '../src/security/client-context.js';
 
 test('archives terminal diagnosis cases idempotently and appends correlated outcomes', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'mastra-observability-'));
@@ -46,13 +45,12 @@ test('案例归档不脱敏：与会话内容一致全文明文保留', async ()
       { id: 'msg-assistant', role: 'assistant', content: `已核对 ${input}`, status: 'completed' },
     ],
   });
-  const privacy = createClientLogPrivacy([input], false);
   try {
     const path = await archiveDiagnosisCase(
       directory,
       conversation,
       'msg-assistant',
-      (text) => redactClientText(privacy, text),
+      (text) => text,
     );
     const archived = await readFile(path, 'utf8');
     // 2026-11-13 起不脱敏：uid 与电话均明文保留。

@@ -71,40 +71,6 @@ export const NextActionSchema = z.strictObject({
   question: z.string().trim().min(1),
 });
 
-export const LogObservationContextSchema = z.strictObject({
-  environment: z.string().min(1),
-  storage_alias: z.string().min(1),
-  account: z.string().min(1),
-  collection: z.string().min(1),
-  store_id: z.string().min(1),
-  topic: z.string().min(1),
-  appid: z.string().min(1),
-  query: z.string().max(2_000),
-  start: z.number().int().nonnegative(),
-  end: z.number().int().nonnegative(),
-  page: z.number().int().nonnegative(),
-  entry_id: z.string().regex(/^log-[a-f0-9]{24}$/),
-  redaction_version: z.string().min(1),
-  matched_identifiers: z.array(z.strictObject({
-    kind: z.enum(['learner_id', 'phone', 'trace_id', 'request_id']),
-    matched: z.literal(true),
-  })),
-  matched_error_features: z.array(z.string()),
-  service_binding: z.strictObject({
-    status: z.enum(['confirmed', 'unconfirmed']),
-    method: z.enum(['user_selected', 'observed_client_session']).nullable(),
-  }),
-  observed_platform: z.enum(['harmony', 'android', 'ios', 'unknown']),
-  observed_form_factor: z.enum(['phone', 'pad', 'universal', 'unknown']).optional().default('unknown'),
-  // Older evidence snapshots omit the product line; LogCenter may supply it
-  // when the user's prompt only names a platform.
-  observed_product_line: ClientProductLineSchema.nullable().optional().default(null),
-  observed_version: nullableText,
-  device_ref: nullableText,
-  session_ref: nullableText,
-  platform_conflict: z.boolean(),
-});
-
 // Runtime-owned identity for source observations. Model drafts intentionally do not
 // expose this field; it is derived from the conversation's bound snapshot.
 export const SourceSnapshotIdentitySchema = z.strictObject({
@@ -151,8 +117,8 @@ export const EvidenceSchema = z.strictObject({
   location: nullableText.default(null),
   excerpt: z.string().max(2_000),
   supports: z.string(),
-  // 只能由 Runtime 的观测适配器写入，模型草稿没有该字段。
-  observation_context: LogObservationContextSchema.optional(),
+  // 只能由 Runtime 的观测适配器写入（如协查 consultation_id），模型草稿没有该字段。
+  observation_context: z.record(z.string(), z.unknown()).optional(),
   // 只能由 Runtime 根据会话绑定的源码快照写入，模型草稿没有该字段。
   source_context: SourceObservationContextSchema.optional(),
 }).superRefine((value, ctx) => {

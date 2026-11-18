@@ -798,7 +798,6 @@ test('逐字符文本流不脱敏：uid/学员编号与电话均明文保留', a
   const phone = '13800000000';
   const modelText = `已定位学员 ${learnerId}，联系电话 ${phone}，继续检查日志。`;
   const inputText = `学员编号: ${learnerId}; 联系电话: ${phone}; 页面打不开`;
-  const correlations: Array<{ identifiers?: Record<string, string>; sourceText: string }> = [];
   const diagnosisAgent = {
     async *stream() {
       for (const delta of modelText) yield { type: 'text', delta };
@@ -813,10 +812,6 @@ test('逐字符文本流不脱敏：uid/学员编号与电话均明文保留', a
     diagnosisAgent,
     {
       createKnowledgeSession: async () => null,
-      createLogCatalogTools: async (options: { correlation: { identifiers?: Record<string, string>; sourceText: string } }) => {
-        correlations.push(options.correlation);
-        return null;
-      },
     } as unknown as CapabilityMcp,
     { enabled: true } as ModelConfiguration,
     observabilityOptions(directory),
@@ -841,16 +836,6 @@ test('逐字符文本流不脱敏：uid/学员编号与电话均明文保留', a
     assert.equal(assistant?.status, 'completed');
     const user = saved.messages.find((message) => message.role === 'user');
     assert.equal(user?.content, inputText);
-    const next = await app.request(`/conversations/${conversation.id}/messages`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ content: '继续排查' }),
-    });
-    assert.equal(next.status, 200);
-    await next.text();
-    assert.equal(correlations[1]?.identifiers?.learner_id, learnerId);
-    assert.equal(correlations[1]?.identifiers?.phone, phone);
-    assert.equal(correlations[1]?.sourceText.includes(inputText), true);
   } finally {
     await store.close();
     await rm(directory, { recursive: true, force: true });

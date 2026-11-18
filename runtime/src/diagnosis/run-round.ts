@@ -5,7 +5,6 @@ import type {
   ConversationRecord,
 } from '../domain/schemas.js';
 import type { CapabilityMcp } from '../capabilities/mcp.js';
-import type { LogToolCorrelation } from '../capabilities/log-center.js';
 import { createRoundCapabilitySession, type CapabilitySession, type CapabilityContext } from '../capabilities/session.js';
 import type { ToolsetsInput } from '@mastra/core/agent';
 import { createLazySourceToolset, LazySourceHolder } from '../capabilities/lazy-source.js';
@@ -18,8 +17,6 @@ import type { ProductStore } from '../product/store.js';
 import { redactRecord, redactRecordInPlace, redactSensitiveText } from '../security/redaction.js';
 import { appendDiagnosisOutcome, archiveDiagnosisCase } from '../observability/cases.js';
 import { DiagnosisAgent, type DiagnosisStreamEvent } from './agent.js';
-import { extractClientIdentityFromMessages } from '../orchestration/client-identity.js';
-import { clientIdentifiersFromMessages, redactClientText, createClientLogPrivacy } from '../security/client-context.js';
 import { createStreamRedactor } from '../security/stream-redaction.js';
 import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js';
 
@@ -29,24 +26,6 @@ export type InvestigationBudget = { maxSeconds: number; maxRemoteCalls: number }
 const DEFAULT_INVESTIGATION_BUDGET: InvestigationBudget = { maxSeconds: 900, maxRemoteCalls: 4 };
 /** 软时限后的收尾窗口：宽限模型用已有证据产出最终回答，之后硬 abort 兜底。 */
 const FINALIZE_WINDOW_SECONDS = 180;
-
-/** 原始标识只进入本轮私有工具上下文，不进入模型 schema 或持久化记录。 */
-export function buildRoundLogCorrelation(
-  conversation: ConversationRecord,
-  content: string,
-): LogToolCorrelation {
-  const userTexts = conversation.messages
-    .filter((message) => message.role === 'user')
-    .map((message) => message.content)
-    .slice(-20);
-  if (userTexts.at(-1) !== content) userTexts.push(content);
-  const identity = extractClientIdentityFromMessages(userTexts);
-  return {
-    sourceText: userTexts.join('\n').slice(0, 100_000),
-    identifiers: clientIdentifiersFromMessages(userTexts),
-    ...(identity.learnerIdSource ? { learnerIdSource: identity.learnerIdSource } : {}),
-  };
-}
 
 export interface RunDiagnosisRoundOptions {
   knowledgeQueryLog?: string;
@@ -171,19 +150,10 @@ function redactConversationForPersistence(
 
 function roundRedactor(
   modelConfiguration: ModelConfiguration,
-  conversation: ConversationRecord,
-  content: string,
+  _conversation: ConversationRecord,
+  _content: string,
 ): (text: string) => string {
-  const base = (text: string) => modelConfiguration.redact?.(text) ?? redactSensitiveText(text);
-  const userTexts = conversation.messages
-    .filter((message) => message.role === 'user')
-    .map((message) => message.content);
-  if (userTexts.at(-1) !== content) userTexts.push(content);
-  const privacy = createClientLogPrivacy(userTexts, false);
-  return Object.assign(
-    (text: string) => redactClientText(privacy, base(text)),
-    { sensitiveSuffixLength: (text: string) => privacy.sensitiveSuffixLength(text) },
-  );
+  return (text: string) => modelConfiguration.redact?.(text) ?? redactSensitiveText(text);
 }
 
 /** Persist admission before Web sends HTTP 200 or starts any capability clients. */
@@ -279,14 +249,13 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
       }
     }
 
-    // knowledge/learner/log_catalog 由能力会话挂载；repository 不经直连
-    // （workspacePath 传 null），统一走懒代理工具组，由 prepare_source 轮内热绑定。
+    // knowledge/learner 由能力会话挂载；repository 不经直连（workspacePath 传 null），
+    // 统一走懒代理工具组，由 prepare_source 轮内热绑定。
     capabilitySession = await createRoundCapabilitySession(capabilities, {
       conversationId: conversation.id,
       messageId: assistantMessage.id,
       runId,
       workspacePath: null,
-      logCorrelation: buildRoundLogCorrelation(conversation, content),
       abortSignal,
     });
 

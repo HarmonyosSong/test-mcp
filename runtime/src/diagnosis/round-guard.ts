@@ -52,11 +52,6 @@ const REUSABLE_TOOLS = new Set([
   'list_project_files',
   'load_business_context',
   'parse_hilog',
-  'resolve_log_target',
-  'count_cloud_logs',
-  'search_cloud_logs',
-  'count_logs',
-  'query_logs',
 ]);
 
 const NO_PROGRESS_REMINDER =

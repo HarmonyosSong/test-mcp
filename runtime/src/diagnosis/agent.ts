@@ -18,8 +18,6 @@ import { ObservationRegistry } from "./observations.js";
 import { SkillRegistry } from "./skills.js";
 import { RoundGuard } from "./round-guard.js";
 import { validateFinalAnswer, type VerdictMarker } from "./final-answer-validator.js";
-import { createClientLogPrivacy } from "../security/client-context.js";
-
 const MAX_TOOL_FAILURES = 40;
 const MAX_TOOL_CALLS = 120;
 /** 最终答案校验失败后的反馈重试次数（首轮之外最多再打回 2 次）。 */
@@ -179,7 +177,6 @@ function promptFor(
   registry: ObservationRegistry,
   conversation: DiagnosisRunInput["conversation"],
   toolsets: ToolsetsInput | undefined,
-  logCatalogAvailable: boolean,
 ): string {
   const availableTools = new Set(["load_skill"]);
   for (const tools of Object.values(toolsets ?? {})) {
@@ -226,7 +223,7 @@ ${prepareSourceAvailable ? `
 - 索引结果只是导航线索，不能直接作为证据；命中后根据返回的 platform、version、repository_id、resolved_commit 调用 prepare_source，再用 read_project_file 核实同一快照。
 - 用户只问产品规则时不必调用代码索引；用户问实现、代码位置或模块归属时优先调用代码索引。索引无命中再回退代码图或全文搜索。
 ` : ""}
-${logCatalogAvailable ? "远程日志目录工具可用：调用任何远程日志工具前，先用 load_skill 加载 use-log-catalog 技能并遵循其合同。" : "远程日志目录工具不可用；不要声称已查询日志中心或云日志。"}
+远程日志目录工具不可用；不要声称已查询日志中心或云日志。
 
 输出规范：
 1. 最终回答直接面向提问者（多为非研发角色），用简洁自然的中文陈述结论、依据与必要缺口；不复述排查过程，不输出完整调用链、工具名或内部 ID 清单（用户明确要求详细报告时除外）。
@@ -266,7 +263,6 @@ export class DiagnosisAgent {
       .filter((message) => message.role === "user")
       .map((message) => message.content);
     if (userTexts.at(-1) !== input.content) userTexts.push(input.content);
-    const privacy = createClientLogPrivacy(userTexts);
     const sourceRepositories = input.conversation.source_repositories ?? [];
     const sourceIdentity = sourceRepositories.length === 0 && input.conversation.workspace_path && input.conversation.repository_id && input.conversation.resolved_commit
       ? SourceSnapshotIdentitySchema.safeParse({
@@ -276,7 +272,6 @@ export class DiagnosisAgent {
       : null;
     const registry = ObservationRegistry.restore(input.conversation.evidence_state, {
       inputTexts: userTexts,
-      privacy,
       sourceContext: sourceIdentity?.success ? sourceIdentity.data : undefined,
       sourceContexts: sourceRepositories,
       // 对照端绑定在轮内由 prepare_source(platform=…) 晚于注册表构造发生，thunk 延迟读取。
@@ -317,7 +312,6 @@ export class DiagnosisAgent {
         registry,
         input.conversation,
         input.toolsets,
-        Boolean(input.toolsets && Object.values(input.toolsets).some((tools) => 'resolve_log_target' in tools)),
       ),
       model,
       ...(this.mastra ? { mastra: this.mastra } : {}),
@@ -406,7 +400,7 @@ export class DiagnosisAgent {
               tool: chunk.payload.toolName,
               status: "running",
               summary: `调用 ${chunk.payload.toolName}`,
-              arguments_summary: truncate(privacy.sanitize(args).value),
+              arguments_summary: truncate(args),
               result_summary: null,
               duration_ms: null,
               created_at: new Date().toISOString(),
@@ -427,7 +421,7 @@ export class DiagnosisAgent {
             const event: ToolEvent = {
               ...prior,
               status: isError ? "failed" : "completed",
-              result_summary: truncate(privacy.sanitize(observed).value),
+              result_summary: truncate(observed),
               duration_ms: Math.max(0, Date.now() - (toolStartedAt.get(prior.id) ?? Date.now())),
             };
             steps.set(event.id, event);
@@ -441,7 +435,7 @@ export class DiagnosisAgent {
             const event: ToolEvent = {
               ...prior,
               status: "failed",
-              result_summary: truncate(privacy.sanitize(chunk.payload.error).value),
+              result_summary: truncate(chunk.payload.error),
               duration_ms: Math.max(0, Date.now() - (toolStartedAt.get(prior.id) ?? Date.now())),
             };
             steps.set(event.id, event);

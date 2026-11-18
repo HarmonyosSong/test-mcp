@@ -64,7 +64,6 @@ Knowledge/Repository/code_index MCP，不再拥有产品 Agent 或 HTTP 服务�
 | 可追溯到用户输入的 hilog 解析 | `ObservationRegistry`，`kind=log` | 可以 |
 | 用户消息 | `ev-user-*` 用户引用 | 只能证明报告现象，不能单独证明技术根因 |
 | Knowledge MCP / Skill / Catalog | 导航与判据线索 | 不可以 |
-| 关联 `search_cloud_logs` / `discover_client_sessions` 条目 | 元数据进入 `ObservationRegistry`，携带 `observation_context` | 目标绑定且身份匹配时可以；未关联条目直接拒绝 |
 | Compass 协查完成态结论 | `ObservationRegistry`，`kind=external`，`observation_context` 携带 consultation_id | 可以（服务端事项的确信证据，与本地观测同级） |
 | 代码索引图节点/边 | Repository/code_index MCP 内部导航结果 | 不可以，必须回读同一快照源码 |
 

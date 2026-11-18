@@ -4,7 +4,6 @@ import type {
   ClientProductLine,
   ConversationRecord,
 } from '../domain/schemas.js';
-import { LogObservationContextSchema } from '../domain/schemas.js';
 
 export type PromptSourceContext = {
   platform: ClientPlatform | null;
@@ -102,10 +101,8 @@ function uniqueOrThrow<T extends string>(values: readonly T[], label: string): T
 export function resolvePromptSourceContext(
   content: string,
   conversation: Pick<ConversationRecord, 'platform' | 'product_line' | 'form_factor' | 'version' | 'build'>
-    & Partial<Pick<ConversationRecord, 'evidence_state'>>
     & { promptHistory?: readonly string[] },
 ): PromptSourceContext | null {
-  const observed = observedLogContext(conversation.evidence_state ?? {});
   const currentPlatform = detectPlatform(content);
   const currentProductLine = detectProductLine(content);
   const currentFormFactor = detectFormFactor(content);
@@ -119,15 +116,10 @@ export function resolvePromptSourceContext(
   const historyVersion = currentPlatform && historyPlatform && currentPlatform !== historyPlatform
     ? null
     : firstDetected(previousMessages, detectVersion);
-  const platform = currentPlatform ?? observed.platform ?? historyPlatform ?? conversation.platform;
-  const productLine = currentProductLine ?? observed.productLine ?? historyProductLine ?? conversation.product_line;
-  const formFactor = currentFormFactor ?? observed.formFactor ?? historyFormFactor ?? conversation.form_factor;
-  // Do not carry a Harmony/iOS log version into an explicit Android request
-  // (or the reverse); the registry will choose the latest verified build.
-  const observedVersion = observed.platform && platform && observed.platform !== platform
-    ? null
-    : observed.version;
-  const version = currentVersion ?? observedVersion ?? historyVersion ?? conversation.version;
+  const platform = currentPlatform ?? historyPlatform ?? conversation.platform;
+  const productLine = currentProductLine ?? historyProductLine ?? conversation.product_line;
+  const formFactor = currentFormFactor ?? historyFormFactor ?? conversation.form_factor;
+  const version = currentVersion ?? historyVersion ?? conversation.version;
   const build = detectBuild(content, version)
     ?? (currentPlatform && historyPlatform && currentPlatform !== historyPlatform ? null : conversation.build);
 
@@ -160,56 +152,4 @@ function firstDetected<T>(messages: readonly string[], detector: (content: strin
     if (value !== null) return value;
   }
   return null;
-}
-
-function observedLogContext(value: ConversationRecord['evidence_state']): {
-  platform: ClientPlatform | null;
-  productLine: ClientProductLine | null;
-  formFactor: ClientFormFactor | null;
-  version: string | null;
-} {
-  const rawEntries = value.entries;
-  if (!Array.isArray(rawEntries)) return { platform: null, productLine: null, formFactor: null, version: null };
-  const contexts = rawEntries.flatMap((entry) => {
-    if (!entry || typeof entry !== 'object' || !('observation_context' in entry)) return [];
-    const parsed = LogObservationContextSchema.safeParse(entry.observation_context);
-    if (!parsed.success) return [];
-    const context = parsed.data;
-    if (
-      context.platform_conflict ||
-      context.service_binding.status !== 'confirmed' ||
-      context.matched_identifiers.length === 0
-    ) return [];
-    return [context];
-  });
-  const platforms = [...new Set(contexts
-    .map((context) => context.observed_platform)
-    .filter((platform): platform is ClientPlatform => platform !== 'unknown'))];
-  if (platforms.length > 1) {
-    throw new PromptVersionContextError(`LogCenter 关联日志的平台存在歧义：${platforms.join('、')}`);
-  }
-  const productLines = [...new Set(contexts
-    .map((context) => context.observed_product_line)
-    .filter((productLine): productLine is ClientProductLine => Boolean(productLine)))];
-  if (productLines.length > 1) {
-    throw new PromptVersionContextError(`LogCenter 关联日志的产品线存在歧义：${productLines.join('、')}`);
-  }
-  const versions = [...new Set(contexts
-    .map((context) => context.observed_version?.trim() || null)
-    .filter((version): version is string => Boolean(version)))];
-  if (versions.length > 1) {
-    throw new PromptVersionContextError(`LogCenter 关联日志的版本存在歧义：${versions.join('、')}`);
-  }
-  const formFactors = [...new Set(contexts
-    .map((context) => context.observed_form_factor)
-    .filter((formFactor): formFactor is ClientFormFactor => formFactor !== 'unknown'))];
-  if (formFactors.length > 1) {
-    throw new PromptVersionContextError(`LogCenter 关联日志的端形态存在歧义：${formFactors.join('、')}`);
-  }
-  return {
-    platform: platforms[0] ?? null,
-    productLine: productLines[0] ?? null,
-    formFactor: formFactors[0] ?? null,
-    version: versions[0] ?? null,
-  };
 }

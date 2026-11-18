@@ -57,39 +57,6 @@ test('parse_hilog 只登记用户输入中实际出现的日志', () => {
   assert.equal(accepted.evidence_refs[0]?.kind, 'log');
 });
 
-test('远程日志：未关联身份条目不登记；关联条目保留 observation_context 并注册别名', () => {
-  const registry = new ObservationRegistry();
-  const uncorrelated = registry.capture('search_cloud_logs', {}, {
-    entries: [{ excerpt: 'no binding', observation_context: { service_binding: { status: 'pending' }, matched_identifiers: [] } }],
-  }) as { evidence_refs: unknown[]; uncorrelated_entries_rejected?: number; limitation?: string };
-  assert.equal(uncorrelated.evidence_refs.length, 0);
-  assert.equal(uncorrelated.uncorrelated_entries_rejected, 1);
-  assert.match(uncorrelated.limitation ?? '', /未完成当前学员身份匹配/);
-
-  const correlated = registry.capture('search_cloud_logs', {}, {
-    entries: [{
-      excerpt: 'FATAL: xts crash',
-      location: 'sls://store/app#log-abcdef',
-      observation_context: {
-        entry_id: 'log-abcdef',
-        store_id: 'store-1',
-        appid: 'app-1',
-        start: '2026-11-16 10:00:00',
-        end: '2026-11-16 10:05:00',
-        page: 1,
-        service_binding: { status: 'confirmed' },
-        matched_identifiers: ['uid:123'],
-        observed_platform: 'harmony',
-      },
-    }],
-  }) as { evidence_refs: Array<{ id: string; observation_context?: Record<string, unknown> }> };
-  assert.equal(correlated.evidence_refs.length, 1);
-  const entry = correlated.evidence_refs[0]!;
-  assert.equal(registry.get(entry.id)?.observation_context?.observed_platform, 'harmony');
-  assert.equal(registry.has('log-abcdef'), true, '日志条目别名可解析');
-  assert.equal(registry.has('ev-abcdef'), true, 'ev- 派生别名可解析');
-});
-
 test('快照只存元数据：无正文、无淘汰；条目 append-only 不"过期"', () => {
   const registry = new ObservationRegistry();
   captureRead(registry, 'src/a.ets', 'content A');
