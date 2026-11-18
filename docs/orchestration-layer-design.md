@@ -5,7 +5,7 @@
 > 诊断现在是单 loop：模型自主决定排查路径，编排能力收敛为 prepare_source / consult_compass
 > 工具与 RoundGuard 横切护栏。本文仅作历史参考保留。
 >
-> ~~状态：本文描述**当前已接入聊天链路的实现**。~~学员日志关联入账、提示词/日志上下文解析和精确快照选择器已接入框架；真实字段验收与正在运行轮次的源码热切换边界见 [multi-capability-expansion-plan.md](multi-capability-expansion-plan.md)。
+> ~~状态：本文描述**当前已接入聊天链路的实现**。~~学员日志关联入账、提示词/日志上下文解析和精确快照选择器已接入框架；真实字段验收与正在运行轮次的源码热切换边界见 [ARCHITECTURE.md](ARCHITECTURE.md) §6 能力状态。
 
 ## 1. 范围
 

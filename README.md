@@ -21,9 +21,9 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 - 正式支持 DeepSeek `deepseek-flash`；同时保留 OpenAI、通义千问、Moonshot/Kimi、智谱 GLM、火山方舟/豆包及 OpenAI-compatible 配置入口作为实验/未验收选项。可配置不等于正式支持；评估入口和口径见 [`docs/triage-feedback-and-evaluation.md`](docs/triage-feedback-and-evaluation.md)。
 - 会话、动态快照和证据状态保存在 runtime 的 LibSQL；旧仓库登记表仅供一次性迁移读取，不参与当前源码选择。模型配置仍保存在 owner-only 的 `.data/model-config.json`，旧 `.data` JSON 可通过迁移命令导入。
 - 知音楼网页 SSO：未登录不可用业务 API；应用挂在 `/xesapp-agent` 前缀下。设计见 [`spec/sso-login-design.md`](spec/sso-login-design.md)。
-- 统一外部全栈 Agent（覆盖本项目前端、H5 和服务端）通过 Compass A2A Agent Slot 接入；Supervisor 已支持确定性调查计划、客户端 `observe → source` 门禁、固定脱敏摘要的自动协查、自动跨侧、并行调查、取消和联合报告，不要求 IT 老师理解或审批另一个 Agent。新工单没有本地 `kind=log` 观测时，即使带服务端关键词和 traceId 也先进行客户端观察。规则与实现查询在本地知识不足时可自动转外部协查，不要求本地观测或 traceId；故障诊断仍保留观测和请求关联门禁。远端结论独立保存为 `external_findings`，不进入本地证据。接入契约见 [`spec/compass-a2a-integration.md`](spec/compass-a2a-integration.md)，编排细则见 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)。
-- 客户端只有一个统一的 `ClientDiagnosisAgent`，HarmonyOS、iOS 和 Android 通过会话端上下文、Skill、知识排序和仓库适配处理差异；服务端或专项 Agent 通过 A2A Agent Slot 接入，Compass 是首个具体实例。
-- 技术分享版见 [`docs/architecture-sharing.html`](docs/architecture-sharing.html)，配套 Markdown 和分模块 SVG 位于 `docs/` 与 `docs/diagrams/`。
+- 统一外部全栈 Agent（覆盖本项目前端、H5 和服务端）通过 Compass A2A Agent Slot 接入；诊断链路为单 loop：模型自主决定排查路径，`consult_compass` 是模型可见工具（预算 4 次/轮），完成态协查结论登记为 `kind=external` 正式观测，与本地观测同级引用。接入契约见 [`spec/compass-a2a-integration.md`](spec/compass-a2a-integration.md)，历史编排设计见带 superseded 说明的 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)。
+- 客户端只有一个统一的 `DiagnosisAgent`，HarmonyOS、iOS 和 Android 通过会话端上下文、Skill、知识排序和版本快照适配处理差异；服务端或专项 Agent 通过 A2A Agent Slot 接入，Compass 是首个具体实例。
+- 当前架构图见 [`docs/diagrams/`](docs/diagrams/)（01 诊断主流程、02 知识与证据架构）。
 
 ## 技术栈
 
@@ -233,4 +233,4 @@ skills/       声明式诊断 Skill
 docs/         当前架构、迁移规格、运维文档和历史设计记录
 ```
 
-设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)（编排层旧设计见带 superseded 说明的 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)）。真实学员日志链验收、观察后的自动源码换绑、多端产品化和代码索引验收只看 [`docs/multi-capability-expansion-plan.md`](docs/multi-capability-expansion-plan.md)；完整文档入口见 [`docs/README.md`](docs/README.md)。
+设计细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)（编排层旧设计见带 superseded 说明的 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)）。能力开放项（真实学员日志链验收、多进程 lease/CAS 等）以 `ARCHITECTURE.md` §6 能力状态表为准；完整文档入口见 [`docs/README.md`](docs/README.md)。
