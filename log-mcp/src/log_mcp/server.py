@@ -213,6 +213,7 @@ def build_server(groups: list[str], *, deps: dict[str, Any]) -> MCPServer:
                 cloudlog_factory=deps["cloudlog_factory"],
                 cloud_defaults=deps["cloud_defaults"],
                 default_env=default_env,
+                cloud_vendor=deps["cloud_vendor"],
             )
         else:
             raise ValueError(f"unknown tool group: {group}")
@@ -263,6 +264,7 @@ def create_app(
         "logcenter_factory": logcenter_factory,
         "cloudlog_factory": cloudlog_factory,
         "cloud_defaults": resolved.cloudlog.defaults,
+        "cloud_vendor": resolved.cloudlog.vendor,
         "default_env": resolved.default_env,
     }
 

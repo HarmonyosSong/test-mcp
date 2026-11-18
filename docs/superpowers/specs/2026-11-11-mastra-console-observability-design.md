@@ -17,7 +17,9 @@
 ## 每份 trace JSON 含什么（schema_version 2）
 
 - `user_input` / `final_answer`：用户原话与最终回复（默认尽量全文）
-- `steps[]`：按模型轮次；每轮含 `model_text`、`finish_reason`、`usage`、`tools[]`
+- `started_at` / `captured_at`：整轮起止墙钟时间（ISO）
+- `steps[]`：按模型轮次；每轮含 `started_at` / `ended_at`、`model_text`、`finish_reason`、`usage`、`tools[]`
+- `tools[]`：按 `started_at` 排序；每项含 `started_at` / `ended_at` / `duration_ms`
 - `summary`：总耗时、轮次数、工具次数、噪音省略数
 - **默认丢弃噪音**：`processor_run`、`mapping`、`model_chunk`；不再输出平铺 `spans[]`
 - 正文默认不截断（`PREVIEW_CHARS=0`）；仅保留约 2MB/字段硬顶；需要截断时设正整数

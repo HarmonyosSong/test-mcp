@@ -143,12 +143,20 @@ test('writes step-oriented flow JSON and drops processor/mapping/chunk noise', a
     schema_version: number;
     user_input?: string;
     final_answer?: string;
+    started_at?: string;
     summary: { steps: number; tool_calls: number; noise_spans_omitted: number };
     steps: Array<{
       step_index: number;
+      started_at: string | null;
+      ended_at: string | null;
       model_text?: string;
       finish_reason?: string;
-      tools: Array<{ name: string; input_preview?: string }>;
+      tools: Array<{
+        name: string;
+        started_at: string | null;
+        ended_at: string | null;
+        input_preview?: string;
+      }>;
     }>;
     spans?: unknown;
   };
@@ -160,12 +168,101 @@ test('writes step-oriented flow JSON and drops processor/mapping/chunk noise', a
   assert.equal(body.summary.tool_calls, 1);
   assert.ok(body.summary.noise_spans_omitted >= 3);
   assert.equal(body.spans, undefined);
+  assert.equal(body.started_at, '1970-01-01T00:00:00.000Z');
   assert.equal(body.steps[0]?.model_text, '我先查一下知识库。');
   assert.equal(body.steps[0]?.finish_reason, 'tool-calls');
+  assert.equal(body.steps[0]?.started_at, '1970-01-01T00:00:00.000Z');
+  assert.equal(body.steps[0]?.ended_at, '1970-01-01T00:00:00.050Z');
   assert.equal(body.steps[0]?.tools[0]?.name, 'lookup_issue');
+  assert.equal(body.steps[0]?.tools[0]?.started_at, '1970-01-01T00:00:00.000Z');
+  assert.equal(body.steps[0]?.tools[0]?.ended_at, '1970-01-01T00:00:00.040Z');
   assert.match(body.steps[0]?.tools[0]?.input_preview ?? '', /英语绘本阅读排行榜接口/);
   assert.equal(body.steps[1]?.finish_reason, 'stop');
   assert.equal(body.steps[1]?.tools.length, 0);
+});
+
+test('orders parallel tools by started_at wall clock', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'obs-order-'));
+  const exporter = new ConversationSpanFileExporter(root);
+  const meta = { conversation_id: 'conv-order', message_id: 'msg-order', phase: 'local' };
+  const base = {
+    traceId: 'trace-order123456',
+    isEvent: false,
+    isValid: true,
+    metadata: meta,
+  };
+
+  // Emit later-started tool first to prove we sort by wall clock, not arrival order.
+  await exporter.exportTracingEvent({
+    type: 'span_ended',
+    exportedSpan: {
+      ...base,
+      id: 'tool-late',
+      parentSpanId: 'step-0',
+      name: "tool: 'search_services'",
+      type: SpanType.TOOL_CALL,
+      startTime: new Date(30),
+      endTime: new Date(50),
+      input: { keyword: 'audio' },
+      output: { services: [] },
+      attributes: { success: 'true' },
+    },
+  } as never);
+  await exporter.exportTracingEvent({
+    type: 'span_ended',
+    exportedSpan: {
+      ...base,
+      id: 'tool-early',
+      parentSpanId: 'step-0',
+      name: "mcp_tool: 'lookup_issue' on 'knowledge'",
+      type: SpanType.MCP_TOOL_CALL,
+      startTime: new Date(10),
+      endTime: new Date(20),
+      input: { query: '磨耳朵' },
+      output: { hits: [] },
+      attributes: { success: 'true' },
+    },
+  } as never);
+  await exporter.exportTracingEvent({
+    type: 'span_ended',
+    exportedSpan: {
+      ...base,
+      id: 'step-0',
+      name: 'step: 0',
+      type: SpanType.MODEL_STEP,
+      startTime: new Date(5),
+      endTime: new Date(55),
+      output: { text: '并行查' },
+      attributes: { stepIndex: '0', finishReason: 'tool-calls' },
+    },
+  } as never);
+  await exporter.exportTracingEvent({
+    type: 'span_ended',
+    exportedSpan: {
+      ...base,
+      id: 'agent-1',
+      name: 'agent run',
+      type: SpanType.AGENT_RUN,
+      startTime: new Date(0),
+      endTime: new Date(60),
+      input: [{ role: 'user', content: 'q' }],
+      output: { text: 'a' },
+    },
+  } as never);
+
+  const orderDir = conversationObservabilityDirName('conv-order');
+  const file = (await readdir(join(root, 'conversations', orderDir, 'traces')))[0]!;
+  const body = JSON.parse(
+    await readFile(join(root, 'conversations', orderDir, 'traces', file), 'utf8'),
+  ) as {
+    steps: Array<{ tools: Array<{ name: string; started_at: string | null }> }>;
+  };
+  assert.deepEqual(
+    body.steps[0]?.tools.map((tool) => tool.name),
+    ['lookup_issue', 'search_services'],
+  );
+  assert.equal(body.steps[0]?.tools[0]?.started_at, '1970-01-01T00:00:00.010Z');
+  assert.equal(body.steps[0]?.tools[1]?.started_at, '1970-01-01T00:00:00.030Z');
 });
 
 test('keeps long tool output by default (no 500-char truncation)', async () => {

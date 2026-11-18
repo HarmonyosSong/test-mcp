@@ -9,10 +9,28 @@ setup: check-node
 check-node:
 	@node -e "const [major, minor] = process.versions.node.split('.').map(Number); if (major < 22 || (major === 22 && minor < 13)) { console.error('Node.js >=22.13.0 is required'); process.exit(1); }"
 
-# 后台起 log-mcp（:8766），失败只告警，不挡 Agent
+# 后台起 log-mcp（:8766）；本地开发固定走生产网关（LOG_MCP_ENV=prod）
+# 失败只告警，不挡 Agent
 dev-log-mcp:
 	@if [ ! -d log-mcp ]; then echo "make: skip log-mcp (directory missing)"; exit 0; fi
-	@cd log-mcp && uv sync --quiet && uv run start --background \
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+		host="$${LOG_MCP_HOST:-127.0.0.1}"; port="$${LOG_MCP_PORT:-8766}"; \
+		echo "make: log-mcp 关键配置:"; \
+		echo "  LOG_MCP_ENV=prod  (make 强制，走生产网关)"; \
+		echo "  LOG_MCP_HOST=$$host"; \
+		echo "  LOG_MCP_PORT=$$port"; \
+		echo "  LOG_MCP_URL=$${LOG_MCP_URL:-http://$$host:$$port/mcp}"; \
+		echo "  LOG_MCP_AUTH_DISABLED=$${LOG_MCP_AUTH_DISABLED:-false}"; \
+		if [ -n "$$LOG_MCP_BEARER_TOKEN" ]; then bt='<set>'; else bt='<empty>'; fi; \
+		if [ -n "$$LOG_MCP_PROD_APPSECRET" ]; then ps='<set>'; else ps='<empty>'; fi; \
+		echo "  LOG_MCP_BEARER_TOKEN=$$bt"; \
+		echo "  LOG_MCP_PROD_APPID=$${LOG_MCP_PROD_APPID:-<empty>}"; \
+		echo "  LOG_MCP_PROD_BASE_URL=$${LOG_MCP_PROD_BASE_URL:-<empty>}"; \
+		echo "  LOG_MCP_PROD_APPSECRET=$$ps"; \
+		echo "  LOG_MCP_CLOUDLOG_ACCOUNT=$${LOG_MCP_CLOUDLOG_ACCOUNT:-<empty>}"; \
+		echo "  LOG_MCP_CLOUDLOG_COLLECTION=$${LOG_MCP_CLOUDLOG_COLLECTION:-<empty>}"
+	@cd log-mcp && uv sync --quiet \
+		&& LOG_MCP_ENV=prod uv run start --background \
 		|| echo "make: WARN log-mcp 启动失败，Agent 仍继续（可稍后 make dev-log-mcp）" >&2
 
 stop-log-mcp:

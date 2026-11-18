@@ -34,6 +34,8 @@ type RawSpan = {
   id: string;
   parent_span_id?: string;
   duration_ms: number | null;
+  started_at: string | null;
+  ended_at: string | null;
   input?: unknown;
   output?: unknown;
   error?: string;
@@ -53,6 +55,8 @@ type FlowTool = {
   name: string;
   kind: 'tool' | 'mcp_tool';
   duration_ms: number | null;
+  started_at: string | null;
+  ended_at: string | null;
   success: boolean | null;
   input_preview?: string;
   output_preview?: string;
@@ -62,6 +66,8 @@ type FlowTool = {
 type FlowStep = {
   step_index: number;
   duration_ms: number | null;
+  started_at: string | null;
+  ended_at: string | null;
   model_text?: string;
   finish_reason?: string;
   usage?: unknown;
@@ -195,6 +201,42 @@ function parseUsage(attributes: Record<string, unknown> | undefined): unknown {
   return raw;
 }
 
+function toIso(value: Date | string | number | null | undefined): string | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+  if (typeof value === 'number' && Number.isFinite(value)) return new Date(value).toISOString();
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  return null;
+}
+
+function timeMs(iso: string | null): number {
+  if (!iso) return Number.MAX_SAFE_INTEGER;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
+}
+
+function compareByStart(a: { started_at: string | null; name?: string }, b: { started_at: string | null; name?: string }): number {
+  const delta = timeMs(a.started_at) - timeMs(b.started_at);
+  if (delta !== 0) return delta;
+  return (a.name ?? '').localeCompare(b.name ?? '');
+}
+
+function toFlowTool(tool: RawSpan, contentLimit: number): FlowTool {
+  return {
+    name: toolDisplayName(tool),
+    kind: tool.type === SpanType.MCP_TOOL_CALL ? 'mcp_tool' : 'tool',
+    duration_ms: tool.duration_ms,
+    started_at: tool.started_at,
+    ended_at: tool.ended_at,
+    success: attrFlag(tool.attributes, 'success'),
+    input_preview: preview(tool.input, contentLimit),
+    output_preview: preview(tool.output, contentLimit),
+    error: tool.error,
+  };
+}
+
 function buildFlow(spans: RawSpan[], contentLimit: number): {
   user_input?: string;
   final_answer?: string;
@@ -208,6 +250,8 @@ function buildFlow(spans: RawSpan[], contentLimit: number): {
       const ai = Number(a.attributes?.stepIndex ?? Number.MAX_SAFE_INTEGER);
       const bi = Number(b.attributes?.stepIndex ?? Number.MAX_SAFE_INTEGER);
       if (ai !== bi) return ai - bi;
+      const byTime = compareByStart(a, b);
+      if (byTime !== 0) return byTime;
       return a.name.localeCompare(b.name);
     });
 
@@ -221,16 +265,9 @@ function buildFlow(spans: RawSpan[], contentLimit: number): {
       .filter((tool) => tool.parent_span_id === step.id)
       .map((tool) => {
         usedToolIds.add(tool.id);
-        return {
-          name: toolDisplayName(tool),
-          kind: tool.type === SpanType.MCP_TOOL_CALL ? 'mcp_tool' as const : 'tool' as const,
-          duration_ms: tool.duration_ms,
-          success: attrFlag(tool.attributes, 'success'),
-          input_preview: preview(tool.input, contentLimit),
-          output_preview: preview(tool.output, contentLimit),
-          error: tool.error,
-        };
-      });
+        return toFlowTool(tool, contentLimit);
+      })
+      .sort(compareByStart);
 
     const inference = spans.find(
       (item) => item.type === SpanType.MODEL_INFERENCE && item.parent_span_id === step.id,
@@ -247,6 +284,8 @@ function buildFlow(spans: RawSpan[], contentLimit: number): {
         ? Number(step.attributes?.stepIndex)
         : index,
       duration_ms: step.duration_ms,
+      started_at: step.started_at,
+      ended_at: step.ended_at,
       model_text: extractModelText(step.output, contentLimit),
       finish_reason: finishReason,
       usage: parseUsage(step.attributes) ?? parseUsage(inference?.attributes),
@@ -257,15 +296,8 @@ function buildFlow(spans: RawSpan[], contentLimit: number): {
 
   const orphan_tools = tools
     .filter((tool) => !usedToolIds.has(tool.id))
-    .map((tool) => ({
-      name: toolDisplayName(tool),
-      kind: tool.type === SpanType.MCP_TOOL_CALL ? 'mcp_tool' as const : 'tool' as const,
-      duration_ms: tool.duration_ms,
-      success: attrFlag(tool.attributes, 'success'),
-      input_preview: preview(tool.input, contentLimit),
-      output_preview: preview(tool.output, contentLimit),
-      error: tool.error,
-    }));
+    .map((tool) => toFlowTool(tool, contentLimit))
+    .sort(compareByStart);
 
   return {
     user_input: extractUserInput(agentRun, contentLimit),
@@ -322,16 +354,25 @@ export class ConversationSpanFileExporter extends BaseExporter {
     if (NOISE_SPAN_TYPES.has(type) || !INTERNAL_KEEP_TYPES.has(type)) {
       buffer.noiseOmitted += 1;
     } else {
+      const startedAt = toIso(span.startTime);
+      const endedAt = toIso(span.endTime);
       const durationMs =
-        span.endTime instanceof Date
-          ? span.endTime.getTime() - span.startTime.getTime()
-          : null;
+        startedAt && endedAt
+          ? Date.parse(endedAt) - Date.parse(startedAt)
+          : span.endTime instanceof Date && span.startTime instanceof Date
+            ? span.endTime.getTime() - span.startTime.getTime()
+            : null;
+      if (startedAt && (!buffer.startedAt || startedAt < buffer.startedAt)) {
+        buffer.startedAt = startedAt;
+      }
       buffer.spans.push({
         type,
         name: span.name,
         id: span.id,
         parent_span_id: span.parentSpanId,
         duration_ms: durationMs,
+        started_at: startedAt,
+        ended_at: endedAt,
         input: span.input,
         output: span.output,
         error: span.errorInfo

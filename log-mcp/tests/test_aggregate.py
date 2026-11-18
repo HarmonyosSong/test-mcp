@@ -2,7 +2,7 @@
 
 用 httpx.MockTransport 模拟日志中心与云日志上游，验证：
   - 不传 cloud 时只查日志中心
-  - 传 {} 时全量扫所有 topic
+  - 传 {} 时强制用配置坐标（account/collection）扫该集合下 topic
   - serviceId 与 keyword 优先级（serviceId 胜出）
   - 单 service / 单 topic 失败 → partial_failures，其余照常返回
   - 空 service / 空 topic 不进 results
@@ -104,8 +104,10 @@ def test_search_both_logs_logcenter_only(tmp_path) -> None:
     assert payload["partial_failures"] == []
 
 
-def test_search_both_logs_cloud_empty_dict_full_scan(tmp_path) -> None:
-    """传 cloud={} → 全量扫所有 topic。"""
+def test_search_both_logs_cloud_empty_dict_uses_fixed_coordinates(tmp_path) -> None:
+    """传 cloud={} → 强制配置坐标列 topic（忽略入参里的 account/collection）。"""
+    seen_topics_collection: list[str | None] = []
+    seen_topics_account: list[str | None] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
@@ -135,6 +137,8 @@ def test_search_both_logs_cloud_empty_dict_full_scan(tmp_path) -> None:
                 ),
             )
         if "/skill/cloud/topics" in url:
+            seen_topics_collection.append(request.url.params.get("collection_id"))
+            seen_topics_account.append(request.url.params.get("account_ak_id"))
             return httpx.Response(
                 200,
                 content=_logcenter_response(
@@ -143,13 +147,13 @@ def test_search_both_logs_cloud_empty_dict_full_scan(tmp_path) -> None:
                             "topics": [
                                 {
                                     "topic_id": "t1",
-                                    "collection_id": "c1",
+                                    "collection_id": "pysy-front-log",
                                     "region": "cn-beijing",
                                     "vendor": "aliyun",
                                 },
                                 {
                                     "topic_id": "t2",
-                                    "collection_id": "c1",
+                                    "collection_id": "pysy-front-log",
                                     "region": "cn-beijing",
                                     "vendor": "aliyun",
                                 },
@@ -199,6 +203,7 @@ def test_search_both_logs_cloud_empty_dict_full_scan(tmp_path) -> None:
         logcenter_factory=logcenter_factory,
         cloudlog_factory=cloudlog_factory,
         cloud_defaults=settings.cloudlog.defaults,
+        cloud_vendor=settings.cloudlog.vendor,
     )
 
     result = asyncio.run(
@@ -208,11 +213,18 @@ def test_search_both_logs_cloud_empty_dict_full_scan(tmp_path) -> None:
             {
                 "keyword": "svc-a",
                 "time": "15m",
-                "cloud": {},
+                # 即使乱传坐标，也应被配置坐标覆盖
+                "cloud": {
+                    "account": "wrong-account",
+                    "collection": "wrong-collection",
+                    "vendor": "tencent",
+                },
             },
         )
     )
     payload = json.loads(result.content[0].text)
+    assert seen_topics_collection == [settings.cloudlog.defaults.collection]
+    assert seen_topics_account == [settings.cloudlog.defaults.account]
     assert payload["cloud"]["scanned_topics"] == 2
     assert payload["cloud"]["matched_topics"] == 1  # 只有 t1 有命中
     assert payload["cloud"]["results"][0]["topic"] == "t1"

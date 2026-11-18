@@ -46,12 +46,13 @@ def register_aggregate_tools(
     cloudlog_factory,
     cloud_defaults: CloudLogDefaults,
     default_env: str = "test",
+    cloud_vendor: str = "aliyun",
 ) -> None:
     """注册 search_both_logs。
 
     `logcenter_factory(env) -> LogCenterClient`
     `cloudlog_factory() -> CloudLogClient`
-    `cloud_defaults`：云日志默认坐标，用于 cloud.account/collection 缺省时兜底
+    `cloud_defaults` / `cloud_vendor`：云日志固定坐标（查询时强制使用，不由入参改写）
     `default_env`：启动注入的默认环境，作为日志中心侧 `env` 入参缺省值
     """
     boot_env = normalize_env(default_env)
@@ -59,9 +60,10 @@ def register_aggregate_tools(
     @server.tool(
         name="search_both_logs",
         description=(
-            "一次调用同时返回日志中心与云日志结果。云日志采用全量 topic 遍历。"
+            "一次调用同时返回日志中心与云日志结果。"
+            "云日志坐标固定为启动配置（vendor/account/collection），在该集合下遍历 topic。"
             "两侧平级、并行、互不依赖；任一侧或单 topic 失败不阻止其余返回。"
-            "不传 cloud 时只查日志中心；传空对象 {} 时全量扫所有 topic。"
+            "不传 cloud 时只查日志中心；传 cloud（含 {}）时按固定坐标查云日志。"
             "serviceId 与 keyword 同时传时以 serviceId 为准。"
         ),
         annotations=READ_ONLY,
@@ -121,6 +123,7 @@ def register_aggregate_tools(
         cloud_task = _run_cloud_all_topics(
             cloudlog_factory=cloudlog_factory,
             defaults=cloud_defaults,
+            vendor=cloud_vendor,
             cloud=cloud,
             start=start,
             end=end,
@@ -329,16 +332,17 @@ async def _run_cloud_all_topics(
     *,
     cloudlog_factory,
     defaults: CloudLogDefaults,
+    vendor: str,
     cloud: dict[str, Any],
     start: int,
     end: int,
     max_topics: int,
 ) -> dict[str, Any]:
-    """云日志侧：列 topic → 逐个 query；按 topic 分组返回。"""
+    """云日志侧：固定配置坐标列 topic → 逐个 query；按 topic 分组返回。"""
     began = time.monotonic()
     client: CloudLogClient = cloudlog_factory()
 
-    vendor = cloud.get("vendor") or "aliyun"
+    # 坐标固定取启动配置，忽略 cloud 入参里的 vendor/account/collection
     if vendor != "aliyun":
         return {
             "scanned_topics": 0,
@@ -357,15 +361,14 @@ async def _run_cloud_all_topics(
             "truncated": {"services_skipped": 0, "topics_skipped": 0},
         }
 
-    account = cloud.get("account") or defaults.account
-    collection_filter = cloud.get("collection")
+    account = defaults.account
+    collection_filter = defaults.collection
     query = cloud.get("query") or "*"
     per_topic_size = cloud.get("per_topic_size") or 100
     from_ = cloud.get("from") or 0
     reverse = bool(cloud.get("reverse", False))
     full = bool(cloud.get("full", False))
 
-    # 列 topic（不传 collection 时返回全部）
     try:
         topics_data = await client.topics(
             account=account, collection=collection_filter, vendor=vendor
@@ -403,6 +406,8 @@ async def _run_cloud_all_topics(
                 topic=topic,
                 vendor=vendor,
                 account=account,
+                region_default=defaults.region,
+                collection_default=collection_filter,
                 start=start,
                 end=end,
                 query=query,
@@ -461,6 +466,8 @@ async def _query_one_topic(
     topic: dict[str, Any],
     vendor: str,
     account: str,
+    region_default: str,
+    collection_default: str,
     start: int,
     end: int,
     query: str,
@@ -473,9 +480,9 @@ async def _query_one_topic(
     began = time.monotonic()
     result = await client.search(
         vendor=vendor,
-        region=topic.get("region") or "",
+        region=topic.get("region") or region_default,
         account=account,
-        collection=topic.get("collection_id") or "",
+        collection=topic.get("collection_id") or collection_default,
         topic=topic.get("topic_id") or "",
         start=start,
         end=end,
