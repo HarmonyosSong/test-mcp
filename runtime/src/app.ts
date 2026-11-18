@@ -52,7 +52,7 @@ import {
 import { RepositoryGitError } from './capabilities/repository.js';
 import { VersionRegistryError } from './capabilities/version-registry.js';
 import { resolveVersionSource } from './capabilities/version-source.js';
-import { loadIosComponentRules, resolveIosComponents } from './capabilities/ios-components.js';
+import { materializeComponentSnapshots, resolvePlatformComponents } from './capabilities/component-resolution.js';
 import type { BoundSourceContext } from './capabilities/source-binding.js';
 
 export interface RuntimeApp {
@@ -200,36 +200,19 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         if (!shellRepository) throw new RepositoryGitError('当前版本没有 shell 仓库');
         const shell = await prepareRepository(shellRepository);
         const snapshots = [shell];
-        const componentRepositories = selection.repositories.filter((item) => item.role !== 'shell');
-        if (platform === 'ios') {
-          try {
-            const components = await resolveIosComponents({
-              workspacePath: shell.snapshot.workspace_path,
-              client: gitlabArchiveClient,
-              gitlabBaseUrl: config.gitlabBaseUrl,
-              rules: await loadIosComponentRules(resolve(config.projectRoot, 'runtime/contracts/ios-components.yaml')),
-              signal,
-            });
-            limitations.push(...components.limitations);
-            // Explicit registry mappings take precedence over inferred dependencies.
-            for (const component of components.repositories) {
-              if (!selection.repositories.some((item) => item.repository_id === component.repository_id)) componentRepositories.push(component);
-            }
-          } catch (error) {
-            signal?.throwIfAborted();
-            limitations.push(`iOS 组件解析失败，保留主工程：${error instanceof Error ? error.message : '未知错误'}。`);
-          }
-        }
-        for (let offset = 0; offset < componentRepositories.length; offset += 4) {
-          signal?.throwIfAborted();
-          const batch = componentRepositories.slice(offset, offset + 4);
-          const results = await Promise.allSettled(batch.map(prepareRepository));
-          signal?.throwIfAborted();
-          results.forEach((result, index) => {
-            if (result.status === 'fulfilled') snapshots.push(result.value);
-            else limitations.push(`组件 ${batch[index]!.repository_id}@${batch[index]!.ref} 下载失败，保留其它源码：${result.reason instanceof Error ? result.reason.message : '未知错误'}。`);
-          });
-        }
+        const { componentRepositories, limitations: resolveLimitations } = await resolvePlatformComponents({
+          platform,
+          shellWorkspacePath: shell.snapshot.workspace_path,
+          selectionRepositories: selection.repositories,
+          client: gitlabArchiveClient,
+          gitlabBaseUrl: config.gitlabBaseUrl,
+          contractsDir: resolve(config.projectRoot, 'runtime/contracts'),
+          signal,
+        });
+        limitations.push(...resolveLimitations);
+        const materialized = await materializeComponentSnapshots({ componentRepositories, prepareRepository, signal });
+        limitations.push(...materialized.limitations);
+        snapshots.push(...materialized.snapshots);
         const sourceRepositories = snapshots.map(({ registryRepository, repository, snapshot }) => ({
           repository_id: repository.id,
           repository_name: repository.name,

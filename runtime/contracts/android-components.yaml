@@ -1,0 +1,14 @@
+# 安卓组件源码解析规则。
+# 壳工程 settings.gradle 以两种形式声明本地组件依赖（IS_REMOTE=false 时）：
+#   字面量：setProjectDir(new File('../<仓库目录>/<模块>'))
+#   变量：  setProjectDir(new File(<var>, '<模块>'))，变量经 def 链落到 "../<仓库目录>" 默认值
+# gradle.properties 以 <模块>_PACKAGE_VERSION 钉住该发布版本打包时各组件的版本
+# （三到五段数字，可带 -SNAPSHOT 后缀）。
+# 组件仓库按 per-module tag（<模块>-V<版本>-<构建号>，快照构建版本自带 -SNAPSHOT）定位不可变 commit；
+# 发布列车下同版本模块 tag 共享同一 commit，同 commit 只物化一份快照。
+# 壳工程还引用 ../cloudlearning/<模块>（学家云业务），其源码仓库身份待确认、且壳未钉其版本，保持缺口上报。
+repo_map:
+  XesApp_Business_Modules: peiyou_xueersiapp_XesApp/XesApp_Business_Modules
+  xesApp_Pad_Android: peiyou_xueersiapp_XesApp/xesApp_Pad_Android
+  xes_1v1_teacher_android: peiyou_xueersiapp_XesApp/xes_1v1_teacher_android
+max_components: 40
