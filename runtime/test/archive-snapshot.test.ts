@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { ArchiveSnapshotError, materializeArchiveSnapshot, validateArchiveSnapshot } from '../src/capabilities/archive-snapshot.js';
+import { ArchiveSnapshotError, materializeArchiveSnapshot, parseArchiveLinkEntry, validateArchiveSnapshot } from '../src/capabilities/archive-snapshot.js';
 
 const COMMIT = 'c'.repeat(40);
 
@@ -94,4 +94,31 @@ test('archive 快照跳过符号链接和硬链接但拒绝路径穿越', async 
     await rm(root, { recursive: true, force: true });
     await rm(unsafe, { recursive: true, force: true });
   }
+});
+
+test('链接条目解析兼容 BSD 与 GNU tar 两种日期格式', () => {
+  // BSD tar（macOS 本地开发）输出月份名日期
+  assert.deepEqual(
+    parseArchiveLinkEntry('lrwxr-xr-x  0 user group       0 Nov 12 10:00 oh_modules/foo -> ../foo'),
+    { name: 'oh_modules/foo', kind: 'symbolic' },
+  );
+  assert.deepEqual(
+    parseArchiveLinkEntry('hrw-r--r--  0 user group       0 Nov 12  2026 hard.txt link to regular.txt'),
+    { name: 'hard.txt', kind: 'hard' },
+  );
+  // GNU tar（Linux 容器）输出 ISO 日期——线上容器曾因此解析失败
+  assert.deepEqual(
+    parseArchiveLinkEntry('lrwxrwxrwx root/root         0 2026-11-12 10:00 oh_modules/foo -> ../foo'),
+    { name: 'oh_modules/foo', kind: 'symbolic' },
+  );
+  assert.deepEqual(
+    parseArchiveLinkEntry('hrw-r--r-- root/root         5 2026-11-12 10:00:03 hard.txt link to regular.txt'),
+    { name: 'hard.txt', kind: 'hard' },
+  );
+  // 非链接条目返回 null；无法解析的链接条目必须抛错而不是静默放过
+  assert.equal(parseArchiveLinkEntry('-rw-r--r-- root/root 5 2026-11-12 10:00 regular.txt'), null);
+  assert.throws(
+    () => parseArchiveLinkEntry('lrwxrwxrwx root/root 0 ??? oh_modules/foo -> ../foo'),
+    (error: unknown) => error instanceof ArchiveSnapshotError && error.code === 'invalid_archive',
+  );
 });
