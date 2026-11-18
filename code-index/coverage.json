@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-11-17T04:05:41Z",
-  "source_count": 12,
-  "entry_count": 39,
+  "generated_at": "2026-11-18T06:37:11Z",
+  "source_count": 18,
+  "entry_count": 96,
   "sources": [
     {
       "platform": "harmony",
@@ -11,7 +11,7 @@
       "build": null,
       "repository_id": "peiyou_xueersi_harmony/xesapp",
       "resolved_commit": "79b55e6452d15d458626c6b1eb7a192b6d36d85e",
-      "workspace": ".data/code-index/workspaces/registry-87be3c995a823343daae/79b55e6452d15d458626c6b1eb7a192b6d36d85e",
+      "workspace": ".data/code-index/workspaces/harmony/xueersi/universal/7.106.0/registry-87be3c995a823343daae/79b55e6452d15d458626c6b1eb7a192b6d36d85e",
       "status": "ready",
       "modules": [
         {
@@ -48,7 +48,7 @@
       "build": null,
       "repository_id": "peiyou_xueersi_harmony/xesapp",
       "resolved_commit": "0a85dc817b3bde986e9a10ef80e6fda29101d3b4",
-      "workspace": ".data/code-index/workspaces/registry-87be3c995a823343daae/0a85dc817b3bde986e9a10ef80e6fda29101d3b4",
+      "workspace": ".data/code-index/workspaces/harmony/xueersi/universal/7.105.0/registry-87be3c995a823343daae/0a85dc817b3bde986e9a10ef80e6fda29101d3b4",
       "status": "ready",
       "modules": [
         {
@@ -85,20 +85,32 @@
       "build": "55347",
       "repository_id": "peiyou_xueersiapp_XesApp/xesApp_Android",
       "resolved_commit": "1e0c12c6a86ed9b5375dbc133a15cb1a97bdcdb7",
-      "workspace": ".data/code-index/workspaces/registry-e92d838741cf8b7130f3/1e0c12c6a86ed9b5375dbc133a15cb1a97bdcdb7",
+      "workspace": ".data/code-index/combined/android/xueersi/phone/7.106.0/multi/72e61352935a62654bdc601c154526d2",
       "status": "ready",
       "modules": [
         {
+          "module_id": "cross-report",
+          "matched_file_count": 220
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 8
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 22
+        },
+        {
           "module_id": "home",
-          "matched_file_count": 12
+          "matched_file_count": 2415
         },
         {
           "module_id": "login",
-          "matched_file_count": 31
+          "matched_file_count": 3039
         },
         {
           "module_id": "payment",
-          "matched_file_count": 7
+          "matched_file_count": 1893
         }
       ]
     },
@@ -110,20 +122,32 @@
       "build": "56071",
       "repository_id": "peiyou_xueersiapp_XesApp/xesApp_Android",
       "resolved_commit": "bd45e02a2b32c19c1a3f7d5ea43506cf6b9728e9",
-      "workspace": ".data/code-index/workspaces/registry-e92d838741cf8b7130f3/bd45e02a2b32c19c1a3f7d5ea43506cf6b9728e9",
+      "workspace": ".data/code-index/combined/android/xueersi/phone/7.105.0/multi/f86bc784e222f1a3b2a0e812959bd05e",
       "status": "ready",
       "modules": [
         {
+          "module_id": "cross-report",
+          "matched_file_count": 110
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 4
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 11
+        },
+        {
           "module_id": "home",
-          "matched_file_count": 10
+          "matched_file_count": 1216
         },
         {
           "module_id": "login",
-          "matched_file_count": 32
+          "matched_file_count": 1541
         },
         {
           "module_id": "payment",
-          "matched_file_count": 7
+          "matched_file_count": 892
         }
       ]
     },
@@ -135,20 +159,32 @@
       "build": "1",
       "repository_id": "peiyou_xueersiapp_XesApp/xesApp_iOS",
       "resolved_commit": "8d29ad670edb4d01c459e4fde4e03901d85f3ba5",
-      "workspace": ".data/code-index/workspaces/registry-654c412cac0617391025/8d29ad670edb4d01c459e4fde4e03901d85f3ba5",
+      "workspace": ".data/code-index/combined/ios/xueersi/phone/7.106.0/multi/6679844d5ae036ccb210fdef3dcc8902",
       "status": "ready",
       "modules": [
         {
+          "module_id": "cross-report",
+          "matched_file_count": 89
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 2
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 42
+        },
+        {
           "module_id": "home",
-          "matched_file_count": 1
+          "matched_file_count": 341
         },
         {
           "module_id": "login",
-          "matched_file_count": 4
+          "matched_file_count": 470
         },
         {
           "module_id": "payment",
-          "matched_file_count": 1
+          "matched_file_count": 681
         }
       ]
     },
@@ -160,32 +196,81 @@
       "build": "1",
       "repository_id": "peiyou_xueersiapp_XesApp/xesApp_iOS",
       "resolved_commit": "a44953fb1c391c9b738a4726bcda4e8468cfc8d1",
-      "workspace": ".data/code-index/workspaces/registry-654c412cac0617391025/a44953fb1c391c9b738a4726bcda4e8468cfc8d1",
+      "workspace": ".data/code-index/combined/ios/xueersi/phone/7.105.0/multi/b9c05871751a6c3b841729295c9685ef",
       "status": "ready",
       "modules": [
         {
+          "module_id": "cross-report",
+          "matched_file_count": 89
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 2
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 42
+        },
+        {
           "module_id": "home",
-          "matched_file_count": 1
+          "matched_file_count": 341
         },
         {
           "module_id": "login",
-          "matched_file_count": 4
+          "matched_file_count": 470
         },
         {
           "module_id": "payment",
-          "matched_file_count": 1
+          "matched_file_count": 681
         }
       ]
     },
     {
       "platform": "harmony",
-      "product_line": "xueersi",
-      "form_factor": "pad",
-      "version": "7.105.0",
+      "product_line": "xuejiayun",
+      "form_factor": "universal",
+      "version": "5.106.0",
+      "build": null,
+      "repository_id": "peiyou_xueersi_harmony/xesapp",
+      "resolved_commit": "79b55e6452d15d458626c6b1eb7a192b6d36d85e",
+      "workspace": ".data/code-index/workspaces/harmony/xuejiayun/universal/5.106.0/registry-87be3c995a823343daae/79b55e6452d15d458626c6b1eb7a192b6d36d85e",
+      "status": "ready",
+      "modules": [
+        {
+          "module_id": "cross-report",
+          "matched_file_count": 34
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 19
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 14
+        },
+        {
+          "module_id": "home",
+          "matched_file_count": 188
+        },
+        {
+          "module_id": "login",
+          "matched_file_count": 385
+        },
+        {
+          "module_id": "payment",
+          "matched_file_count": 460
+        }
+      ]
+    },
+    {
+      "platform": "harmony",
+      "product_line": "xuejiayun",
+      "form_factor": "universal",
+      "version": "5.105.0",
       "build": null,
       "repository_id": "peiyou_xueersi_harmony/xesapp",
       "resolved_commit": "0a85dc817b3bde986e9a10ef80e6fda29101d3b4",
-      "workspace": ".data/code-index/workspaces/registry-87be3c995a823343daae/0a85dc817b3bde986e9a10ef80e6fda29101d3b4",
+      "workspace": ".data/code-index/workspaces/harmony/xuejiayun/universal/5.105.0/registry-87be3c995a823343daae/0a85dc817b3bde986e9a10ef80e6fda29101d3b4",
       "status": "ready",
       "modules": [
         {
@@ -216,13 +301,198 @@
     },
     {
       "platform": "android",
+      "product_line": "xuejiayun",
+      "form_factor": "phone",
+      "version": "7.106.0",
+      "build": "1069",
+      "repository_id": "peiyou_xueersiapp_XesApp/xuejiayunapp_android",
+      "resolved_commit": "b1bd407c76c1bfdb537b6a02d51822fb481a1634",
+      "workspace": ".data/code-index/combined/android/xuejiayun/phone/7.106.0/multi/0125baa01ebba1478ca98a8854637855",
+      "status": "ready",
+      "modules": [
+        {
+          "module_id": "cross-report",
+          "matched_file_count": 110
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 4
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "home",
+          "matched_file_count": 1221
+        },
+        {
+          "module_id": "login",
+          "matched_file_count": 1557
+        },
+        {
+          "module_id": "payment",
+          "matched_file_count": 956
+        }
+      ]
+    },
+    {
+      "platform": "android",
+      "product_line": "xuejiayun",
+      "form_factor": "phone",
+      "version": "7.105.0",
+      "build": "1782",
+      "repository_id": "peiyou_xueersiapp_XesApp/xuejiayunapp_android",
+      "resolved_commit": "369936fb4cbed1a616c863deacd0ea5346431002",
+      "workspace": ".data/code-index/combined/android/xuejiayun/phone/7.105.0/multi/8f3174f9ca2914dfbf110412f66baaa3",
+      "status": "ready",
+      "modules": [
+        {
+          "module_id": "cross-report",
+          "matched_file_count": 110
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 4
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "home",
+          "matched_file_count": 1218
+        },
+        {
+          "module_id": "login",
+          "matched_file_count": 1548
+        },
+        {
+          "module_id": "payment",
+          "matched_file_count": 897
+        }
+      ]
+    },
+    {
+      "platform": "ios",
+      "product_line": "xuejiayun",
+      "form_factor": "universal",
+      "version": "5.106.0",
+      "build": "1",
+      "repository_id": "peiyou_xueersiapp_cloudlearning_iOS/CloudLearning_Main_iOS",
+      "resolved_commit": "3e4b8ebccfb430981e92a8aead85c047973487b0",
+      "workspace": ".data/code-index/combined/ios/xuejiayun/universal/5.106.0/multi/1c06f44ba93473903d6b87c9d9f496b9",
+      "status": "ready",
+      "modules": [
+        {
+          "module_id": "cross-report",
+          "matched_file_count": 6
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 2
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 42
+        },
+        {
+          "module_id": "home",
+          "matched_file_count": 188
+        },
+        {
+          "module_id": "login",
+          "matched_file_count": 419
+        },
+        {
+          "module_id": "payment",
+          "matched_file_count": 203
+        }
+      ]
+    },
+    {
+      "platform": "ios",
+      "product_line": "xuejiayun",
+      "form_factor": "universal",
+      "version": "5.105.0",
+      "build": "1",
+      "repository_id": "peiyou_xueersiapp_cloudlearning_iOS/CloudLearning_Main_iOS",
+      "resolved_commit": "cd411159d62cf8c48ec3418ddfb9d5c86bff9547",
+      "workspace": ".data/code-index/combined/ios/xuejiayun/universal/5.105.0/multi/84d272faa99880d4e06429ad25f9e6d2",
+      "status": "ready",
+      "modules": [
+        {
+          "module_id": "cross-report",
+          "matched_file_count": 6
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 2
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 42
+        },
+        {
+          "module_id": "home",
+          "matched_file_count": 188
+        },
+        {
+          "module_id": "login",
+          "matched_file_count": 419
+        },
+        {
+          "module_id": "payment",
+          "matched_file_count": 203
+        }
+      ]
+    },
+    {
+      "platform": "android",
+      "product_line": "xueersi",
+      "form_factor": "pad",
+      "version": "5.106.5",
+      "build": "2225",
+      "repository_id": "peiyou_xueersiapp_XesApp/xesApp_Pad_Android",
+      "resolved_commit": "94886e03406a595632d595fbea88494f2c07fc56",
+      "workspace": ".data/code-index/workspaces/android/xueersi/pad/5.106.5/registry-0aa37cc40023de720ee6/94886e03406a595632d595fbea88494f2c07fc56",
+      "status": "ready",
+      "modules": [
+        {
+          "module_id": "cross-report",
+          "matched_file_count": 1
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 4
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 19
+        },
+        {
+          "module_id": "home",
+          "matched_file_count": 621
+        },
+        {
+          "module_id": "login",
+          "matched_file_count": 640
+        },
+        {
+          "module_id": "payment",
+          "matched_file_count": 47
+        }
+      ]
+    },
+    {
+      "platform": "android",
       "product_line": "xueersi",
       "form_factor": "pad",
       "version": "5.105.0",
       "build": "2608",
       "repository_id": "peiyou_xueersiapp_XesApp/xesApp_Pad_Android",
       "resolved_commit": "1dca7be0552d53847473e157df84dd8ca928a3e4",
-      "workspace": ".data/code-index/workspaces/registry-0aa37cc40023de720ee6/1dca7be0552d53847473e157df84dd8ca928a3e4",
+      "workspace": ".data/code-index/workspaces/android/xueersi/pad/5.105.0/registry-0aa37cc40023de720ee6/1dca7be0552d53847473e157df84dd8ca928a3e4",
       "status": "ready",
       "modules": [
         {
@@ -252,42 +522,86 @@
       ]
     },
     {
-      "platform": "ios",
-      "product_line": "xueersi",
+      "platform": "android",
+      "product_line": "xuejiayun",
       "form_factor": "pad",
-      "version": "7.105.0",
-      "build": "1",
-      "repository_id": "peiyou_xueersiapp_XesApp/xesApp_iOS",
-      "resolved_commit": "a44953fb1c391c9b738a4726bcda4e8468cfc8d1",
-      "workspace": ".data/code-index/workspaces/registry-654c412cac0617391025/a44953fb1c391c9b738a4726bcda4e8468cfc8d1",
+      "version": "5.107.0",
+      "build": "1076",
+      "repository_id": "peiyou_xueersiapp_XesApp/xuejiayunapp_pad_android",
+      "resolved_commit": "7d276763a66a4059207eb90d5d5e14a9d61682c5",
+      "workspace": ".data/code-index/combined/android/xuejiayun/pad/5.107.0/multi/dfbbb0afe0043bb7a8be894956267927",
       "status": "ready",
       "modules": [
         {
+          "module_id": "cross-report",
+          "matched_file_count": 3
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 12
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 57
+        },
+        {
           "module_id": "home",
-          "matched_file_count": 1
+          "matched_file_count": 1873
         },
         {
           "module_id": "login",
-          "matched_file_count": 4
+          "matched_file_count": 1908
         },
         {
           "module_id": "payment",
-          "matched_file_count": 1
+          "matched_file_count": 143
         }
       ]
     },
     {
-      "key": "harmony/xueersi/pad/5.105.0",
-      "status": "prepare_failed",
-      "message": "snapshot_conflict: 已有快照与目标 commit 身份不一致",
-      "limitations": [],
-      "modules": []
+      "platform": "android",
+      "product_line": "xuejiayun",
+      "form_factor": "pad",
+      "version": "5.105.0",
+      "build": "1422",
+      "repository_id": "peiyou_xueersiapp_XesApp/xuejiayunapp_pad_android",
+      "resolved_commit": "a15d8e8fa168a0cda3a0f10a321272552c4e8b7b",
+      "workspace": ".data/code-index/combined/android/xuejiayun/pad/5.105.0/multi/e9bdd0293ea7bf02d3816752855c0887",
+      "status": "ready",
+      "modules": [
+        {
+          "module_id": "cross-report",
+          "matched_file_count": 4
+        },
+        {
+          "module_id": "grinding-ear",
+          "matched_file_count": 16
+        },
+        {
+          "module_id": "english-library",
+          "matched_file_count": 76
+        },
+        {
+          "module_id": "home",
+          "matched_file_count": 2491
+        },
+        {
+          "module_id": "login",
+          "matched_file_count": 2529
+        },
+        {
+          "module_id": "payment",
+          "matched_file_count": 192
+        }
+      ]
     },
     {
-      "key": "android/xueersi/pad/7.105.0",
-      "status": "prepare_failed",
-      "message": "version_not_registered: 已查询登记范围内的安卓仓库，没有 7.105.0 的匹配发布 tag；未改用其它版本",
-      "limitations": [],
+      "key": "ios/xueersi/pad/5.106.0",
+      "status": "exact_version_unavailable",
+      "message": null,
+      "limitations": [
+        "现场版本 5.106.0 未登记；已查询 GitLab 仓库 peiyou_xueersiapp_XesApp/xesApp_iOS，没有匹配的发布 tag。当前绑定 7.106.0 build 1（XesApp_v7.106.0_1_20261105）作为源码对照，不能据此确认现场版本行为。"
+      ],
       "modules": []
     },
     {

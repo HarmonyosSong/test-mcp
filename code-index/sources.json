@@ -3,8 +3,11 @@
     {"platform":"harmony","product_line":"xueersi","form_factor":"universal","versions":["7.106.0","7.105.0"]},
     {"platform":"android","product_line":"xueersi","form_factor":"phone","versions":["7.106.0","7.105.0"]},
     {"platform":"ios","product_line":"xueersi","form_factor":"phone","versions":["7.106.0","7.105.0"]},
-    {"platform":"harmony","product_line":"xueersi","form_factor":"pad","versions":["5.105.0","7.105.0"]},
-    {"platform":"android","product_line":"xueersi","form_factor":"pad","versions":["5.105.0","7.105.0"]},
-    {"platform":"ios","product_line":"xueersi","form_factor":"pad","versions":["5.105.0","7.105.0"]}
+    {"platform":"harmony","product_line":"xuejiayun","form_factor":"universal","versions":["5.106.0","5.105.0"]},
+    {"platform":"android","product_line":"xuejiayun","form_factor":"phone","versions":["7.106.0","7.105.0"]},
+    {"platform":"ios","product_line":"xuejiayun","form_factor":"universal","versions":["5.106.0","5.105.0"]},
+    {"platform":"android","product_line":"xueersi","form_factor":"pad","versions":["5.106.5","5.105.0"]},
+    {"platform":"android","product_line":"xuejiayun","form_factor":"pad","versions":["5.107.0","5.105.0"]},
+    {"platform":"ios","product_line":"xueersi","form_factor":"pad","versions":["5.106.0","5.105.0"]}
   ]
 }
