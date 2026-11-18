@@ -129,13 +129,11 @@ def test_scope_logs_probe_only_can_call_probe_tools(tmp_path) -> None:
     """logs:probe scope 仅可调 cloud_probe / list_services / get_fields。"""
     settings = _settings(tmp_path)
     store = TokenStore(settings.data_root_path / "auth.db")
-    store.register_client(
+    token, _ = store.issue_token(
         client_id="probe-only",
         description="t",
         scopes="logs:probe",
     )
-    # 换 token
-    token, _ = store.issue_token(client_id="probe-only", scopes="logs:probe")
     client = _make_client(settings, store)
 
     init, session_id = _init_session(client, token)
@@ -163,8 +161,7 @@ def test_scope_logs_probe_cannot_call_query(tmp_path) -> None:
     """logs:probe scope 调 query → permission 错误。"""
     settings = _settings(tmp_path)
     store = TokenStore(settings.data_root_path / "auth.db")
-    store.register_client(client_id="probe-only", description="t", scopes="logs:probe")
-    token, _ = store.issue_token(client_id="probe-only", scopes="logs:probe")
+    token, _ = store.issue_token(client_id="probe-only", description="t", scopes="logs:probe")
     client = _make_client(settings, store)
 
     init, session_id = _init_session(client, token)
@@ -191,8 +188,7 @@ def test_scope_logs_read_can_call_all(tmp_path) -> None:
     """logs:read scope 可调全部工具。"""
     settings = _settings(tmp_path)
     store = TokenStore(settings.data_root_path / "auth.db")
-    store.register_client(client_id="reader", description="t", scopes="logs:read")
-    token, _ = store.issue_token(client_id="reader", scopes="logs:read")
+    token, _ = store.issue_token(client_id="reader", description="t", scopes="logs:read")
     client = _make_client(settings, store)
 
     init, session_id = _init_session(client, token)

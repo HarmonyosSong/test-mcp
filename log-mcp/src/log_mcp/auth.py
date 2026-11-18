@@ -1,10 +1,8 @@
 """Bearer 鉴权 ASGI 包装器。
 
-校验 OAuth access_token，通过后写入请求级 contextvar（client_id / scope）。
-`/oauth/token`、`/oauth/revoke`、`/health` 不走本包装器。
-
-设计见方案 5.9。沿用 dev-agent `BearerAuthDispatcher` 的 ASGI 包装思路，
-但凭据来源是 OAuth client_credentials 签发的短期令牌（哈希存储）。
+校验 ctl 颁发的长期 API Token（哈希 + 过期 + 吊销）。
+通过后写入请求级 contextvar（client_id / scope）。
+仅 `/health` 不走本包装器。
 """
 
 from __future__ import annotations
@@ -18,7 +16,7 @@ from log_mcp.token_store import TokenStore
 
 
 class BearerAuthDispatcher:
-    """校验 OAuth access_token，通过后注入 client_id / scope。"""
+    """校验 Bearer API Token，通过后注入 client_id / scope。"""
 
     def __init__(
         self,

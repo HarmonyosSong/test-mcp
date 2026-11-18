@@ -20,6 +20,7 @@ import { DiagnosisAgent } from './diagnosis/agent.js';
 import {
   CODE_INDEX_MCP_TOOL_NAMES,
   CODE_CATALOG_MCP_TOOL_NAMES,
+  LOG_MCP_TOOL_NAMES,
   MODEL_CONTEXT_WINDOWS,
   MODEL_PRICES,
   REPOSITORY_MCP_TOOL_NAMES,
@@ -293,6 +294,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         ...REPOSITORY_MCP_TOOL_NAMES,
         ...CODE_CATALOG_MCP_TOOL_NAMES,
         ...(config.codeIndexCommand ? CODE_INDEX_MCP_TOOL_NAMES : []),
+        ...(config.logMcpUrl ? [...LOG_MCP_TOOL_NAMES] : []),
       ],
       constraints: ['read-only', 'no-shell', 'no-code-changes', 'no-deveco-cli'],
       context_windows: MODEL_CONTEXT_WINDOWS,

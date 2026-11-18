@@ -179,7 +179,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 
 启用时在部署环境放置 **codebase-memory-mcp 0.12.1** 二进制，并在 `.env` 填写 `HARMONY_AGENT_CODE_INDEX_COMMAND=/absolute/path/to/codebase-memory-mcp`，重启 Runtime 后生效；不需要额外配置一个 MCP 服务。索引只处理当前动态绑定快照中的代码副本，排除已知依赖目录、符号链接和超大文件；查询前后核对源码内容指纹，快照变化时拒绝旧图查询。`.data/codebase-memory` 下的 `source-views/` 和 `engine/` 分别保存源码副本与派生索引，Docker 部署应挂载持久卷；缓存可清理重建，不替代会话和证据数据的持久化。真实 HarmonyOS 工程已验证导航与源码回读，iOS/Android 的关系精度及真实诊断效果仍待验收。
 
-学员档案：配置 `HARMONY_AGENT_UCENTER_BASE_URL` 后挂载 `lookup_learner`（按学员编号查 uid/姓名/年级等）；用户问「查用户信息」时走此工具。远程日志查询由独立 `log-mcp` 提供，当前未挂入 Runtime 工具会话。
+学员档案：配置 `HARMONY_AGENT_UCENTER_BASE_URL` 后挂载 `lookup_learner`（按学员编号查 uid/姓名/年级等）；用户问「查用户信息」时走此工具。远程日志由独立 `log-mcp` 提供，Runtime 每轮经 HTTP 挂入工具会话（连不上则本轮降级）。
 
 ## 动态源码快照
 

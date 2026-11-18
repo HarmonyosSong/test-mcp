@@ -169,6 +169,46 @@ export class CapabilityMcp {
     }
   }
 
+  async createLogSession(conversationId: string, messageId: string): Promise<{
+    client: MCPClient;
+    toolsets: MastraToolsets;
+  } | null> {
+    const url = this.config.logMcpUrl.trim();
+    if (!url) return null;
+    let endpoint: URL;
+    try {
+      endpoint = new URL(url);
+    } catch (error) {
+      integrationError('log-mcp', `invalid LOG_MCP_URL: ${url}`, error);
+      return null;
+    }
+    const timeout = this.config.logMcpTimeoutMs;
+    const token = this.config.logMcpBearerToken.trim();
+    const client = new MCPClient({
+      id: `troubleshoot-log-${conversationId}-${messageId}`,
+      timeout,
+      registerProcessHooks: false,
+      servers: {
+        log: {
+          url: endpoint,
+          timeout,
+          ...(token
+            ? { requestInit: { headers: { Authorization: `Bearer ${token}` } } }
+            : {}),
+        },
+      },
+    });
+    client.__setLogger(noopLogger);
+    try {
+      const discovered = await client.listToolsetsWithErrors({ perServerTimeoutMs: MCP_TOOL_DISCOVERY_TIMEOUT_MS });
+      if (discovered.errors.log) throw new Error(`log MCP unavailable: ${discovered.errors.log}`);
+      return { client, toolsets: discovered.toolsets };
+    } catch {
+      await client.disconnect().catch(() => undefined);
+      return null;
+    }
+  }
+
   async close(): Promise<void> {
     // Knowledge and repository clients are request-scoped and disconnected by the route.
   }

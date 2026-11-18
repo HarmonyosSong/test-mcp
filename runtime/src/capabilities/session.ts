@@ -108,6 +108,14 @@ export function createRoundCapabilitySession(provider: CapabilityMcp, context: C
     },
   }];
   registrations.push({
+    id: 'log',
+    optional: true,
+    create: async ({ conversationId, messageId }) => {
+      const session = await provider.createLogSession(conversationId, messageId);
+      return session ? { toolsets: session.toolsets, close: () => session.client.disconnect() } : null;
+    },
+  });
+  registrations.push({
     id: 'code_index',
     optional: true,
     create: async () => {

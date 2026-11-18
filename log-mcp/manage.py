@@ -9,7 +9,7 @@
   uv run restart -d
   uv run status
   uv run check
-  uv run client register --client-id ...
+  uv run client issue --client-id ... [--days 180]
 """
 
 from __future__ import annotations

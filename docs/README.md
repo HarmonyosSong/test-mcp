@@ -35,7 +35,7 @@
 ## 4. 当前最容易混淆的边界
 
 - Supervisor、Compass Slot、外发审批、自动跨侧和联合报告**已接入聊天链路**。
-- Runtime 内嵌 LogCenter/SLS 查询工具已下线；远程日志由独立 `log-mcp` 提供，当前未挂入 Runtime 工具会话。
+- Runtime 内嵌 LogCenter/SLS 查询工具已下线；远程日志由独立 `log-mcp` 提供，Runtime 每轮经 HTTP 挂入工具会话（连不上则本轮降级）。
 - 新工单命中服务端关键词不等于立即调用 Compass；没有本地 `kind=log` 观测时先执行客户端观察。
 - 创建会话后的精确版本快照链路已接入；版本登记表支持 shell + component/config 多仓组合挂载，源码观测会携带实际仓库、commit 和仓库内 path。Web 不要求预选端、版本或仓库，Runtime 先从当前提示词解析范围，再使用已确认的 LogCenter 事实在当前或后续轮次完成绑定；正在运行轮次不热切换，生产登记数据仍需逐端核对。
 - 代码图索引现在作为 Repository MCP 的可选内部后端提供只读导航；图命中永远不能直接成为故障证据，仍须回读同一快照源码。

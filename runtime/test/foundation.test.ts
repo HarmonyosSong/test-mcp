@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import { loadRuntimeConfig } from '../src/config.js';
 import { createRuntimeApp } from '../src/app.js';
+import { LOG_MCP_TOOL_NAMES } from '../src/model/metadata.js';
 import {
   APP_PREFIX,
   api,
@@ -113,6 +114,7 @@ test('loads safe defaults and exposes health metadata', async () => {
     assert.deepEqual(meta.mcp_tools, [
       'list_project_files', 'search_project_text', 'read_project_file', 'parse_hilog', 'load_business_context',
       'list_code_index_scopes', 'search_code_index', 'get_code_index_entry',
+      ...LOG_MCP_TOOL_NAMES,
     ]);
     assert.equal(meta.context_windows['gpt-5.2'], 400_000);
     assert.deepEqual(meta.model_prices['qwen-plus'], { input: 0.8, output: 4.8 });
@@ -164,6 +166,7 @@ test('configured code navigation names remain potential capabilities in metadata
       'list_project_files', 'search_project_text', 'read_project_file', 'parse_hilog', 'load_business_context',
       'list_code_index_scopes', 'search_code_index', 'get_code_index_entry',
       'search_code_symbols', 'get_code_outline', 'trace_code_path',
+      ...LOG_MCP_TOOL_NAMES,
     ]);
   } finally {
     await runtime.mastra.getStorage()?.close();

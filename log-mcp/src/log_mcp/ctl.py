@@ -8,8 +8,8 @@
   check    健康检查 + MCP 协议验证（14 个工具名齐全）
 
 Token CLI：
-  client register --client-id <id> --description <desc> [--scopes logs:read|logs:probe]
-  client revoke   --client-id <id>
+  client issue  --client-id <id> [--description] [--scopes logs:read|logs:probe] [--days 180]
+  client revoke --client-id <id>
   client list
 
 六项保护（方案 7.3）：
@@ -420,38 +420,30 @@ def cmd_check() -> int:
 
 
 def _try_get_check_token(settings) -> str | None:
-    """为 check 动作换一个临时 token；无 client 时跳过（protocol_check 会失败）。"""
-    from log_mcp.token_store import TokenStore
-
-    try:
-        store = TokenStore(settings.data_root_path / "auth.db")
-        clients = store.list_clients()
-        active = next((c for c in clients if not c["revoked"]), None)
-        if active is None:
-            return None
-        # check 不持有 client_secret，无法直接换 token；提示用户手动验证
-        return None
-    except Exception:
-        return None
+    """check 不持有明文 token，无法代调受鉴权的 /mcp；返回 None。"""
+    return None
 
 
 # ---------- Token CLI ----------
 
 
-def cmd_client_register(args: argparse.Namespace) -> int:
+def cmd_client_issue(args: argparse.Namespace) -> int:
     from log_mcp.config import load_settings
     from log_mcp.token_store import TokenStore
 
     settings = load_settings()
     store = TokenStore(settings.data_root_path / "auth.db")
-    secret = store.register_client(
+    token, expires_in = store.issue_token(
         client_id=args.client_id,
         description=args.description or "",
         scopes=args.scopes or "logs:read",
+        ttl_days=args.days,
     )
+    days = max(1, (expires_in + 86_399) // 86_400) if expires_in else 0
     print(f"client_id: {args.client_id}")
-    print(f"client_secret: {secret}")
-    print("⚠️  client_secret 仅此一次可见，丢失只能吊销重建")
+    print(f"token: {token}")
+    print(f"expires_in_days: {days}")
+    print("⚠️  token 仅此一次可见；放入调用方 LOG_MCP_BEARER_TOKEN，丢失请 revoke 后重新 issue")
     return 0
 
 
@@ -518,19 +510,20 @@ def main() -> int:
     sub.add_parser("status", help="查看运行状态").set_defaults(func=lambda _: cmd_status())
     sub.add_parser("check", help="健康检查 + MCP 协议验证").set_defaults(func=lambda _: cmd_check())
 
-    client = sub.add_parser("client", help="OAuth client 管理")
+    client = sub.add_parser("client", help="调用方 API Token 管理")
     client_sub = client.add_subparsers(dest="client_command", required=True)
-    reg = client_sub.add_parser("register", help="注册调用方（输出 client_secret，仅此一次）")
-    reg.add_argument("--client-id", required=True)
-    reg.add_argument("--description", default="")
-    reg.add_argument("--scopes", default="logs:read")
-    reg.set_defaults(func=cmd_client_register)
+    issue = client_sub.add_parser("issue", help="颁发/轮换长期 Bearer token（仅此一次打印明文）")
+    issue.add_argument("--client-id", required=True)
+    issue.add_argument("--description", default="")
+    issue.add_argument("--scopes", default="logs:read")
+    issue.add_argument("--days", type=int, default=180, help="有效天数，默认 180")
+    issue.set_defaults(func=cmd_client_issue)
 
     rev = client_sub.add_parser("revoke", help="吊销调用方")
     rev.add_argument("--client-id", required=True)
     rev.set_defaults(func=cmd_client_revoke)
 
-    lst = client_sub.add_parser("list", help="列出调用方（不显示 secret）")
+    lst = client_sub.add_parser("list", help="列出调用方（不显示 token）")
     lst.set_defaults(func=cmd_client_list)
 
     args = parser.parse_args()
@@ -579,8 +572,8 @@ def entry_check() -> None:
 
 
 def entry_client() -> None:
-    """`uv run client register|revoke|list ...`"""
-    # uv run client register ... → 补上顶层子命令名 "client" 再交给 main()
+    """`uv run client issue|revoke|list ...`"""
+    # uv run client issue ... → 补上顶层子命令名 "client" 再交给 main()
     sys.argv = [sys.argv[0], "client", *sys.argv[1:]]
     raise SystemExit(main())
 
