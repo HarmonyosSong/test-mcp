@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 CODE_INDEX_FILE_ENV = "HARMONY_AGENT_CODE_INDEX_FILE"
 CODE_INDEX_SCOPE_FILE_ENV = "HARMONY_AGENT_CODE_INDEX_SCOPE_FILE"
@@ -27,20 +28,23 @@ class IndexPath(BaseModel):
     line_end: int | None = Field(default=None, ge=1)
     terms: list[str] = Field(default_factory=list)
 
+    @field_validator("path")
     @classmethod
-    def model_validate(cls, obj: Any, *args: Any, **kwargs: Any) -> IndexPath:
-        value = super().model_validate(obj, *args, **kwargs)
-        path = value.path.replace("\\", "/")
+    def validate_path(cls, value: str) -> str:
+        path = value.replace("\\", "/")
         if path.startswith("/") or any(part in {"", ".", ".."} for part in path.split("/")):
             raise ValueError("code index path must be a safe relative path")
+        return path
+
+    @model_validator(mode="after")
+    def validate_line_range(self) -> IndexPath:
         if (
-            value.line_end is not None
-            and value.line_start is not None
-            and value.line_end < value.line_start
+            self.line_end is not None
+            and self.line_start is not None
+            and self.line_end < self.line_start
         ):
             raise ValueError("line_end must not precede line_start")
-        value.path = path
-        return value
+        return self
 
 
 class IndexEntry(BaseModel):
@@ -64,6 +68,13 @@ class IndexEntry(BaseModel):
     generated_at: str | None = None
     matched_file_count: int | None = Field(default=None, ge=1)
     mapping_method: str = Field(default="lexical-source-scan", min_length=1)
+
+    @field_validator("resolved_commit")
+    @classmethod
+    def validate_commit(cls, value: str) -> str:
+        if not re.fullmatch(r"[0-9a-f]{40,64}", value):
+            raise ValueError("resolved_commit must be an immutable Git SHA")
+        return value
 
     def searchable_text(self) -> str:
         values: list[str] = [
@@ -137,10 +148,38 @@ def _allowed_versions(scope: dict[str, list[str]], form_factor: str | None) -> s
     return set(scope.get(_scope_key(form_factor), scope["default"]))
 
 
-def _matches(entry: IndexEntry, query: str) -> bool:
-    terms = [part for part in query.casefold().split() if part]
+def _identity_terms(entry: IndexEntry) -> list[str]:
+    return [entry.title, *entry.aliases]
+
+
+def _score_entry(entry: IndexEntry, query: str, terms: list[str]) -> int:
+    """确定性词法打分；0 分表示不命中。
+
+    索引每个版本窗只有十几条条目，全库几百条——这个体量不需要向量/BM25，
+    可解释的词法匹配足够。关键是准入要宽（任一信号即可候选），排序交给分数。
+    """
     haystack = entry.searchable_text()
-    return all(term in haystack for term in terms)
+    identity = " ".join(_identity_terms(entry)).casefold()
+    score = 0
+    if query and query in haystack:
+        score += 5
+    for term in terms:
+        if term in identity:
+            score += 3
+            continue
+        if term in haystack:
+            score += 1
+            continue
+        # 中文复合查询词没有空格分词（如「跨报成功记录」）：当条目标题/别名
+        # 是查询词的子串时给分，按最长命中别名加权，避免单字噪音。
+        alias_lengths = [
+            len(alias)
+            for alias in _identity_terms(entry)
+            if len(alias) >= 2 and alias.casefold() in term
+        ]
+        if alias_lengths:
+            score += 2 + min(max(alias_lengths), 6)
+    return score
 
 
 def _public(entry: IndexEntry, *, score: int | None = None) -> dict[str, Any]:
@@ -200,37 +239,48 @@ def create_code_index_server(
         if not query.strip():
             return {"status": "invalid_query", "results": [], "navigation_only": True}
         allowed = _allowed_versions(scope, form_factor)
-        candidates: list[tuple[int, IndexEntry]] = []
-        for entry in entries:
-            entry_allowed = _allowed_versions(scope, entry.form_factor)
-            if entry.version not in entry_allowed or entry.version not in allowed:
-                continue
-            if platform and entry.platform != platform:
-                continue
-            if product_line and entry.product_line != product_line:
-                continue
-            if form_factor and entry.form_factor not in {
-                form_factor,
-                "universal",
-                "hd" if form_factor == "pad" else form_factor,
-            }:
-                continue
-            if version and entry.version != version:
-                continue
-            if build and entry.build != build:
-                continue
-            if not _matches(entry, query):
-                continue
-            text = entry.searchable_text()
-            score = sum(2 if term in text else 0 for term in query.casefold().split())
-            score += 1 if query.casefold() in text else 0
-            candidates.append((score, entry))
+        folded_query = query.casefold()
+        terms = [part for part in folded_query.split() if part]
+
+        def collect(*, enforce_version: bool) -> list[tuple[int, IndexEntry]]:
+            found: list[tuple[int, IndexEntry]] = []
+            for entry in entries:
+                entry_allowed = _allowed_versions(scope, entry.form_factor)
+                if entry.version not in entry_allowed or entry.version not in allowed:
+                    continue
+                if platform and entry.platform != platform:
+                    continue
+                if product_line and entry.product_line != product_line:
+                    continue
+                if form_factor and entry.form_factor not in {
+                    form_factor,
+                    "universal",
+                    "hd" if form_factor == "pad" else form_factor,
+                }:
+                    continue
+                if enforce_version and version and entry.version != version:
+                    continue
+                if build and entry.build != build:
+                    continue
+                score = _score_entry(entry, folded_query, terms)
+                if score > 0:
+                    found.append((score, entry))
+            return found
+
+        candidates = collect(enforce_version=True)
+        # 指定版本零命中时回落到窗口内其它版本：模块归属很少随小版本剧变，
+        # 结果必须如实标注 version_fallback，由调用方按导航线索到真实版本核实。
+        version_fallback = False
+        if not candidates and version:
+            candidates = collect(enforce_version=False)
+            version_fallback = bool(candidates)
         candidates.sort(key=lambda item: (-item[0], item[1].entry_id))
         bounded_limit = max(1, min(limit, 50))
         return {
             "status": "ok" if candidates else "no_match",
             "query": query,
             "allowed_versions": sorted(allowed),
+            "version_fallback": version_fallback,
             "results": [_public(entry, score=score) for score, entry in candidates[:bounded_limit]],
             "truncated": len(candidates) > bounded_limit,
             "navigation_only": True,
