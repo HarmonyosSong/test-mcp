@@ -118,6 +118,10 @@ export const runtimeConfigSchema = z.object({
   /** 学员编号通过内网 UCenter 查档案（lookup_learner）。 */
   ucenterBaseUrl: z.string().default(UCENTER_DEFAULT_BASE_URL),
   ucenterTimeoutMs: z.coerce.number().int().min(100).max(60_000).default(10_000),
+  /** 独立 log-mcp HTTP 入口；空字符串表示本轮不尝试挂载。 */
+  logMcpUrl: z.string().default('http://127.0.0.1:8766/mcp'),
+  logMcpBearerToken: z.string().default(''),
+  logMcpTimeoutMs: z.coerce.number().int().min(1_000).max(600_000).default(60_000),
 });
 
 export type RuntimeConfig = Omit<
@@ -208,6 +212,9 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     yachRobotId: env.HARMONY_AGENT_YACH_ROBOT_ID ?? env.YACH_ROBOT_ID,
     ucenterBaseUrl: env.HARMONY_AGENT_UCENTER_BASE_URL,
     ucenterTimeoutMs: env.HARMONY_AGENT_UCENTER_TIMEOUT_MS,
+    logMcpUrl: env.LOG_MCP_URL || defaultLogMcpUrl(env),
+    logMcpBearerToken: env.LOG_MCP_BEARER_TOKEN,
+    logMcpTimeoutMs: env.LOG_MCP_CLIENT_TIMEOUT_MS,
   });
   const projectRoot = resolve(repositoryRoot, config.projectRoot);
   const fromRoot = (path: string) => resolve(projectRoot, path);
@@ -276,7 +283,21 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     yachRobotId: config.yachRobotId.trim(),
     ucenterBaseUrl: (config.ucenterBaseUrl.trim() || UCENTER_DEFAULT_BASE_URL).replace(/\/+$/, ''),
     ucenterTimeoutMs: config.ucenterTimeoutMs,
+    logMcpUrl: normalizeLogMcpUrl(config.logMcpUrl),
+    logMcpBearerToken: config.logMcpBearerToken.trim(),
   };
+}
+
+function defaultLogMcpUrl(env: NodeJS.ProcessEnv): string {
+  const host = (env.LOG_MCP_HOST || '127.0.0.1').trim() || '127.0.0.1';
+  const port = (env.LOG_MCP_PORT || '8766').trim() || '8766';
+  return `http://${host}:${port}/mcp`;
+}
+
+function normalizeLogMcpUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return trimmed.replace(/\/+$/, '');
 }
 
 export function compassA2AClientConfig(config: Pick<RuntimeConfig, 'a2aBaseUrl' | 'a2aClientId' | 'a2aToken' | 'a2aWaitSeconds'>) {

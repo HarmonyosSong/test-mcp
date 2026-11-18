@@ -10,7 +10,7 @@
 | --- | --- |
 | 工具面 | 14 个：日志中心 7 + 云日志 6 + 聚合 `search_both_logs` 1 |
 | 云日志支持 | 当前仅阿里云 SLS（`vendor=tencent` 报错） |
-| 鉴权 | OAuth 2.1 client_credentials，短期 access_token + 哈希存储 |
+| 鉴权 | ctl 颁发长期 Bearer token（带过期，库内只存哈希）；无 HTTP 换票 |
 | 部署形态 | 独立 HTTP MCP 服务（Starlette + uvicorn），非 stdio 子进程 |
 | 边界 | 不含日志地图 / uid 注入 / evidence 标记 / 二次截断 |
 
@@ -62,6 +62,18 @@ curl -s http://127.0.0.1:8766/health
 # 期望：{"status":"ok","auth":"disabled"} 或鉴权开启时 status=ok
 ```
 
+### 颁发 Token（鉴权开启时）
+
+```bash
+cd log-mcp
+uv run client issue --client-id odyssey-runtime --description "Runtime" --days 180
+# 明文 token 仅打印一次 → 写入调用方 LOG_MCP_BEARER_TOKEN
+uv run client list
+uv run client revoke --client-id odyssey-runtime
+```
+
+本地 `LOG_MCP_AUTH_DISABLED=true` 时可跳过。
+
 ### Cursor / VS Code（`mcp.json`）
 
 ```json
@@ -69,13 +81,14 @@ curl -s http://127.0.0.1:8766/health
   "mcpServers": {
     "log-mcp": {
       "type": "http",
-      "url": "http://127.0.0.1:8766/mcp"
+      "url": "http://127.0.0.1:8766/mcp",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
     }
   }
 }
 ```
-
-需要 Bearer 时，先换 token 再在 headers 加 `Authorization: Bearer <token>`。
 
 ## 端点
 
@@ -85,8 +98,6 @@ curl -s http://127.0.0.1:8766/health
 | `/mcp/logcenter` | 7 | Bearer | 调试：只测日志中心 |
 | `/mcp/cloud` | 6 | Bearer | 调试：只测云日志 |
 | `/health` | — | 无 | 存活探针 |
-| `/oauth/token` | — | 无 | 换取 access_token |
-| `/oauth/revoke` | — | 无 | 吊销令牌 |
 
 ## 配置
 

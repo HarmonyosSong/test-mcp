@@ -52,3 +52,21 @@ export const CODE_CATALOG_MCP_TOOL_NAMES = [
   'search_code_index',
   'get_code_index_entry',
 ];
+
+/** log-mcp `/mcp` 全量工具面（日志中心 7 + 云日志 6 + 聚合 1）。 */
+export const LOG_MCP_TOOL_NAMES = [
+  'search_services',
+  'list_services',
+  'get_fields',
+  'get_storage_type',
+  'count',
+  'query',
+  'dsl_search',
+  'cloud_accounts',
+  'cloud_collections',
+  'cloud_topics',
+  'cloud_count',
+  'cloud_search',
+  'cloud_probe',
+  'search_both_logs',
+] as const;

@@ -182,12 +182,13 @@ test('close aborts capability requests and tries every client even when one clea
   assert.equal(secondClosed, true);
 });
 
-test('round factory mounts learner without log catalog and does not expose configured A2A', async () => {
+test('round factory mounts learner; knowledge/log 降级时记 unavailable，不暴露 A2A', async () => {
   const provider = new CapabilityMcp(loadRuntimeConfig({
     HARMONY_AGENT_A2A_TOKEN: 'test-a2a-token',
     HARMONY_AGENT_UCENTER_BASE_URL: 'https://ucenter.example.test',
   }));
   provider.createKnowledgeSession = async () => null;
+  provider.createLogSession = async () => null;
   const session = await createRoundCapabilitySession(provider, {
     conversationId: 'conv-1', messageId: 'msg-1', runId: 'run-1', workspacePath: null,
   });
@@ -199,10 +200,83 @@ test('round factory mounts learner without log catalog and does not expose confi
       'get_code_index_entry',
     ]);
     assert.deepEqual(Object.keys(session.toolsets.learner!), ['lookup_learner']);
-    assert.deepEqual(session.unavailable, ['knowledge']);
+    assert.deepEqual(session.unavailable, ['knowledge', 'log']);
   } finally {
     await session.close();
   }
+});
+
+test('round factory mounts log toolset when createLogSession succeeds', async () => {
+  const provider = new CapabilityMcp(loadRuntimeConfig({
+    HARMONY_AGENT_UCENTER_BASE_URL: 'https://ucenter.example.test',
+  }));
+  provider.createKnowledgeSession = async () => null;
+  provider.createCodeIndexSession = async () => null;
+  provider.createLogSession = (async () => ({
+    client: { disconnect: async () => undefined },
+    toolsets: {
+      log: {
+        search_both_logs: { id: 'search_both_logs', execute: async () => ({ ok: true }) },
+        query: { id: 'query', execute: async () => ({ ok: true }) },
+      },
+    },
+  })) as unknown as CapabilityMcp['createLogSession'];
+  const session = await createRoundCapabilitySession(provider, {
+    conversationId: 'conv-1', messageId: 'msg-1', runId: 'run-1', workspacePath: null,
+  });
+  try {
+    assert.ok(session.toolsets.log);
+    assert.deepEqual(Object.keys(session.toolsets.log!).sort(), ['query', 'search_both_logs']);
+    assert.ok(!session.unavailable.includes('log'));
+  } finally {
+    await session.close();
+  }
+});
+
+test('log MCP session 使用 HTTP url 与可选 Bearer，发现超时受配置约束', async (context) => {
+  const config = loadRuntimeConfig({
+    LOG_MCP_URL: 'http://127.0.0.1:8766/mcp',
+    LOG_MCP_BEARER_TOKEN: 'tok-test',
+    LOG_MCP_CLIENT_TIMEOUT_MS: '45000',
+  });
+  assert.equal(config.logMcpUrl, 'http://127.0.0.1:8766/mcp');
+  assert.equal(config.logMcpBearerToken, 'tok-test');
+  assert.equal(config.logMcpTimeoutMs, 45_000);
+  assert.equal(
+    loadRuntimeConfig({}).logMcpUrl,
+    'http://127.0.0.1:8766/mcp',
+  );
+
+  const toolsets = { log: { search_both_logs: {} } };
+  context.mock.method(MCPClient.prototype, 'listToolsetsWithErrors', async function (this: MCPClient, options: unknown) {
+    const configured = this as unknown as {
+      defaultTimeout: number;
+      serverConfigs: { log: { url: URL; requestInit?: { headers?: Record<string, string> }; timeout: number } };
+    };
+    assert.equal(configured.defaultTimeout, 45_000);
+    assert.equal(configured.serverConfigs.log.timeout, 45_000);
+    assert.equal(String(configured.serverConfigs.log.url), 'http://127.0.0.1:8766/mcp');
+    assert.equal(configured.serverConfigs.log.requestInit?.headers?.Authorization, 'Bearer tok-test');
+    assert.deepEqual(options, { perServerTimeoutMs: MCP_TOOL_DISCOVERY_TIMEOUT_MS });
+    return { toolsets, errors: {}, errorDetails: {} };
+  });
+  const session = await new CapabilityMcp(config).createLogSession('conv-log', 'msg-log');
+  try {
+    assert.ok(session);
+    assert.equal(session!.toolsets, toolsets);
+  } finally {
+    await session?.client.disconnect();
+  }
+});
+
+test('log MCP 发现失败时返回 null 以降级', async (context) => {
+  context.mock.method(MCPClient.prototype, 'listToolsetsWithErrors', async () => ({
+    toolsets: {},
+    errors: { log: 'ECONNREFUSED' },
+    errorDetails: {},
+  }));
+  const session = await new CapabilityMcp(loadRuntimeConfig({})).createLogSession('conv-x', 'msg-x');
+  assert.equal(session, null);
 });
 
 test('cancellation in the final unavailable factory cannot return an active session', async () => {

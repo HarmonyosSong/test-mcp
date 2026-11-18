@@ -10,15 +10,19 @@ import {
 } from '../src/channels/yach/progress-map.js';
 import { YachProgressCard, type YachCardApi } from '../src/channels/yach/progress.js';
 
-test('progressStepForTool 区分学员/源码/知识/协查', () => {
+test('progressStepForTool 区分学员/源码/知识/协查/远程日志', () => {
   assert.equal(progressStepForTool('lookup_learner'), 'learner');
   assert.equal(progressStepForTool('search_project_text'), 'source');
   assert.equal(progressStepForTool('search_knowledge'), 'knowledge');
   assert.equal(progressStepForTool('prepare_source'), 'source');
   assert.equal(progressStepForTool('consult_compass'), 'consult');
+  assert.equal(progressStepForTool('search_both_logs'), 'logs');
+  assert.equal(progressStepForTool('query'), 'logs');
+  assert.equal(progressStepForTool('cloud_search'), 'logs');
   assert.equal(progressLabelForTool('lookup_learner'), '正在查询学员信息');
   assert.equal(progressLabelForTool('prepare_source'), '正在绑定源码快照');
   assert.equal(progressLabelForTool('consult_compass'), '正在请求服务端协查');
+  assert.equal(progressLabelForTool('search_both_logs'), '正在查询远程日志');
 });
 
 test('applyProgressEvent 按工具起止勾选清单', () => {

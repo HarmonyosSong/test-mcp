@@ -1,4 +1,7 @@
 import type { DiagnosisStreamEvent } from '../../diagnosis/agent.js';
+import { LOG_MCP_TOOL_NAMES } from '../../model/metadata.js';
+
+const LOG_MCP_TOOL_NAME_SET = new Set<string>(LOG_MCP_TOOL_NAMES);
 
 /** 固定任务清单；知音楼进度卡按此顺序勾选。 */
 export const PROGRESS_STEPS = [
@@ -32,6 +35,7 @@ export function progressStepForTool(toolName: string): ProgressStepId | null {
   if (name.includes('lookup_learner') || name.includes('ucenter')) return 'learner';
   if (name.includes('prepare_source')) return 'source';
   if (name.includes('consult_compass')) return 'consult';
+  if (LOG_MCP_TOOL_NAME_SET.has(toolName) || LOG_MCP_TOOL_NAME_SET.has(name)) return 'logs';
   if (
     name.includes('repository')
     || name.includes('workspace')

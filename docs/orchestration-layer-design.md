@@ -31,7 +31,7 @@
 
 - 当前模块与能力状态总览见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 - Compass 传输与接入边界见 [../spec/compass-a2a-integration.md](../spec/compass-a2a-integration.md)。
-- Runtime 内嵌日志目录/查询工具已下线；远程日志由独立 `log-mcp` 提供，当前未挂入 Runtime。
+- Runtime 内嵌日志目录/查询工具已下线；远程日志由独立 `log-mcp` 提供，Runtime 每轮经 HTTP 挂入工具会话（连不上则本轮降级）。
 
 ## 2. 当前实现基线
 

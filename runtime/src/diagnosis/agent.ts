@@ -18,6 +18,7 @@ import { ObservationRegistry } from "./observations.js";
 import { SkillRegistry } from "./skills.js";
 import { RoundGuard } from "./round-guard.js";
 import { validateFinalAnswer, type VerdictMarker } from "./final-answer-validator.js";
+import { remoteLogAvailabilityNotice } from "./remote-log-prompt.js";
 const MAX_TOOL_FAILURES = 40;
 const MAX_TOOL_CALLS = 120;
 /** 最终答案校验失败后的反馈重试次数（首轮之外最多再打回 2 次）。 */
@@ -225,7 +226,7 @@ ${prepareSourceAvailable ? `
 - 索引结果只是导航线索，不能直接作为证据；命中后根据返回的 platform、version、repository_id、resolved_commit 调用 prepare_source，再用 read_project_file 核实同一快照。
 - 用户只问产品规则时不必调用代码索引；用户问实现、代码位置或模块归属时优先调用代码索引。索引无命中再回退代码图或全文搜索。
 ` : ""}
-远程日志目录工具不可用；不要声称已查询日志中心或云日志。
+${remoteLogAvailabilityNotice(availableTools)}
 
 ${conversation.channel === "yach_im" ? `输出规范（知音楼 IM 场景：严格按模板输出，禁止模板外内容）：
 1. 最终回答只填充模板字段；不写长篇推理、不复述排查过程、不闲聊、不输出调用链/工具名/内部 ID 清单。
