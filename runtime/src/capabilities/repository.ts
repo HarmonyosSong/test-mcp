@@ -167,10 +167,15 @@ export class RepositoryCapability {
     }
     try {
       const stored = await this.readSnapshotMetadata(metadataPath);
-      if (stored.requested_ref !== requestedRef || stored.resolved_commit !== expectedCommit) {
-        throw new SnapshotNotReadyError('本地快照的登记 ref 或 commit 不一致');
+      if (stored.resolved_commit !== expectedCommit) {
+        throw new SnapshotNotReadyError('本地快照的登记 commit 不一致');
       }
-      return await this.validateSnapshot(stored);
+      const validated = await this.validateSnapshot(stored);
+      // 同一 commit 可被多个 tag 暴露（发布列车 / 双产品线复用同一包）：快照工作区按
+      // commit 寻址、内容一致即可复用；requested_ref 以本次调用方为准返回，
+      // 磁盘 metadata 保留首次物化时的 ref。
+      if (stored.requested_ref !== requestedRef) return { ...validated, requested_ref: requestedRef };
+      return validated;
     } catch (error) {
       if (error instanceof SnapshotNotReadyError) throw error;
       throw new SnapshotNotReadyError(`${record.id}@${expectedCommit} 本地快照校验失败`, { cause: error });

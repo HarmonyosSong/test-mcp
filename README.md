@@ -124,6 +124,7 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 2. 在模型设置中配置供应商、模型和 API Key，或在 `.env` 中配置环境变量。
 3. 新建会话后直接输入问题和已知 hilog/代码片段，无需预选平台、产品线、仓库或版本；Runtime 会结合提示词和已关联的 LogCenter 事实确定源码范围。
 4. 需要检查代码时，Runtime 自动读取 `version-registry/`，按已确认范围绑定对应 ref 的固定 commit 快照；首次物化快照需要有效的 `HARMONY_AGENT_GITLAB_TOKEN`。
+   - 可选预热：`make bootstrap-sources` 把 `code-index/sources.json` 全部版本窗的壳与组件快照一次性物化到运行时缓存（默认 `.data/workspaces`），避免每个版本的首次诊断现等 GitLab 下载；幂等，版本登记更新后可重跑。不预热也能正常用。
 5. 等待工具步骤完成。报告会显示结论、证据原文、来源位置、已排除项和缺少的信息。
 
 ## 配置
