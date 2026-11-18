@@ -1,7 +1,11 @@
 # 多端版本 → 代码快照解析技术方案
 
-状态：M4 已实现，M5 合成验收已实现（2026-11-12）；生产登记数据仍需逐端核对
-上游规划：`multi-capability-expansion-plan.md` §2.4（按确认平台和精确版本选择源码，选择器已实现）、§3.1（多端产品化）
+状态：已完成并上线（2026-11-18）。生产登记数据已按三端产品线核对（9 个 profile、版本窗
+手机 7.x / HD 5.x）；组件源码已自动物化——iOS 按 Podfile.lock、安卓按 settings.gradle +
+`<模块>_PACKAGE_VERSION` 钉版本与 per-module tag（实现见 `runtime/src/capabilities/
+component-resolution.ts`、`android-components.ts`、`ios-components.ts`）。code-index 离线索引
+（96 条目，含角色/关键符号/数据流注解）复用同一物化链。
+上游规划：`multi-capability-expansion-plan.md`（已随去编排化删除，开放项并入 ARCHITECTURE.md §6）
 
 ## 1. 背景与目标
 

@@ -1,10 +1,17 @@
-.PHONY: setup check-node dev-api dev-server dev-web dev-mcp dev-log-mcp stop-log-mcp test test-runtime test-mcp knowledge-validate lint build build-runtime build-web start live-eval knowledge-querylog knowledge-cases
+.PHONY: setup check-node dev-api dev-server dev-web dev-mcp dev-log-mcp stop-log-mcp bootstrap-sources test test-runtime test-mcp knowledge-validate lint build build-runtime build-web start live-eval knowledge-querylog knowledge-cases
 
 setup: check-node
 	uv sync --project mcp_server --index-url https://pypi.org/simple
 	uv sync --project log-mcp --index-url https://pypi.org/simple
 	npm --prefix web install
 	npm --prefix runtime ci
+
+# 首次部署/本地运行：把 sources.json 全部版本窗的壳+组件快照物化到运行时缓存
+# （默认 .data/workspaces），诊断时直接命中。幂等，可随时重跑。
+# 大仓库建议 HARMONY_AGENT_GITLAB_TIMEOUT_MS=300000 make bootstrap-sources
+bootstrap-sources: check-node
+	npx tsx code-index/warm-runtime-cache.ts
+
 
 check-node:
 	@node -e "const [major, minor] = process.versions.node.split('.').map(Number); if (major < 22 || (major === 22 && minor < 13)) { console.error('Node.js >=22.13.0 is required'); process.exit(1); }"

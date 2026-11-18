@@ -78,7 +78,10 @@ Knowledge/Repository/code_index MCP，不再拥有产品 Agent 或 HTTP 服务�
   命中唯一产品线时自动补齐；缺少版本时选择唯一范围内最新已核验构建；无法唯一确定时返回缺口
   说明，由模型决定追问或先查日志。
 - GitLab archive 物化前校验登记 commit；登记的 `repos` 可包含一个 shell 和多个 component/config，
-  通过安全的 `mount_path` 生成组合只读工作区。
+  通过安全的 `mount_path` 生成组合只读工作区。组件无需手工登记：iOS 按壳工程 Podfile.lock、
+  安卓按 settings.gradle 本地组件声明 + `<模块>_PACKAGE_VERSION` 钉版本与 per-module tag 自动解析，
+  发布列车同 commit 的组件只物化一份快照（`capabilities/component-resolution.ts`，运行时绑定与
+  code-index 离线索引共用同一链路）。
 - 源码证据的 `source_context` 由 Runtime 从会话绑定的仓库、commit 和挂载路径注入，稳定证据 ID
   也包含该身份；换版本必须重新绑定，旧源码证据不能改标到新 commit。
 - 跨端对比：`prepare_source` 传与事故端不同的 `platform` 绑定对照端快照（同版本优先，未登记按
@@ -113,8 +116,9 @@ matched_identifiers 观测元数据。Compass 及其模型链路均在内网，�
 | 多用户会话隔离与全局并发闸门 | 单进程已实现 |
 | LogCenter Catalog/SLS 工具组 | 目标绑定、身份发现、观测和关联入账框架已实现；真实生产字段覆盖仍待验收 |
 | 学员日志 → 平台确认 → 日志证据 | 合成 mock 链路已实现；真实学员与 HarmonyOS/具体业务字段尚未联调 |
-| Android/iOS/HarmonyOS 精确版本快照选择 | 登记表加载、精确选择、GitLab archive 物化、多仓组合挂载、轮内热绑定已实现 |
+| Android/iOS/HarmonyOS 精确版本快照选择 | 登记表加载、精确选择、GitLab archive 物化、多仓组合挂载、轮内热绑定已实现；iOS/安卓组件自动解析物化已上线 |
 | 跨端实现对比（对照端快照） | prepare_source 显式 platform + 懒代理双槽位已实现并有回归测试 |
-| 代码导航（CBM + code_index 目录） | 可选挂载 `search_code_symbols`、`get_code_outline`、`trace_code_path` 与目录三工具；导航只作线索，失败回退文本搜索 |
+| 代码导航（CBM + code_index 目录） | 可选挂载 `search_code_symbols`、`get_code_outline`、`trace_code_path` 与目录三工具；code_index 条目含角色/关键符号/数据流注解（96 条覆盖三端含组件仓库）；导航只作线索，失败回退文本搜索 |
+| 知音楼 IM 输出 | 固定结构化模板：判定锚点 + 加粗归属指引 + 分点原因 + 动态补充信息；网页端保留完整结论与依据 |
 
 启动、配置和验证命令以根目录 [README.md](../README.md) 为准。

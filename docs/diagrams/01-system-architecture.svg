@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1120" role="img" aria-labelledby="title description">
   <title id="title">Troubleshoot Odyssey 当前诊断主流程</title>
-  <desc id="description">请求经准入后，默认先由客户端 Agent 观察日志、完成关联入账并读取固定源码快照。本地报告若给出明确跨侧问题，则由 Runtime 自动协查，经 Compass 获取独立外部结论并生成联合报告；否则直接完成本地报告。</desc>
+  <desc id="description">请求经准入后进入唯一诊断路径 runDiagnosisRound 单 loop：模型自主决定排查路径，按需调用知识、日志、源码与协查工具；RoundGuard 提供横切护栏，观测注册表记录证据，最终回答经校验器校验后按渠道输出——Web 完整结论，知音楼固定模板。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#63758b"/>
@@ -33,12 +33,12 @@
   </defs>
 
   <rect width="1400" height="1120" fill="#ffffff"/>
-  <text x="54" y="54" class="title">当前一轮诊断：先观察，再取证，按需协查</text>
-  <text x="54" y="84" class="subtitle">Supervisor 负责技术路由与协查；老师只描述故障、补充事实，不需要理解另一个 Agent</text>
-  <text x="54" y="110" class="small">实线为本地主流程，绿色虚线为自动外部协查；两条证据路径始终分开。</text>
+  <text x="54" y="54" class="title">当前一轮诊断：单 loop 自主排查，工具与护栏由代码承载</text>
+  <text x="54" y="84" class="subtitle">模型自主决定排查路径；Runtime 只做准入、工具封装、横切护栏与最终校验——无 Supervisor、无阶段状态机</text>
+  <text x="54" y="110" class="small">实线为本地主流程，绿色虚线为 consult_compass 协查；完成态协查结论登记为正式观测，与本地证据同级。</text>
 
   <rect x="54" y="132" width="1292" height="140" rx="12" class="frame"/>
-  <text x="78" y="160" class="section">01 · 接入与调查计划</text>
+  <text x="78" y="160" class="section">01 · 接入与唯一诊断路径</text>
   <rect x="82" y="182" width="220" height="64" rx="8" class="box"/>
   <text x="102" y="209" class="heading">用户问题</text>
   <text x="102" y="232" class="body">Web / 知音楼 IM</text>
@@ -46,99 +46,79 @@
   <text x="400" y="209" class="heading">Hono + RunAdmission</text>
   <text x="400" y="232" class="body">身份校验 · 会话互斥 · 全局并发</text>
   <rect x="780" y="164" width="520" height="96" rx="8" class="runtime"/>
-  <text x="804" y="194" class="heading">Runtime Supervisor</text>
-  <text x="804" y="218" class="body">默认 local；只有明确限定才直接生成 server</text>
-  <text x="804" y="240" class="small">已有日志观测 + 服务端信号 + 请求关联 + 开关和预算，才允许 parallel</text>
+  <text x="804" y="194" class="heading">runDiagnosisRound（单 loop）</text>
+  <text x="804" y="218" class="body">轮首最佳努力预绑源码；歧义/缺口转为 limitations 文本</text>
+  <text x="804" y="240" class="small">模型自主规划后续路径，代码层不再做技术路由</text>
   <path d="M 302 214 H 380" class="edge"/>
   <path d="M 680 214 H 780" class="edge"/>
 
-  <rect x="54" y="300" width="1292" height="310" rx="12" class="client-frame"/>
-  <text x="78" y="330" class="section">02 · 客户端主流程：observe → source → 本地报告</text>
-  <text x="78" y="352" class="small">新工单没有 kind=log 时，即使带 traceId 和服务端关键词，也先走这里。</text>
+  <rect x="54" y="300" width="1292" height="360" rx="12" class="client-frame"/>
+  <text x="78" y="330" class="section">02 · 单 loop 内：模型自主规划，工具按需提供</text>
 
-  <rect x="82" y="382" width="200" height="140" rx="8" class="runtime"/>
-  <text x="102" y="416" class="heading-compact">ClientDiagnosisAgent</text>
-  <text x="102" y="448" class="body">Skill / Knowledge 提供候选</text>
-  <text x="102" y="472" class="body">Runtime 私有注入学员标识</text>
-  <text x="102" y="500" class="small">知识、目录与别名不是证据</text>
+  <rect x="82" y="382" width="220" height="186" rx="8" class="runtime"/>
+  <text x="102" y="416" class="heading-compact">DiagnosisAgent</text>
+  <text x="102" y="448" class="body">自主决定排查路径与顺序</text>
+  <text x="102" y="472" class="body">技能正文承载流程指引</text>
+  <text x="102" y="500" class="small">知识 / 目录 / 导航只是线索</text>
+  <text x="102" y="524" class="small">观测与协查结论才是证据</text>
 
-  <rect x="320" y="382" width="220" height="140" rx="8" class="box"/>
-  <text x="340" y="416" class="heading">1 · 观察现场</text>
-  <text x="340" y="448" class="body">LogCenter 发现 / 关联查询</text>
-  <text x="340" y="472" class="body">或解析用户粘贴的 hilog</text>
-  <text x="340" y="500" class="small">身份匹配日志提供平台与版本</text>
+  <rect x="340" y="382" width="560" height="186" rx="8" class="box"/>
+  <text x="364" y="414" class="heading">模型可见工具</text>
+  <text x="364" y="446" class="body">线索：load_skill · lookup_issue · search_code_index 目录</text>
+  <text x="364" y="472" class="body">取证：日志工具 · prepare_source · 源码懒代理工具组</text>
+  <text x="364" y="500" class="body">协查：consult_compass（预算 4 次/轮）</text>
+  <text x="364" y="530" class="small">学员身份由 Runtime 私有注入日志工具，不进模型 schema</text>
+  <text x="364" y="552" class="small">源码工具未绑定时返回提示，prepare_source 轮内热绑定</text>
 
-  <rect x="580" y="382" width="220" height="140" rx="8" class="data"/>
-  <text x="600" y="416" class="heading">2 · 门禁与入账</text>
-  <text x="600" y="448" class="body">目标绑定 + 当前身份匹配</text>
-  <text x="600" y="472" class="body">脱敏日志逐条进入账本</text>
-  <text x="600" y="500" class="small">空结果或失败可降级，不确认平台</text>
+  <rect x="940" y="382" width="406" height="186" rx="8" class="data"/>
+  <text x="964" y="414" class="heading">横切护栏与证据</text>
+  <text x="964" y="446" class="body">RoundGuard：串行 dispatch · 结果缓存</text>
+  <text x="964" y="470" class="body">同签名失败禁重试 · 无进展只注入提醒</text>
+  <text x="964" y="494" class="body">软时限 900s 关工具 + 180s 收尾窗硬 abort</text>
+  <text x="964" y="524" class="small">ObservationRegistry：append-only ev-ID 元数据</text>
+  <text x="964" y="546" class="small">source / log / external 三类观测共存</text>
 
-  <rect x="840" y="382" width="250" height="140" rx="8" class="navigation"/>
-  <text x="860" y="416" class="heading">3 · 读取固定源码</text>
-  <text x="860" y="448" class="body">Repository MCP · 会话原 commit</text>
-  <text x="860" y="472" class="body">CBM / grep 只负责寻找候选</text>
-  <text x="860" y="500" class="small">read 原文与调用上下文才形成证据</text>
+  <path d="M 302 475 H 340" class="edge"/>
+  <path d="M 900 475 H 940" class="edge"/>
 
-  <rect x="1130" y="382" width="216" height="140" rx="8" class="data"/>
-  <text x="1150" y="416" class="heading">4 · 校验本地报告</text>
-  <text x="1150" y="448" class="body">证据 ID + 逐字摘录</text>
-  <text x="1150" y="472" class="body">责任判断 + 信息缺口</text>
-  <text x="1150" y="500" class="small">非法引用拒绝提交</text>
+  <rect x="82" y="596" width="1264" height="42" rx="8" class="boundary"/>
+  <text x="102" y="622" class="small">prepare_source 供应链：version-registry → GitLab archive → 组件物化（iOS Podfile.lock · 安卓钉版本 + per-module tag）→ 多仓组合只读快照；对照端双槽位（target=compare）。</text>
 
-  <path d="M 282 452 H 320" class="edge"/>
-  <path d="M 540 452 H 580" class="edge"/>
-  <path d="M 800 452 H 840" class="edge"/>
-  <path d="M 1090 452 H 1130" class="edge"/>
+  <rect x="54" y="690" width="1292" height="364" rx="12" class="server-frame"/>
+  <text x="78" y="720" class="section">03 · 校验、判定与渠道输出</text>
 
-  <rect x="82" y="548" width="1000" height="42" rx="8" class="boundary"/>
-  <text x="102" y="574" class="small">Web 无需预选端或版本；提示词与已保存 LogCenter 事实可在后续轮次绑定固定 commit，运行中不热切换。</text>
+  <rect x="82" y="752" width="300" height="120" rx="8" class="data"/>
+  <text x="102" y="786" class="heading-compact">FinalAnswerValidator</text>
+  <text x="102" y="812" class="body">非空 · 无协议泄露</text>
+  <text x="102" y="834" class="body">ev-ID 存在性 · 判定锚点</text>
+  <text x="102" y="858" class="small">打回重试 ≤2 次，仍缺锚点放行记 null</text>
 
-  <rect x="54" y="640" width="1292" height="414" rx="12" class="server-frame"/>
-  <text x="78" y="670" class="section">03 · 外部协查：满足条件后由 Runtime 自动执行，老师无需审批</text>
+  <rect x="430" y="752" width="250" height="120" rx="8" class="box"/>
+  <text x="454" y="786" class="heading-compact">判定锚点解析</text>
+  <text x="454" y="812" class="body">已定位 / 可能定位</text>
+  <text x="454" y="834" class="body">证据不足 / 工具异常</text>
+  <text x="454" y="858" class="small">写入 diagnosis_outcome 日志</text>
 
-  <rect x="1130" y="700" width="216" height="100" rx="8" class="runtime"/>
-  <text x="1150" y="734" class="heading-compact">需要外部协查？</text>
-  <text x="1150" y="760" class="body">本地报告给出明确跨侧问题</text>
-  <text x="1150" y="782" class="small">Supervisor 判断，老师不选路由</text>
-  <path d="M 1238 522 V 694" class="edge"/>
+  <rect x="730" y="752" width="280" height="120" rx="8" class="box"/>
+  <text x="754" y="786" class="heading-compact">Web 工作台</text>
+  <text x="754" y="812" class="body">完整结论与依据</text>
+  <text x="754" y="834" class="small">ev-ID 可回溯到观测原文</text>
 
-  <rect x="820" y="700" width="250" height="100" rx="8" class="external"/>
-  <text x="844" y="734" class="heading">固定外发边界</text>
-  <text x="844" y="760" class="body">固定脱敏摘要 · digest 校验</text>
-  <text x="844" y="782" class="small">Runtime 自动授权，模型不可改写</text>
-  <path d="M 1130 750 H 1076" class="edge-external"/>
-  <text x="1090" y="736" class="edge-label">是</text>
+  <rect x="1060" y="752" width="286" height="120" rx="8" class="box"/>
+  <text x="1084" y="786" class="heading-compact">知音楼 IM</text>
+  <text x="1084" y="812" class="body">固定模板：加粗归属指引</text>
+  <text x="1084" y="834" class="body">分点原因 · 动态补充信息</text>
+  <text x="1084" y="858" class="small">长推理与内部标识不入 IM</text>
 
-  <rect x="500" y="700" width="250" height="100" rx="8" class="external"/>
-  <text x="524" y="734" class="heading">Compass Slot</text>
-  <text x="524" y="760" class="body">A2A JSON-RPC / SSE</text>
-  <text x="524" y="782" class="small">预算、取消与输出限长</text>
-  <path d="M 820 750 H 756" class="edge-external"/>
+  <path d="M 382 812 H 430" class="edge"/>
+  <path d="M 680 800 H 730" class="edge"/>
+  <path d="M 680 832 H 1060" class="edge"/>
 
-  <rect x="110" y="700" width="300" height="100" rx="8" class="external"/>
-  <text x="134" y="734" class="heading">ExternalFindings</text>
-  <text x="134" y="760" class="body">远端结论、任务状态、截断与限制</text>
-  <text x="134" y="782" class="small">不进入本地 EvidenceLedger</text>
-  <path d="M 500 750 H 416" class="edge-external"/>
+  <rect x="430" y="932" width="916" height="64" rx="8" class="box"/>
+  <text x="454" y="958" class="heading-compact">持久化并回复：LibSQL · SSE</text>
+  <text x="454" y="980" class="small">工具终态与观测快照先持久化再发送；completed/failed 在流结束前保存</text>
+  <path d="M 870 872 V 926" class="edge"/>
+  <path d="M 1203 872 V 926" class="edge"/>
 
-  <rect x="110" y="862" width="640" height="88" rx="8" class="data"/>
-  <text x="134" y="896" class="heading">联合诊断报告</text>
-  <text x="134" y="922" class="body">本地已验证主张与仅远端支持的主张分开，保留冲突和缺口</text>
-  <path d="M 260 800 V 856" class="edge-external"/>
-
-  <rect x="1000" y="862" width="346" height="88" rx="8" class="data"/>
-  <text x="1024" y="896" class="heading">本地诊断报告</text>
-  <text x="1024" y="922" class="body">无需协查，或远端不可用 / 预算耗尽</text>
-  <path d="M 1238 800 V 856" class="edge"/>
-  <text x="1252" y="828" class="small">否</text>
-
-  <rect x="110" y="978" width="640" height="52" rx="8" class="box"/>
-  <text x="134" y="1010" class="heading-compact">持久化并回复：LibSQL · 脱敏 SSE / IM</text>
-  <path d="M 430 950 V 972" class="edge"/>
-  <rect x="1000" y="978" width="346" height="52" rx="8" class="box"/>
-  <text x="1024" y="1010" class="heading-compact">持久化并回复</text>
-  <path d="M 1173 950 V 972" class="edge"/>
-
-  <text x="54" y="1090" class="small">当前边界：真实 Catalog 字段与真实学员链路未验收；运行中热切换和多进程 lease/CAS 尚未实现；多仓组合快照已接入。</text>
+  <text x="54" y="1090" class="small">当前边界：单进程部署（多进程 lease/CAS 未实现）；LogCenter 真实生产字段与真实学员链路仍待验收；版本登记、组件快照与 code-index 随镜像发布。</text>
 </svg>
