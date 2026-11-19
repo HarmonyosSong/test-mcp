@@ -237,7 +237,10 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
               mountPath: registryRepository.mount_path ?? '',
             })),
           })).workspace_path;
-        const sourceCompleteness = limitations.length === 0 && snapshots.some((item) => item.registryRepository.role !== 'shell')
+        // 鸿蒙是 monorepo：壳仓库即全量源码，没有组件概念；iOS/安卓才有组件挂载。
+        const componentsApplicable = platform !== 'harmony';
+        const missingComponents = componentsApplicable && snapshots.length === 1;
+        const sourceCompleteness = limitations.length === 0 && !missingComponents
           ? 'complete' as const
           : 'partial' as const;
         return {
@@ -249,7 +252,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
           source_repositories: sourceRepositories,
           source_completeness: sourceCompleteness,
           source_limitations: [
-            ...(snapshots.length === 1 ? ['当前仅绑定主工程，组件源码未挂载；具体缺口见下方。'] : []),
+            ...(missingComponents ? ['当前仅绑定主工程，组件源码未挂载；具体缺口见下方。'] : []),
             ...limitations,
           ],
           platform,
