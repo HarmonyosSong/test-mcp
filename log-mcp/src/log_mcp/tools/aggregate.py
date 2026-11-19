@@ -31,6 +31,46 @@ READ_ONLY = ToolAnnotations(read_only_hint=True)
 # 云日志侧并发上限（方案 3.5.5 ①）
 _CLOUD_CONCURRENCY = 8
 
+# —— 上下文体积护栏（2026-11-19）——
+# 聚合工具是"广撒网"：命中只为定位去哪个 service/topic 精查，单条字段值与总负载都必须有上限，
+# 否则一次 search_both_logs 可能把上百 KB 日志灌进模型上下文（实测单次 10 万 token）。
+_VALUE_MAX_CHARS = 600          # 单条日志任一字符串字段值的最大长度
+_LOGS_BUDGET_CHARS = 24_000     # 单侧（日志中心/云日志）返回日志的总字符预算
+
+
+def _clip_strings(value):
+    """递归截断超长字符串字段值；保留结构。"""
+    if isinstance(value, str):
+        return value if len(value) <= _VALUE_MAX_CHARS else value[: _VALUE_MAX_CHARS - 1] + "…"
+    if isinstance(value, dict):
+        return {k: _clip_strings(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_clip_strings(item) for item in value]
+    return value
+
+
+def _trim_logs_budget(results: list, budget: int = _LOGS_BUDGET_CHARS) -> int:
+    """按总字符预算收缩各分组的 logs 数组（优先保住排在前面的分组），
+    就地修改并返回被裁掉的日志条数。"""
+    import json as _json
+
+    remaining = budget
+    omitted = 0
+    for group in results:
+        logs = group.get("logs") or []
+        kept = []
+        for entry in logs:
+            size = len(_json.dumps(entry, ensure_ascii=False))
+            if kept and size > remaining:
+                omitted += 1
+                continue
+            kept.append(entry)
+            remaining -= size
+        if len(kept) != len(logs):
+            group["logs"] = kept
+            group["logs_omitted"] = len(logs) - len(kept)
+    return omitted
+
 
 def _resolve_range(time: str) -> tuple[int, int]:
     parsed = parse_time_range(time or "15m")
@@ -173,6 +213,8 @@ def register_aggregate_tools(
                 + cloud_result.get("truncated", {}).get("services_skipped", 0),
                 "topics_skipped": logcenter_result.get("truncated", {}).get("topics_skipped", 0)
                 + cloud_result.get("truncated", {}).get("topics_skipped", 0),
+                "logs_omitted": logcenter_result.get("truncated", {}).get("logs_omitted", 0)
+                + cloud_result.get("truncated", {}).get("logs_omitted", 0),
             },
         }
 
@@ -295,10 +337,12 @@ async def _run_logcenter(
                 "service_id": svc["id"],
                 "service_name": svc.get("name"),
                 "total": outcome["total"],
-                "logs": redact(outcome["logs"]),
+                "logs": redact(_clip_strings(outcome["logs"])),
                 "elapsed_ms": outcome["elapsed_ms"],
             }
         )
+
+    logs_omitted = _trim_logs_budget(results)
 
     return {
         "scanned_services": len(services),
@@ -306,7 +350,11 @@ async def _run_logcenter(
         "results": results,
         "elapsed_ms": int((time.monotonic() - began) * 1000),
         "partial_failures": failures,
-        "truncated": {"services_skipped": truncated_count, "topics_skipped": 0},
+        "truncated": {
+            "services_skipped": truncated_count,
+            "topics_skipped": 0,
+            "logs_omitted": logs_omitted,
+        },
     }
 
 
@@ -383,7 +431,7 @@ async def _run_cloud_all_topics(
     account = defaults.account
     collection_filter = defaults.collection
     query = cloud.get("query") or "*"
-    per_topic_size = cloud.get("per_topic_size") or 100
+    per_topic_size = cloud.get("per_topic_size") or 20
     from_ = cloud.get("from") or 0
     reverse = bool(cloud.get("reverse", False))
     # 与 cloud_search 默认一致：排查默认全字段（仍脱敏），避免精简白名单漏掉设备/业务字段。
@@ -465,10 +513,12 @@ async def _run_cloud_all_topics(
                 "topic": topic_id,
                 "region": topic.get("region"),
                 "total": outcome["total"],
-                "logs": redact(outcome["logs"]),
+                "logs": redact(_clip_strings(outcome["logs"])),
                 "elapsed_ms": outcome["elapsed_ms"],
             }
         )
+
+    logs_omitted = _trim_logs_budget(results)
 
     return {
         "scanned_topics": len(all_topics),
@@ -476,7 +526,11 @@ async def _run_cloud_all_topics(
         "results": results,
         "elapsed_ms": int((time.monotonic() - began) * 1000),
         "partial_failures": failures,
-        "truncated": {"services_skipped": 0, "topics_skipped": truncated_topics},
+        "truncated": {
+            "services_skipped": 0,
+            "topics_skipped": truncated_topics,
+            "logs_omitted": logs_omitted,
+        },
     }
 
 

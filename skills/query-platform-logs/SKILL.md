@@ -32,7 +32,7 @@ metadata:
 
 ## 常用调用模式
 
-1. **广撒网**：`search_both_logs(time, keyword 或 serviceId, query, cloud={})` —— 两侧并行、按 service/topic 分组，只返回有命中的；`scanned_*`/`matched_*` 告诉你全空还是只扫了一部分。
+1. **广撒网**：`search_both_logs(time, keyword 或 serviceId, query, cloud={})` —— 两侧并行、按 service/topic 分组，只返回有命中的；`scanned_*`/`matched_*` 告诉你全空还是只扫了一部分。**广撒网只为定位去哪个 service/topic**：服务端已对超长字段值截断、对返回总量设预算（超限的分组带 `logs_omitted`），命中后必须改用 `cloud_search`/`query` 对目标精查，不要靠追加 search_both_logs 翻更多原始日志。
 2. **已知 topic 精查（云日志）**：`cloud_search(topic, time, query, full=true, …)`；`query` 用普通关键词（如学员 uid、事件名），**直接 `full=true`**，不要先精简再补查。
 3. **已知服务精查（日志中心）**：`search_services(关键词)` → 拿 `service_id` → `get_fields(serviceId)` 看可索引字段 → `query(serviceId, time, query)`。
 4. **先量后取**：用 `count`（日志中心，支持 query 过滤）或 `cloud_count`（**不支持 query**，只有 topic 总量）估计命中规模，再决定时间窗和条件。

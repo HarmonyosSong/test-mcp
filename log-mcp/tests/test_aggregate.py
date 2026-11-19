@@ -564,3 +564,38 @@ def test_no_keyword_no_serviceid_logcenter_error(tmp_path) -> None:
 async def _call_tool(server: LogMcpServer, name: str, args: dict[str, Any]):
     """直接调 call_tool，绕过 MCP 协议层。"""
     return await server.call_tool(name, args)
+
+# ———— 上下文体积护栏：字段值截断 + 总字符预算 ————
+
+
+def test_clip_strings_recursively() -> None:
+    """单条字段值超 600 字符被截断，结构保留。"""
+    from log_mcp.tools.aggregate import _clip_strings
+
+    long_value = "x" * 1_000
+    clipped = _clip_strings(
+        {"a": long_value, "b": ["short", long_value], "c": {"d": long_value}, "e": 42}
+    )
+    assert clipped["a"].endswith("…") and len(clipped["a"]) == 600
+    assert clipped["b"][0] == "short"
+    assert clipped["b"][1].endswith("…")
+    assert clipped["c"]["d"].endswith("…")
+    assert clipped["e"] == 42
+
+
+def test_trim_logs_budget_omits_and_marks() -> None:
+    """总预算超限时裁掉溢出日志，分组标注 logs_omitted，且每组至少保住首条。"""
+    from log_mcp.tools.aggregate import _trim_logs_budget
+
+    results = [
+        {"logs": [{"m": "a" * 500} for _ in range(10)]},
+        {"logs": [{"m": "b" * 500} for _ in range(10)]},
+    ]
+    omitted = _trim_logs_budget(results, budget=1_500)
+    assert omitted > 0
+    assert results[0]["logs"], "首组至少保留首条"
+    assert results[1]["logs"], "后续组也保住首条"
+    for group in results:
+        if len(group["logs"]) < 10:
+            assert group["logs_omitted"] == 10 - len(group["logs"])
+
