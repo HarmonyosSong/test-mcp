@@ -87,6 +87,16 @@ def test_past_n_days() -> None:
     assert end == int(now.timestamp())
 
 
+def test_recent_n_days_alias() -> None:
+    """「近N天」与「过去N天」同义，兼容 Agent 口语。"""
+    now = datetime(2026, 11, 17, 15, 30, 0)
+    past = parse_time_range("过去7天", now)
+    recent = parse_time_range("近7天", now)
+    assert past is not None and recent is not None
+    assert past == recent
+    assert parse_time_range("近 7 天", now) == past
+
+
 def test_this_week() -> None:
     now = datetime(2026, 11, 17, 15, 30, 0)  # 周二
     start, end = parse_time_range("本周", now)

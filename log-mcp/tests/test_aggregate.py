@@ -234,6 +234,88 @@ def test_search_both_logs_cloud_empty_dict_uses_fixed_coordinates(tmp_path) -> N
     assert payload["logcenter"]["matched_services"] == 0
 
 
+def test_search_both_logs_inherits_top_query_into_empty_cloud(tmp_path) -> None:
+    """cloud={} 时，云侧 query 直接代入顶层 query，而不是默认 *。"""
+    seen_cloud_queries: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/skill/service/list/v2" in url:
+            return httpx.Response(
+                200,
+                content=_logcenter_response({"data": {"list": [], "total": 0, "total_page": 0}}),
+            )
+        if "/skill/cloud/topics" in url:
+            return httpx.Response(
+                200,
+                content=_logcenter_response(
+                    {
+                        "data": {
+                            "topics": [
+                                {
+                                    "topic_id": "prod-ios",
+                                    "collection_id": "pysy-front-log",
+                                    "region": "cn-beijing",
+                                    "vendor": "aliyun",
+                                }
+                            ],
+                            "total": 1,
+                        },
+                    }
+                ),
+            )
+        if "/skill/cloud/aliyun/search" in url:
+            seen_cloud_queries.append(request.url.params.get("query"))
+            return httpx.Response(
+                200,
+                content=_logcenter_response(
+                    {
+                        "data": {
+                            "logs": [
+                                {
+                                    "__time__": 1,
+                                    "message": "hit",
+                                    "non_whitelist_field": "keep-me",
+                                }
+                            ],
+                            "total": 1,
+                            "progress": "Complete",
+                        }
+                    }
+                ),
+            )
+        return httpx.Response(404)
+
+    settings = _settings(tmp_path)
+    transport = _make_transport(handler)
+    from log_mcp.server import _build_factories
+
+    logcenter_factory, cloudlog_factory = _build_factories(settings, transport=transport)
+    server = LogMcpServer(name="test")
+    from log_mcp.tools.aggregate import register_aggregate_tools
+
+    register_aggregate_tools(
+        server,
+        logcenter_factory=logcenter_factory,
+        cloudlog_factory=cloudlog_factory,
+        cloud_defaults=settings.cloudlog.defaults,
+        cloud_vendor=settings.cloudlog.vendor,
+    )
+
+    result = asyncio.run(
+        _call_tool(
+            server,
+            "search_both_logs",
+            {"time": "7d", "query": "sample-query", "cloud": {}},
+        )
+    )
+    payload = json.loads(result.content[0].text)
+    assert seen_cloud_queries == ["sample-query"]
+    assert payload["cloud"]["matched_topics"] == 1
+    # cloud={} 默认 full=true：非白名单字段也应保留
+    assert payload["cloud"]["results"][0]["logs"][0]["non_whitelist_field"] == "keep-me"
+
+
 def test_serviceid_overrides_keyword(tmp_path) -> None:
     """serviceId 与 keyword 同时传时以 serviceId 为准。"""
 

@@ -58,7 +58,11 @@ test('lookup-learner-profile Skill 闭环：编号/uid 分流与信息查询模�
   assert.match(skill.description, /学员/);
   assert.match(skill.instructions, /lookup_learner/);
   assert.match(skill.instructions, /≥11/);
+  assert.match(skill.instructions, /uid 裸数字/);
+  assert.match(skill.instructions, /禁止学员编号/);
+  assert.match(skill.instructions, /cloud=\{\}/);
   assert.match(skill.instructions, /最近 7 天未登录/);
+  assert.match(skill.instructions, /未调日志工具前禁止/);
   assert.match(skill.instructions, /判定：信息查询/);
   assert.match(skill.instructions, /请补充学员编号或 uid/);
 });
