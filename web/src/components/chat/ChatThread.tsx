@@ -1,7 +1,6 @@
 import { Select } from '@arco-design/web-react';
 import {
   AlertTriangle,
-  Bug,
   Check,
   Copy,
   LoaderCircle,
@@ -18,6 +17,7 @@ import type {
   ModelStatus,
 } from '../../types';
 import { AiTraceDialog } from './AiTracePanel';
+import { PixelOrb } from '../PixelOrb';
 import { ChatComposer } from './ChatComposer';
 import { ConsultationCard } from './ConsultationCard';
 import { MarkdownContent } from './MarkdownContent';
@@ -301,12 +301,12 @@ export function ChatThread({
         )}
         <button
           type="button"
-          className={`chat-trace-toggle${showTrace ? ' active' : ''}`}
+          className={`chat-trace-toggle pixel-orb-toggle${showTrace ? ' active' : ''}${progress ? ' thinking' : ''}`}
           onClick={() => setShowTrace((value) => !value)}
           title="查看 AI 输入 / 输出调试信息"
           aria-pressed={showTrace}
         >
-          <Bug size={14} aria-hidden="true" />
+          <PixelOrb active={!!progress} size={20} />
           <span>AI 调试</span>
         </button>
       </header>

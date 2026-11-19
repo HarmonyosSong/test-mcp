@@ -5,6 +5,7 @@ import { logout, useServerSession } from './auth';
 import { ChatPanel } from './components/chat/ChatPanel';
 import { NewConversationDialog } from './components/chat/NewConversationDialog';
 import { ChatThread } from './components/chat/ChatThread';
+import { HudBar } from './components/HudBar';
 import { ModelSettingsDialog } from './components/ModelSettingsDialog';
 import { Sidebar } from './components/Sidebar';
 import { Typewriter } from './components/Typewriter';
@@ -258,6 +259,8 @@ function App() {
           onCreate={chat.createNew}
         />
       )}
+
+      <HudBar connection={connection} modelStatus={modelStatus} />
     </div>
   );
 }

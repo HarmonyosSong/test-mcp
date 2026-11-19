@@ -1,5 +1,5 @@
 import { Moon, Sun } from 'lucide-react';
-import { PixelThemeTransition } from './PixelThemeTransition';
+import { MoonThemeTransition } from './MoonThemeTransition';
 import { useThemeTransition } from '../hooks/useThemeTransition';
 
 /** 浅色/深色主题切换按钮：切换时播放像素块扩散转场。 */
@@ -22,7 +22,7 @@ export function ThemeToggle() {
         {dark ? <Sun size={16} /> : <Moon size={16} />}
       </button>
       {isTransitioning && (
-        <PixelThemeTransition fromColor={fromColor} onComplete={endTransition} />
+        <MoonThemeTransition fromColor={fromColor} target={theme} onComplete={endTransition} />
       )}
     </>
   );

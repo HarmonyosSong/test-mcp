@@ -1,4 +1,4 @@
-/* ---------- 复古像素风（参考 careers.kimi.com） ---------- */
+/* ---------- 复古像素风（已挂到 [data-theme='retro']，默认不启用） ---------- */
 /* 像素字体：缝合像素字体 Fusion Pixel（SIL OFL 协议） */
 /* 光标：retrosmart 光标主题导出的 PNG */
 
@@ -16,21 +16,21 @@
 
 /* ---------- 像素字体：应用于标题与界面骨架，正文/表格保持可读字体 ---------- */
 
-.sidebar-brand strong,
-.chat-thread-header h2,
-.chat-guide h2,
-.eyebrow,
-.section-kicker,
-.stage-index,
-.sidebar-nav button,
-.segmented-control button,
-.detail-view-switch button,
-.mobile-view-nav button,
-.status-badge,
-.nav-count,
-.primary-button,
-.secondary-button,
-.new-chat-button {
+[data-theme='retro'] .sidebar-brand strong,
+[data-theme='retro'] .chat-thread-header h2,
+[data-theme='retro'] .chat-guide h2,
+[data-theme='retro'] .eyebrow,
+[data-theme='retro'] .section-kicker,
+[data-theme='retro'] .stage-index,
+[data-theme='retro'] .sidebar-nav button,
+[data-theme='retro'] .segmented-control button,
+[data-theme='retro'] .detail-view-switch button,
+[data-theme='retro'] .mobile-view-nav button,
+[data-theme='retro'] .status-badge,
+[data-theme='retro'] .nav-count,
+[data-theme='retro'] .primary-button,
+[data-theme='retro'] .secondary-button,
+[data-theme='retro'] .new-chat-button {
   font-family: var(--font-pixel);
   letter-spacing: 1px;
   -webkit-font-smoothing: none;
@@ -45,18 +45,18 @@
 /* ---------- 深色主题 = 复古暗黑像素风 ---------- */
 
 /* 全站像素字体（正文也换成点阵字，保留系统等宽字体兜底） */
-[data-theme='dark'] body {
+[data-theme='retro'] body {
   font-family: var(--font-pixel);
   -webkit-font-smoothing: none;
 }
 
 /* 直角边框：Win9x 式硬朗像素 UI */
-[data-theme='dark'] * {
+[data-theme='retro'] * {
   border-radius: 0;
 }
 
 /* CRT 扫描线 */
-[data-theme='dark'] body::after {
+[data-theme='retro'] body::after {
   content: '';
   position: fixed;
   inset: 0;
@@ -72,24 +72,24 @@
 }
 
 /* 主区域点阵网格底纹 */
-[data-theme='dark'] .main-area {
+[data-theme='retro'] .main-area {
   background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
   background-size: 12px 12px;
 }
 
 /* 反色选中效果 */
-[data-theme='dark'] ::selection {
+[data-theme='retro'] ::selection {
   color: #121212;
   background: #f5f5f5;
 }
 
 /* 长文内容区豁免像素字体：agent 回复、诊断报告等用大段清晰字体，保证可读性 */
-[data-theme='dark'] .chat-bubble,
-[data-theme='dark'] .diagnosis-summary,
-[data-theme='dark'] .report-section,
-[data-theme='dark'] .stage-summary,
-[data-theme='dark'] .case-context,
-[data-theme='dark'] .tool-step-detail {
+[data-theme='retro'] .chat-bubble,
+[data-theme='retro'] .diagnosis-summary,
+[data-theme='retro'] .report-section,
+[data-theme='retro'] .stage-summary,
+[data-theme='retro'] .case-context,
+[data-theme='retro'] .tool-step-detail {
   font-family:
     Inter, 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui,
     -apple-system, sans-serif;
@@ -100,32 +100,32 @@
 /* ---------- retrosmart 复古光标 ---------- */
 /* 用 :root 前缀提升优先级，覆盖 styles.css 中的 cursor 声明（本文件最后引入） */
 
-:root html,
-:root body {
+[data-theme='retro'] html,
+[data-theme='retro'] body {
   cursor: url('/assets/cursors/retrosmart/default.png') 0 0, auto;
 }
 
-:root a,
-:root button,
-:root summary,
-:root [role='button'],
-:root [role='link'],
-:root [role='tab'] {
+[data-theme='retro'] a,
+[data-theme='retro'] button,
+[data-theme='retro'] summary,
+[data-theme='retro'] [role='button'],
+[data-theme='retro'] [role='link'],
+[data-theme='retro'] [role='tab'] {
   cursor: url('/assets/cursors/retrosmart/pointer.png') 4 0, pointer;
 }
 
-:root input,
-:root textarea,
-:root select,
-:root [contenteditable='true'] {
+[data-theme='retro'] input,
+[data-theme='retro'] textarea,
+[data-theme='retro'] select,
+[data-theme='retro'] [contenteditable='true'] {
   cursor: url('/assets/cursors/retrosmart/text.png') 4 9, text;
 }
 
-:root button:disabled,
-:root input:disabled,
-:root textarea:disabled,
-:root select:disabled,
-:root [aria-disabled='true'] {
+[data-theme='retro'] button:disabled,
+[data-theme='retro'] input:disabled,
+[data-theme='retro'] textarea:disabled,
+[data-theme='retro'] select:disabled,
+[data-theme='retro'] [aria-disabled='true'] {
   cursor: url('/assets/cursors/retrosmart/not-allowed.png') 8 8, not-allowed;
 }
 
