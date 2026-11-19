@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  logSourceForTool,
   progressLabelForStreamEvent,
   progressLabelForTool,
   progressStepForTool,
@@ -20,7 +21,56 @@ test('progressStepForTool 区分学员/源码/知识/协查/远程日志', () =>
   assert.equal(progressLabelForTool('lookup_learner'), '正在查询学员信息');
   assert.equal(progressLabelForTool('prepare_source'), '正在绑定源码快照');
   assert.equal(progressLabelForTool('consult_compass'), '正在请求服务端协查');
-  assert.equal(progressLabelForTool('search_both_logs'), '正在查询远程日志');
+});
+
+test('logSourceForTool 按工具名区分日志中心 / 阿里云 SLS / 两侧', () => {
+  // 日志中心（ES/Lucene）
+  for (const tool of [
+    'search_services',
+    'list_services',
+    'get_fields',
+    'get_storage_type',
+    'count',
+    'query',
+    'dsl_search',
+  ]) {
+    assert.equal(logSourceForTool(tool), 'logcenter', tool);
+  }
+  // 阿里云 SLS
+  for (const tool of [
+    'cloud_accounts',
+    'cloud_collections',
+    'cloud_topics',
+    'cloud_count',
+    'cloud_search',
+    'cloud_probe',
+  ]) {
+    assert.equal(logSourceForTool(tool), 'cloud', tool);
+  }
+  // 聚合工具：两侧并行
+  assert.equal(logSourceForTool('search_both_logs'), 'both');
+  // 非日志工具不应误判
+  assert.equal(logSourceForTool('read_project_file'), null);
+  assert.equal(logSourceForTool('lookup_learner'), null);
+});
+
+test('logSourceForTool 兼容带服务前缀的工具名，且不误吞别的 MCP 后缀', () => {
+  assert.equal(logSourceForTool('log.cloud_search'), 'cloud');
+  assert.equal(logSourceForTool('log_cloud_count'), 'cloud');
+  assert.equal(logSourceForTool('log-query'), null);
+  assert.equal(logSourceForTool('log_query'), 'logcenter');
+  assert.equal(logSourceForTool('log_search_both_logs'), 'both');
+  // 别的 MCP 的通用名不能被当成日志工具
+  assert.equal(logSourceForTool('other_count'), null);
+  assert.equal(logSourceForTool('tool_query'), null);
+});
+
+test('进度文案按日志来源分三档，不再统一写「远程日志」', () => {
+  assert.equal(progressLabelForTool('query'), '正在查询日志中心');
+  assert.equal(progressLabelForTool('dsl_search'), '正在查询日志中心');
+  assert.equal(progressLabelForTool('cloud_search'), '正在查询阿里云 SLS 日志');
+  assert.equal(progressLabelForTool('cloud_probe'), '正在查询阿里云 SLS 日志');
+  assert.equal(progressLabelForTool('search_both_logs'), '正在同时查询日志中心与云日志');
 });
 
 test('progressLabelForStreamEvent 只产出动态状态文案', () => {

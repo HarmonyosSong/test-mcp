@@ -6,9 +6,11 @@ export type { YachEvent } from './parse.js';
 export { summarizeGroupHistory, buildGroupDiagnosisContent } from './history.js';
 export { previewText } from './log.js';
 export {
+  logSourceForTool,
   progressLabelForTool,
   progressLabelForStreamEvent,
   progressStepForTool,
+  type LogSourceKind,
   type ProgressStepId,
 } from './progress-map.js';
 export { YachProgressCard } from './progress.js';
