@@ -188,12 +188,20 @@ export interface AiTraceTool {
   error?: string;
 }
 
+export interface AiTraceStepUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  inputDetails?: { cacheRead?: number; text?: number };
+  outputDetails?: { reasoning?: number; text?: number };
+}
+
 export interface AiTraceStep {
   step_index: number;
   duration_ms: number | null;
   model_text?: string;
   finish_reason?: string;
   time_to_first_token_ms?: number | null;
+  usage?: AiTraceStepUsage;
   tools: AiTraceTool[];
 }
 

@@ -15,7 +15,19 @@ function TraceBlock({ title, text }: { title: string; text?: string | null }) {
   );
 }
 
+/** 步骤 token 用量：输入（新内容 / 缓存命中）与输出，体现本步工具决策+上步工具结果的成本。 */
+function formatUsage(usage?: AiTraceStep['usage']): string | null {
+  if (!usage || usage.inputTokens == null) return null;
+  const cached = usage.inputDetails?.cacheRead ?? 0;
+  const fresh = usage.inputDetails?.text;
+  const input = `输入 ${usage.inputTokens.toLocaleString()}`;
+  const freshPart = fresh != null ? `（新 ${fresh.toLocaleString()}${cached ? `，缓存 ${cached.toLocaleString()}` : ''}）` : '';
+  const output = usage.outputTokens != null ? ` / 输出 ${usage.outputTokens.toLocaleString()}` : '';
+  return `${input}${freshPart}${output} tok`;
+}
+
 function StepView({ step }: { step: AiTraceStep }) {
+  const usageText = formatUsage(step.usage);
   return (
     <div className="ai-trace-step">
       <div className="ai-trace-step-head">
@@ -23,6 +35,7 @@ function StepView({ step }: { step: AiTraceStep }) {
         {step.duration_ms != null && <span> · {Math.round(step.duration_ms)}ms</span>}
         {step.finish_reason && <span> · {step.finish_reason}</span>}
       </div>
+      {usageText && <div className="ai-trace-usage">{usageText}</div>}
       <TraceBlock title="模型输出" text={step.model_text} />
       {step.tools.map((tool, index) => (
         <div key={index} className="ai-trace-tool">

@@ -646,6 +646,13 @@ button:disabled {
   font-weight: 600;
 }
 
+.ai-trace-usage {
+  margin: 2px 0 4px;
+  color: var(--accent, #4c8dff);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .ai-trace-tool {
   margin: 6px 0 6px 8px;
 }
