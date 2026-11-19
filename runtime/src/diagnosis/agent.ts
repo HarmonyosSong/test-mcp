@@ -130,6 +130,8 @@ export type DiagnosisStreamEvent =
 export interface DiagnosisRunInput {
   conversation: {
     id: string;
+    /** 会话创建时刻（ISO）：观测目录 `年月日_时分秒_会话ID` 用它命名，跨轮稳定。 */
+    created_at?: string | null;
     model_override?: string | null;
     messages: ChatMessage[];
     evidence_state: unknown;
@@ -397,6 +399,7 @@ export class DiagnosisAgent {
             tracingOptions: {
               metadata: {
                 conversation_id: input.conversation.id,
+                conversation_created_at: input.conversation.created_at ?? null,
                 message_id: input.messageId ?? null,
               },
             },

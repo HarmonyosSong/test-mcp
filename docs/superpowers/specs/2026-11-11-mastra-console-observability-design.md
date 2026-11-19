@@ -8,10 +8,17 @@
 
 ```text
 <data-dir>/observability/
-  conversations/<YYYY-MM-DD>_<conversation_id>/
+  conversations/<YYYY-MM-DD>_<HH-MM-SS>_<conversation_id>/
     manifest.jsonl          # 每轮一条索引
     traces/<本地时间>_<trace短号>.json   # 例：2026-11-12_09-51-30_895c4437b708.json
 ```
+
+目录名 = **年月日_时分秒_会话ID**，例 `2026-11-19_11-16-14_conv-1408593cfb`：
+
+- 时分秒取**会话创建时刻**，同一会话的每一轮 trace 都落进同一个目录（不会按天/按轮拆开）。
+- 目录名后缀是会话 ID，`sort` 的字典序即会话先后顺序。
+- 历史旧格式 `<YYYY-MM-DD>_<conversation_id>` 会在 Runtime 启动时按目录内最早 trace 的时刻
+  自动升级成新命名；会话面板读取端兼容两种命名，同会话并存时取最近写入的目录。
 
 
 ## 每份 trace JSON 含什么（schema_version 2）

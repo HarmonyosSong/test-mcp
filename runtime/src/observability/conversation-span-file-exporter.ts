@@ -1,4 +1,4 @@
-import { appendFile, chmod, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdir, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { TracingEvent } from '@mastra/core/observability';
@@ -49,6 +49,8 @@ type TraceBuffer = {
   messageId: string | null;
   phase: string | null;
   startedAt: string;
+  /** 会话创建时刻：会话观测目录以它命名，保证多轮 trace 落到同一目录。 */
+  conversationCreatedAt: Date | null;
 };
 
 type FlowTool = {
@@ -89,37 +91,170 @@ export function formatLocalDate(date = new Date()): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
-/** Local wall-clock stamp for filenames, e.g. 2026-11-12_09-51-30. */
-function formatLocalStamp(date = new Date()): string {
+/** Local wall-clock stamp, e.g. 2026-11-12_09-51-30 (年月日_时分秒). */
+export function formatLocalTimestamp(date = new Date()): string {
   return [
     formatLocalDate(date),
     `${pad2(date.getHours())}-${pad2(date.getMinutes())}-${pad2(date.getSeconds())}`,
   ].join('_');
 }
 
-/** Date-prefixed folder so daily traces sort together: 2026-11-13_conv-xxx */
+/**
+ * 会话观测目录名：`年月日_时分秒_会话ID`，例 `2026-11-19_11-16-14_conv-1408593cfb`。
+ * 时刻取**会话创建时刻**（同一会话的多轮 trace 始终落进同一目录），
+ * 同一秒内多个会话靠 ID 后缀区分，字典序即会话先后顺序。
+ */
 export function conversationObservabilityDirName(conversationId: string, date = new Date()): string {
-  return `${formatLocalDate(date)}_${safeId(conversationId)}`;
+  return `${formatLocalTimestamp(date)}_${safeId(conversationId)}`;
+}
+
+/** 目录名的可排序键；旧格式（仅日期）视为当天 00:00:00，便于与新格式统一比较。 */
+function observabilityDirSortKey(dirName: string): string {
+  const withTime = /^(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})_/.exec(dirName);
+  if (withTime) return `${withTime[1]}_${withTime[2]}`;
+  const dateOnly = /^(\d{4}-\d{2}-\d{2})_/.exec(dirName);
+  if (dateOnly) return `${dateOnly[1]}_00-00-00`;
+  return dirName;
+}
+
+/** 列出该会话已有的观测目录名（新旧两种命名都以 `_<会话ID>` 结尾）。 */
+async function listConversationDirNames(
+  conversationsRoot: string,
+  conversationId: string,
+): Promise<string[]> {
+  const suffix = `_${safeId(conversationId)}`;
+  try {
+    const entries = await readdir(conversationsRoot);
+    return entries.filter((entry) => entry.endsWith(suffix));
+  } catch {
+    return [];
+  }
 }
 
 /**
- * 按会话 ID 定位 trace 目录（目录带日期前缀，需后缀匹配）。
- * 仅供调试面板读取已落盘 trace；找不到返回 null。
+ * 按会话 ID 定位 trace 目录（目录名以 `_<会话ID>` 结尾，含旧格式）。
+ * 仅供调试面板读取已落盘 trace；多个候选时取最近写入的那个；找不到返回 null。
  */
 export async function findConversationObservabilityDir(
   rootDir: string,
   conversationId: string,
 ): Promise<string | null> {
-  const suffix = `_${safeId(conversationId)}`;
+  const conversationsRoot = join(rootDir, 'conversations');
+  const matches = await listConversationDirNames(conversationsRoot, conversationId);
+  const first = matches[0];
+  if (first === undefined) return null;
+  if (matches.length === 1) return join(conversationsRoot, first);
+
+  // 同一会话新旧目录并存时，以最近写入的目录为准。
+  const scored = await Promise.all(matches.map(async (entry) => {
+    const path = join(conversationsRoot, entry);
+    let mtimeMs = 0;
+    try {
+      mtimeMs = (await stat(path)).mtimeMs;
+    } catch {
+      mtimeMs = 0;
+    }
+    return { entry, mtimeMs, key: observabilityDirSortKey(entry) };
+  }));
+  scored.sort((a, b) => a.mtimeMs - b.mtimeMs || a.key.localeCompare(b.key));
+  return join(conversationsRoot, scored.at(-1)!.entry);
+}
+
+/**
+ * 落盘目录：同一会话已有目录就复用（新旧命名都算），保证同一会话的 trace 不会
+ * 因为命名规则变化被拆到两个目录；没有才按会话创建时刻新建。
+ * 历史旧命名目录由启动时的 `migrateLegacyObservabilityDirs` 统一升级。
+ */
+async function resolveConversationObservabilityDir(
+  conversationsRoot: string,
+  conversationId: string,
+  createdAt: Date,
+): Promise<string> {
+  const existing = await listConversationDirNames(conversationsRoot, conversationId);
+  if (existing.length > 0) {
+    existing.sort((a, b) => observabilityDirSortKey(a).localeCompare(observabilityDirSortKey(b)));
+    return join(conversationsRoot, existing.at(-1)!);
+  }
+  return join(conversationsRoot, conversationObservabilityDirName(conversationId, createdAt));
+}
+
+/** 新命名目录名：`年月日_时分秒_会话ID`。 */
+function isCurrentDirName(dirName: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_/.test(dirName);
+}
+
+/**
+ * 启动时把历史观测目录统一升级为 `年月日_时分秒_会话ID`。
+ * 会话 ID 从旧目录名后缀取，时分秒用目录内最早 trace 的时刻
+ * （trace 文件名就带 `年月日_时分秒`，比文件时间更准）；拿不到则保留原名。
+ * 逐个 best-effort，失败（目标已存在/权限）就跳过，不阻断启动。
+ * 返回升级数量，便于调用方打日志。
+ */
+export async function migrateLegacyObservabilityDirs(rootDir: string): Promise<number> {
+  const conversationsRoot = join(rootDir, 'conversations');
   let entries: string[];
   try {
-    entries = await readdir(join(rootDir, 'conversations'));
+    entries = await readdir(conversationsRoot);
+  } catch {
+    return 0;
+  }
+  let upgraded = 0;
+  for (const entry of entries) {
+    if (isCurrentDirName(entry)) continue;
+    const dateOnly = /^(\d{4}-\d{2}-\d{2})_(.+)$/.exec(entry);
+    if (!dateOnly) continue;
+    const legacyPath = join(conversationsRoot, entry);
+    const upgradedAt = await earliestTraceTime(legacyPath);
+    // 没有 trace 就无从得知时分秒，保持原名（读取端仍按后缀匹配）。
+    if (!upgradedAt) continue;
+    const target = conversationObservabilityDirName(dateOnly[2]!, upgradedAt);
+    if (target === entry) continue;
+    try {
+      await rename(legacyPath, join(conversationsRoot, target));
+      upgraded += 1;
+    } catch {
+      // 目标已存在或权限受限：保留旧目录，读取端仍能按后缀定位。
+    }
+  }
+  return upgraded;
+}
+
+/** 目录内最早 trace 的落盘时刻（优先取文件名里的 `年月日_时分秒`，其次文件创建时间）。 */
+async function earliestTraceTime(conversationDir: string): Promise<Date | null> {
+  const tracesDir = join(conversationDir, 'traces');
+  let names: string[];
+  try {
+    names = await readdir(tracesDir);
   } catch {
     return null;
   }
-  const matches = entries.filter((entry) => entry.endsWith(suffix)).sort();
-  const latest = matches.at(-1);
-  return latest ? join(rootDir, 'conversations', latest) : null;
+  const stamps = names
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => /^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})_/.exec(name))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => new Date(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      Number(match[4]),
+      Number(match[5]),
+      Number(match[6]),
+    ))
+    .filter((date) => !Number.isNaN(date.getTime()));
+  if (stamps.length > 0) {
+    return new Date(Math.min(...stamps.map((date) => date.getTime())));
+  }
+
+  const times = (await Promise.all(names.filter((name) => name.endsWith('.json')).map(async (name) => {
+    try {
+      const info = await stat(join(tracesDir, name));
+      return info.birthtimeMs || info.mtimeMs;
+    } catch {
+      return 0;
+    }
+  }))).filter((value) => value > 0);
+  if (times.length === 0) return null;
+  return new Date(Math.min(...times));
 }
 
 function preview(value: unknown, limit = DEFAULT_CONTENT_LIMIT): string | undefined {
@@ -141,6 +276,13 @@ function preview(value: unknown, limit = DEFAULT_CONTENT_LIMIT): string | undefi
 function metadataString(metadata: Record<string, unknown> | undefined, key: string): string | null {
   const value = metadata?.[key];
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/** 宽松解析 ISO 时间串；无效或缺失返回 null（调用方回落到默认时刻）。 */
+function parseDate(value: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function tryParseJson(text: string | undefined): unknown {
@@ -350,6 +492,7 @@ export class ConversationSpanFileExporter extends BaseExporter {
     const conversationId = metadataString(metadata, 'conversation_id') ?? 'unknown';
     const messageId = metadataString(metadata, 'message_id');
     const phase = metadataString(metadata, 'phase');
+    const conversationCreatedAt = parseDate(metadataString(metadata, 'conversation_created_at'));
 
     let buffer = this.#buffers.get(span.traceId);
     if (!buffer) {
@@ -360,12 +503,14 @@ export class ConversationSpanFileExporter extends BaseExporter {
         messageId,
         phase,
         startedAt: new Date().toISOString(),
+        conversationCreatedAt,
       };
       this.#buffers.set(span.traceId, buffer);
     } else {
       if (conversationId !== 'unknown') buffer.conversationId = conversationId;
       if (messageId) buffer.messageId = messageId;
       if (phase) buffer.phase = phase;
+      if (conversationCreatedAt) buffer.conversationCreatedAt = conversationCreatedAt;
     }
 
     if (event.type === 'span_started') return;
@@ -409,17 +554,18 @@ export class ConversationSpanFileExporter extends BaseExporter {
   }
 
   async #flushTrace(traceId: string, buffer: TraceBuffer): Promise<void> {
-    const conversationDir = join(
-      this.#rootDir,
-      'conversations',
-      conversationObservabilityDirName(buffer.conversationId),
+    const conversationsRoot = join(this.#rootDir, 'conversations');
+    const conversationDir = await resolveConversationObservabilityDir(
+      conversationsRoot,
+      buffer.conversationId,
+      buffer.conversationCreatedAt ?? new Date(),
     );
     const tracesDir = join(conversationDir, 'traces');
     await mkdir(tracesDir, { recursive: true, mode: 0o700 });
     await chmod(conversationDir, 0o700).catch(() => undefined);
     await chmod(tracesDir, 0o700).catch(() => undefined);
 
-    const stamp = formatLocalStamp();
+    const stamp = formatLocalTimestamp();
     const fileName = `${stamp}_${safeId(traceId.slice(0, 12))}.json`;
     const filePath = join(tracesDir, fileName);
 

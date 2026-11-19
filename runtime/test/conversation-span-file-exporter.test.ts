@@ -14,10 +14,13 @@ import {
 test('writes step-oriented flow JSON and drops processor/mapping/chunk noise', async () => {
   const root = await mkdtemp(join(tmpdir(), 'obs-conv-'));
   const exporter = new ConversationSpanFileExporter(root);
-  const convDir = conversationObservabilityDirName('conv-demo');
+  // 会话创建时刻固定，验证目录名 = 年月日_时分秒_会话ID（多轮不拆目录）。
+  const createdAt = new Date(2026, 10, 19, 11, 16, 14);
+  const convDir = conversationObservabilityDirName('conv-demo', createdAt);
 
   const meta = {
     conversation_id: 'conv-demo',
+    conversation_created_at: createdAt.toISOString(),
     message_id: 'msg-1',
     phase: 'local',
   };
@@ -132,7 +135,7 @@ test('writes step-oriented flow JSON and drops processor/mapping/chunk noise', a
     },
   } as never);
 
-  assert.match(convDir, /^\d{4}-\d{2}-\d{2}_conv-demo$/);
+  assert.match(convDir, /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_conv-demo$/);
   const tracesDir = join(root, 'conversations', convDir, 'traces');
   const files = await readdir(tracesDir);
   assert.equal(files.length, 1);
@@ -184,7 +187,13 @@ test('writes step-oriented flow JSON and drops processor/mapping/chunk noise', a
 test('orders parallel tools by started_at wall clock', async () => {
   const root = await mkdtemp(join(tmpdir(), 'obs-order-'));
   const exporter = new ConversationSpanFileExporter(root);
-  const meta = { conversation_id: 'conv-order', message_id: 'msg-order', phase: 'local' };
+  const createdAt = new Date(2026, 10, 19, 14, 20, 3);
+  const meta = {
+    conversation_id: 'conv-order',
+    conversation_created_at: createdAt.toISOString(),
+    message_id: 'msg-order',
+    phase: 'local',
+  };
   const base = {
     traceId: 'trace-order123456',
     isEvent: false,
@@ -250,7 +259,7 @@ test('orders parallel tools by started_at wall clock', async () => {
     },
   } as never);
 
-  const orderDir = conversationObservabilityDirName('conv-order');
+  const orderDir = conversationObservabilityDirName('conv-order', createdAt);
   const file = (await readdir(join(root, 'conversations', orderDir, 'traces')))[0]!;
   const body = JSON.parse(
     await readFile(join(root, 'conversations', orderDir, 'traces', file), 'utf8'),
@@ -269,7 +278,13 @@ test('keeps long tool output by default (no 500-char truncation)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'obs-full-'));
   const exporter = new ConversationSpanFileExporter(root, 0);
   const long = `命中详情:${'A'.repeat(4000)}`;
-  const meta = { conversation_id: 'conv-full', message_id: 'msg-2', phase: 'local' };
+  const createdAt = new Date(2026, 10, 19, 12, 31, 5);
+  const meta = {
+    conversation_id: 'conv-full',
+    conversation_created_at: createdAt.toISOString(),
+    message_id: 'msg-2',
+    phase: 'local',
+  };
   const base = {
     traceId: 'trace-full123456',
     startTime: new Date(0),
@@ -315,7 +330,7 @@ test('keeps long tool output by default (no 500-char truncation)', async () => {
     },
   } as never);
 
-  const fullDir = conversationObservabilityDirName('conv-full');
+  const fullDir = conversationObservabilityDirName('conv-full', createdAt);
   const file = (await readdir(join(root, 'conversations', fullDir, 'traces')))[0]!;
   const body = JSON.parse(
     await readFile(join(root, 'conversations', fullDir, 'traces', file), 'utf8'),

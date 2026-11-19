@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { RuntimeConfig } from './config.js';
 import { compassA2AClientConfig } from './config.js';
 import { createMastra } from './mastra.js';
+import { migrateLegacyObservabilityDirs } from './observability/conversation-span-file-exporter.js';
 import { createRuntimeDatabase } from './migration/legacy.js';
 import { createConversationRoutes } from './http/conversations.js';
 import { createAuthRoutes } from './http/auth.js';
@@ -100,6 +101,10 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
     const capabilities = new CapabilityMcp(config);
     const skills = new SkillRegistry(config.skillsDir);
     await skills.load();
+    if (config.mastraObservabilityConsole) {
+      // 历史观测目录（仅日期）启动时统一升级为 年月日_时分秒_会话ID。
+      await migrateLegacyObservabilityDirs(config.mastraObservabilityDir).catch(() => 0);
+    }
     const diagnosisAgent = new DiagnosisAgent(modelConfiguration, skills, mastra);
     const admission = new InMemoryRunAdmission(config.maxConcurrentRuns);
     const slotRegistry = new InMemoryAgentSlotRegistry();

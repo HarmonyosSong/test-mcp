@@ -145,6 +145,8 @@ export async function runLive(datasetPath: string, outputPath: string, timeoutSe
     knowledgeQueryLog: resolve(scratch, 'knowledge-queries.jsonl'),
     caseArchiveDir: resolve(scratch, 'cases'),
     snapshotDir: resolve(scratch, 'snapshots'),
+    // 评测的观测 trace 也留在临时目录，避免污染真实 .data 下的会话观测。
+    mastraObservabilityDir: resolve(scratch, 'observability'),
   };
   let runtimeForCleanup: Awaited<ReturnType<typeof createRuntimeApp>> | undefined;
   try {
@@ -168,6 +170,7 @@ export async function runLive(datasetPath: string, outputPath: string, timeoutSe
       }
       let conversation: DiagnosisRunInput['conversation'] = {
         id: `eval-${item.id}`,
+        created_at: new Date().toISOString(),
         messages: [],
         evidence_state: {},
         workspace_path: item.files ? work : null,
