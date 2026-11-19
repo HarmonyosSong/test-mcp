@@ -22,6 +22,7 @@ export const VerdictSchema = z.enum([
   'probable',
   'insufficient_evidence',
   'tool_error',
+  'info_lookup',
 ]);
 export const SeveritySchema = z.enum(['critical', 'high', 'medium', 'low', 'unknown']);
 export const EvidenceKindSchema = z.enum(['user', 'log', 'source', 'config', 'tool']);

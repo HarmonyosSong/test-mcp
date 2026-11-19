@@ -12,19 +12,25 @@ import type { ObservationRegistry } from './observations.js';
  * 校验失败返回 feedback，由调用方追加为纠错消息让模型重答（≤2 次）。
  */
 
-export type VerdictMarker = 'located' | 'probable' | 'insufficient_evidence' | 'tool_error';
+export type VerdictMarker =
+  | 'located'
+  | 'probable'
+  | 'insufficient_evidence'
+  | 'tool_error'
+  | 'info_lookup';
 
 const VERDICT_MARKERS: Record<string, VerdictMarker> = {
   已定位: 'located',
   可能定位: 'probable',
   证据不足: 'insufficient_evidence',
   工具异常: 'tool_error',
+  信息查询: 'info_lookup',
 };
 
 const FENCED_CODE = /```[\s\S]*?```/g;
 const TEXTUAL_TOOL_MARKUP = /<\s*\/?\s*(?:(?:[｜|]{2}DSML[｜|]{2}\s*)(?:calls|invoke|parameter)|(?:invoke|parameter))\b[^>]*>/i;
 const EVIDENCE_ID_PATTERN = /\bev-(?:user-)?[0-9a-f]{12,16}\b/g;
-const VERDICT_LINE = /判定\s*[:：]\s*(已定位|可能定位|证据不足|工具异常)/;
+const VERDICT_LINE = /判定\s*[:：]\s*(已定位|可能定位|证据不足|工具异常|信息查询)/;
 
 /** 解析判定锚点；返回 null 表示缺失或不规范。 */
 export function parseVerdictMarker(text: string): VerdictMarker | null {
@@ -79,7 +85,7 @@ export function validateFinalAnswer(
   if (!verdict) {
     return {
       ok: false,
-      feedback: '回答缺少判定锚点。请在首行输出「判定：已定位|可能定位|证据不足|工具异常」之一，再展开结论。',
+      feedback: '回答缺少判定锚点。请在首行输出「判定：已定位|可能定位|证据不足|工具异常|信息查询」之一，再展开结论。',
     };
   }
 

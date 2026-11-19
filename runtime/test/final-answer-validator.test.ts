@@ -65,3 +65,19 @@ test('缺少判定锚点被打回', () => {
   assert.equal(check.ok, false);
   if (!check.ok) assert.match(check.feedback, /判定锚点/);
 });
+
+test('判定：信息查询 通过校验', () => {
+  const registry = new ObservationRegistry();
+  const text = `判定：信息查询
+
+【学员信息】
+学员编号：184010299547
+UID：5570040
+
+【最近登录设备（近7天）】
+- 最近 7 天未登录`;
+  const check = validateFinalAnswer(text, registry);
+  assert.equal(check.ok, true);
+  if (check.ok) assert.equal(check.verdict, 'info_lookup');
+  assert.equal(parseVerdictMarker(text), 'info_lookup');
+});
