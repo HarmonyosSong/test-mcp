@@ -2,7 +2,7 @@
 
 移植自 `dev-agent-logs/src/appx/log.mjs::parseTimeRange`，并扩展 Agent 常见写法：
   - 相对：15m, 1h, 30min, 2hour, 3d, 1w
-  - 自然语言：今天, 昨天, 前天, 本周, 上周, 过去N天, 过去N周
+  - 自然语言：今天, 昨天, 前天, 本周, 上周, 过去N天/近N天, 过去N周/近N周
   - 绝对日期：YYYY-MM-DD（整天）
   - 时间段：今天9:00到10:00 / YYYY-MM-DD HH:MM到HH:MM（左闭右开）
   - 扩展：分隔符 to/~ ；可选秒 :SS ；两端完整日期时间
@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 # 供工具 Field(description=...) 复用，引导 Agent 使用可解析格式。
 TIME_PARAM_DESCRIPTION = (
-    "时间范围。支持：15m/1h/昨天/今天；"
+    "时间范围。支持：15m/1h/7d/昨天/今天/近7天；"
     "今天9:00到10:00；"
     "2026-11-11 07:00-07:40；"
     "2026-11-11 07:00:00 to 2026-11-11 07:40:00。"
@@ -145,13 +145,13 @@ def parse_time_range(text: str, now: datetime | None = None) -> tuple[int, int] 
         end = last_sunday.replace(hour=23, minute=59, second=59, microsecond=0)
         return _to_sec(last_monday), _to_sec(end)
 
-    # 7) 过去 N 天 / N 周
-    m = re.search(r"过去\s*(\d+)\s*天", lower)
+    # 7) 过去/近 N 天 / N 周（「近」与「过去」同义，兼容 Agent 口语）
+    m = re.search(r"(?:过去|近)\s*(\d+)\s*天", lower)
     if m:
         day = now - timedelta(days=int(m.group(1)))
         start = day.replace(hour=0, minute=0, second=0, microsecond=0)
         return _to_sec(start), int(now.timestamp())
-    m = re.search(r"过去\s*(\d+)\s*周", lower)
+    m = re.search(r"(?:过去|近)\s*(\d+)\s*周", lower)
     if m:
         day = now - timedelta(weeks=int(m.group(1)))
         start = day.replace(hour=0, minute=0, second=0, microsecond=0)

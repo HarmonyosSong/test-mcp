@@ -255,8 +255,8 @@ def register_cloudlog_tools(
     @server.tool(
         name="cloud_search",
         description=(
-            "检索云日志内容（阿里云 SLS 类 SQL）。from 从 0 起（偏移量，非页码）；"
-            "时间用秒（__time__）。full 语义同日志中心 query：false 精简、true 全字段，均过脱敏。"
+            "检索云日志内容。默认用关键词 query（如学员 uid、事件名），不要写 | select *；"
+            "默认 full=true 返回全字段（仍脱敏）。from 从 0 起（偏移量，非页码）；时间用秒（__time__）。"
         ),
         annotations=READ_ONLY,
         structured_output=True,
@@ -264,11 +264,19 @@ def register_cloudlog_tools(
     async def cloud_search(
         topic: Annotated[str, Field(min_length=1, description="主题 ID")],
         time: Annotated[str, Field(description=TIME_PARAM_DESCRIPTION)] = "15m",
-        query: Annotated[str, Field(description="SLS 类 SQL")] = "*",
+        query: Annotated[
+            str,
+            Field(
+                description=(
+                    "检索条件，默认关键词。查人相关传学员 uid 裸数字（如 5570040），不要学员编号/card，不要 uid:/card: 字段语法。"
+                    "日常排查不要用 | select * / select … from log；字段直接靠 full=true。"
+                )
+            ),
+        ] = "*",
         size: Annotated[int, Field(ge=1, le=1000, description="每页条数，最大 1000")] = 100,
         from_: Annotated[int, Field(ge=0, description="偏移量（非页码）")] = 0,
         reverse: Annotated[bool, Field(description="是否倒序")] = False,
-        full: Annotated[bool, Field(description="是否返回完整日志条目")] = False,
+        full: Annotated[bool, Field(description="是否返回完整日志条目；排查默认 true")] = True,
         vendor: Annotated[
             str, Field(description="aliyun（默认）/ tencent（当前报错）")
         ] = vendor_default,

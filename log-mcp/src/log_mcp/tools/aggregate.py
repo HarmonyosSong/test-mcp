@@ -64,6 +64,7 @@ def register_aggregate_tools(
             "云日志坐标固定为启动配置（vendor/account/collection），在该集合下遍历 topic。"
             "两侧平级、并行、互不依赖；任一侧或单 topic 失败不阻止其余返回。"
             "不传 cloud 时只查日志中心；传 cloud（含 {}）时按固定坐标查云日志。"
+            "传了 cloud 但未写 cloud.query 时，自动复用顶层 query（避免 cloud={} 变成 query=* 扫全量）。"
             "serviceId 与 keyword 同时传时以 serviceId 为准。"
         ),
         annotations=READ_ONLY,
@@ -77,7 +78,16 @@ def register_aggregate_tools(
         serviceId: Annotated[
             int | None, Field(ge=1, description="已知 service_id 时直接查")
         ] = None,
-        query: Annotated[str | None, Field(description="日志中心 Lucene")] = None,
+        query: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "检索条件。日志中心侧作 Lucene；云日志侧作关键词。"
+                    "查人相关请传学员 uid 裸数字（如 5570040），不要传学员编号/card，不要写 uid:/card: 字段语法。"
+                    "若同时传了 cloud 且未设置 cloud.query，则云日志侧也使用该值（勿只传 cloud={}）。"
+                )
+            ),
+        ] = None,
         page: Annotated[int, Field(ge=1, description="日志中心页码（1 起）")] = 1,
         per_service_size: Annotated[
             int, Field(ge=1, le=200, description="每个命中 service 返回条数")
@@ -120,11 +130,20 @@ def register_aggregate_tools(
                 "truncated": {"services_skipped": 0, "topics_skipped": 0},
             }
 
+        # 传了 cloud 但未给 cloud.query 时，直接代入顶层 query；否则云侧会默认成 *。
+        cloud_params = dict(cloud)
+        top_query = (query or "").strip()
+        cloud_query = cloud_params.get("query")
+        if top_query and top_query != "*" and not (
+            isinstance(cloud_query, str) and cloud_query.strip() and cloud_query.strip() != "*"
+        ):
+            cloud_params["query"] = top_query
+
         cloud_task = _run_cloud_all_topics(
             cloudlog_factory=cloudlog_factory,
             defaults=cloud_defaults,
             vendor=cloud_vendor,
-            cloud=cloud,
+            cloud=cloud_params,
             start=start,
             end=end,
             max_topics=max_topics,
@@ -367,7 +386,8 @@ async def _run_cloud_all_topics(
     per_topic_size = cloud.get("per_topic_size") or 100
     from_ = cloud.get("from") or 0
     reverse = bool(cloud.get("reverse", False))
-    full = bool(cloud.get("full", False))
+    # 与 cloud_search 默认一致：排查默认全字段（仍脱敏），避免精简白名单漏掉设备/业务字段。
+    full = bool(cloud.get("full", True))
 
     try:
         topics_data = await client.topics(

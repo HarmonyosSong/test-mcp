@@ -55,7 +55,7 @@ export interface JointAssessment {
 }
 
 export interface DiagnosticReport {
-  verdict: 'located' | 'probable' | 'insufficient_evidence' | 'tool_error';
+  verdict: 'located' | 'probable' | 'insufficient_evidence' | 'tool_error' | 'info_lookup';
   severity: 'critical' | 'high' | 'medium' | 'low' | 'unknown';
   summary: string;
   issue_category: string;

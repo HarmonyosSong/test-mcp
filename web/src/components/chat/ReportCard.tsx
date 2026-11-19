@@ -16,6 +16,7 @@ const VERDICT_LABELS = {
   probable: '可能定位',
   insufficient_evidence: '证据不足',
   tool_error: '工具异常',
+  info_lookup: '信息查询',
 } as const;
 
 function percent(value: number): number {
