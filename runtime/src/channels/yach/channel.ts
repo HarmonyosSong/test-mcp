@@ -4,7 +4,7 @@ import type { RuntimeConfig } from '../../config.js';
 import type { CapabilityMcp } from '../../capabilities/mcp.js';
 import type { DiagnosisAgent } from '../../diagnosis/agent.js';
 import { runDiagnosisRound, type RunDiagnosisRoundOptions } from '../../diagnosis/run-round.js';
-import { parseVerdictMarker } from '../../diagnosis/final-answer-validator.js';
+import { parseVerdictMarker, trimToVerdictAnchor } from '../../diagnosis/final-answer-validator.js';
 import type { ModelConfiguration } from '../../model/configuration.js';
 import type { ProductStore } from '../../product/store.js';
 import type { ConversationRecord } from '../../domain/schemas.js';
@@ -37,11 +37,18 @@ function truncateReply(text: string, workbenchUrl: string): string {
  * 知音楼最终回复：直接使用经校验的最终回答文本（首行「判定：」锚点即结论标签）。
  * 锚点缺失说明该文本未通过校验约定，只发兜底句引导到工作台，避免放出未校验内容。
  */
+/** 锚点后的正文达到此长度才裁掉锚点前文本：避免把「结论正文+句尾锚点」式回复裁成只剩锚点。 */
+const MIN_ANCHOR_BODY_CHARS = 120;
+
 export function formatYachFinalReply(
   text: string | null | undefined,
   workbenchUrl: string,
 ): string {
-  const body = text?.trim() ?? '';
+  // 累计文本可能以模型步骤播报开头（工具间叙述）；锚点后正文足够长（模板化结论）
+  // 时裁掉播报段，只发判定锚点起的最终结论。
+  let body = text?.trim() ?? '';
+  const trimmed = trimToVerdictAnchor(body);
+  if (trimmed !== body && trimmed.length >= MIN_ANCHOR_BODY_CHARS) body = trimmed;
   if (!body || !parseVerdictMarker(body)) {
     return truncateReply('诊断已完成，请打开工作台查看详情。', workbenchUrl);
   }
@@ -270,7 +277,9 @@ export class YachChannel {
     if (!event.groupId) return event.text;
     try {
       const rows = await this.cli.groupHistory(event.groupId);
-      const summary = summarizeGroupHistory(rows);
+      const summary = summarizeGroupHistory(rows, {
+        excludeSenders: this.deps.config.yachBotName.split(',').map((name) => name.trim()).filter(Boolean),
+      });
       yachHistory(event.groupId, rows.length, summary.length);
       if (!summary) {
         yachInboundSkipped('group_history_empty_summary', {
@@ -359,7 +368,8 @@ export class YachChannel {
       await progress.finish(result.terminal === 'completed' ? '诊断完成' : '诊断失败');
       const body = result.terminal === 'completed'
         ? formatYachFinalReply(result.text, this.workbenchUrl())
-        : (result.assistantMessage.error || '诊断失败，请稍后重试或打开网页工作台。');
+        // 失败原因可能含堆栈/路径等内部细节，不进群消息；服务端已落日志。
+        : '诊断失败：服务调用异常，请稍后重试或打开网页工作台。';
       await this.reply(event, body);
     } catch (error) {
       if (abort.signal.aborted) {
@@ -367,9 +377,10 @@ export class YachChannel {
         return;
       }
       await progress.finish('诊断失败');
-      const message = error instanceof Error ? error.message : '诊断运行失败';
+      // 内部错误细节（含堆栈/本机路径的原始报错）不外泄到群——群聊历史会被再次注入 prompt。
+      // 细节已由 yachOutbound/服务端日志记录。
       try {
-        await this.reply(event, truncateReply(`诊断失败：${message}`, this.workbenchUrl()));
+        await this.reply(event, truncateReply('诊断失败：服务调用异常，请稍后重试', this.workbenchUrl()));
       } catch {
         // ignore
       }

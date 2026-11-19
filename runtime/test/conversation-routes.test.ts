@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -1119,6 +1119,43 @@ test('first message titles longer than 30 characters end with an ellipsis', asyn
     });
     await response.text();
     assert.equal((await store.getConversation(conversation.id)).title, `${content.slice(0, 30)}…`);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('ai-traces 接口读取落盘 trace 并拒绝路径穿越', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ai-traces-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  const observabilityDir = join(directory, 'observability');
+  const { conversationObservabilityDirName } = await import('../src/observability/conversation-span-file-exporter.js');
+  try {
+    const conversation = await store.createConversation({ title: 'trace 会话' });
+    const dir = join(observabilityDir, 'conversations', conversationObservabilityDirName(conversation.id));
+    await mkdir(join(dir, 'traces'), { recursive: true });
+    const traceId = 'abc123def456';
+    await writeFile(
+      join(dir, 'manifest.jsonl'),
+      `${JSON.stringify({ ts: '2026-11-18T10:00:00Z', trace_id: traceId, message_id: 'm1', file: 'traces/t1.json', summary: { steps: 3, tool_calls: 2 } })}\n`,
+    );
+    await writeFile(join(dir, 'traces', 't1.json'), JSON.stringify({ trace_id: traceId, user_input: '问题', final_answer: '判定：已定位' }));
+
+    const routes = createConversationRoutes(store, undefined, undefined, undefined, { observabilityDir });
+    const list = await routes.request(`/conversations/${conversation.id}/ai-traces`);
+    assert.equal(list.status, 200);
+    const entries = await list.json() as Array<{ trace_id: string; file?: string }>;
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0]!.trace_id, traceId);
+    assert.equal(entries[0]!.file, undefined);
+
+    const detail = await routes.request(`/conversations/${conversation.id}/ai-traces/${traceId}`);
+    assert.equal(detail.status, 200);
+    const payload = await detail.json() as { user_input: string };
+    assert.equal(payload.user_input, '问题');
+
+    assert.equal((await routes.request(`/conversations/${conversation.id}/ai-traces/..%2F..%2Fetc`)).status, 404);
+    assert.equal((await routes.request(`/conversations/${conversation.id}/ai-traces/nope`)).status, 404);
   } finally {
     await store.close();
     await rm(directory, { recursive: true, force: true });

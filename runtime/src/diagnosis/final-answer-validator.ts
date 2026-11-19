@@ -32,6 +32,16 @@ export function parseVerdictMarker(text: string): VerdictMarker | null {
   return match ? VERDICT_MARKERS[match[1]!] ?? null : null;
 }
 
+/**
+ * 裁掉判定锚点之前的流式过程文本（「我会先…」式的步骤播报）。
+ * 供只展示最终结论的渠道（知音楼 IM）使用；锚点缺失时原样返回。
+ */
+export function trimToVerdictAnchor(text: string): string {
+  const match = VERDICT_LINE.exec(text);
+  if (!match) return text;
+  return text.slice(match.index).trim();
+}
+
 export type FinalAnswerCheck =
   | { ok: true; verdict: VerdictMarker }
   | { ok: false; feedback: string };

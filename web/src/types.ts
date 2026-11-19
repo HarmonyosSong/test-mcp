@@ -166,6 +166,50 @@ export interface CreateConversationInput {
   title?: string;
 }
 
+/** 调试面板：一轮诊断的 AI trace 摘要（manifest 行）。 */
+export interface AiTraceSummary {
+  ts: string;
+  trace_id: string;
+  message_id: string | null;
+  summary?: {
+    duration_ms?: number | null;
+    steps?: number;
+    tool_calls?: number;
+  };
+}
+
+export interface AiTraceTool {
+  name: string;
+  kind: 'tool' | 'mcp_tool';
+  duration_ms: number | null;
+  success: boolean | null;
+  input_preview?: string;
+  output_preview?: string;
+  error?: string;
+}
+
+export interface AiTraceStep {
+  step_index: number;
+  duration_ms: number | null;
+  model_text?: string;
+  finish_reason?: string;
+  time_to_first_token_ms?: number | null;
+  tools: AiTraceTool[];
+}
+
+/** 调试面板：一轮诊断的完整 AI trace。 */
+export interface AiTraceDetail {
+  conversation_id: string;
+  message_id: string | null;
+  trace_id: string;
+  captured_at: string;
+  model: string | null;
+  user_input?: string;
+  final_answer?: string;
+  steps: AiTraceStep[];
+  orphan_tools?: AiTraceTool[];
+}
+
 export interface HealthResponse {
   status: string;
   mode: string;

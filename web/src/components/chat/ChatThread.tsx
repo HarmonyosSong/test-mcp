@@ -1,6 +1,7 @@
 import { Select } from '@arco-design/web-react';
 import {
   AlertTriangle,
+  Bug,
   Check,
   Copy,
   LoaderCircle,
@@ -16,6 +17,7 @@ import type {
   ChatMessage,
   ModelStatus,
 } from '../../types';
+import { AiTraceDialog } from './AiTracePanel';
 import { ChatComposer } from './ChatComposer';
 import { ConsultationCard } from './ConsultationCard';
 import { MarkdownContent } from './MarkdownContent';
@@ -169,6 +171,7 @@ export function ChatThread({
 }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [showTrace, setShowTrace] = useState(false);
   const fetchingModels = useRef(false);
   const messageCount = conversation.messages.length;
   const lastMessage = conversation.messages.at(-1);
@@ -296,7 +299,21 @@ export function ChatThread({
             {conversation.repository_name} @ {conversation.requested_ref}
           </span>
         )}
+        <button
+          type="button"
+          className={`chat-trace-toggle${showTrace ? ' active' : ''}`}
+          onClick={() => setShowTrace((value) => !value)}
+          title="查看 AI 输入 / 输出调试信息"
+          aria-pressed={showTrace}
+        >
+          <Bug size={14} aria-hidden="true" />
+          <span>AI 调试</span>
+        </button>
       </header>
+
+      {showTrace && (
+        <AiTraceDialog conversationId={conversation.id} onClose={() => setShowTrace(false)} />
+      )}
 
       {progress && (
         <div className="investigation-progress investigation-progress-active" role="status">

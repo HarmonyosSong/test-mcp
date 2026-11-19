@@ -303,6 +303,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
     app.route('/api', createConversationRoutes(store, diagnosisAgent, capabilities, modelConfiguration, {
       knowledgeQueryLog: config.knowledgeQueryLog,
       caseArchiveDir: config.caseArchiveDir,
+      observabilityDir: config.mastraObservabilityDir,
       admission,
       slotRegistry,
       compassAvailable: isCompassA2AConfigured(config.a2aToken),

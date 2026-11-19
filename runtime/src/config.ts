@@ -115,6 +115,8 @@ export const runtimeConfigSchema = z.object({
   yachAppSecret: z.string().default(''),
   yachCliPath: z.string().default('yach-cli'),
   yachRobotId: z.string().default(''),
+  /** 机器人在群里的显示名；群聊历史注入前据此过滤机器人自身消息（可逗号分隔多个）。 */
+  yachBotName: z.string().default('培优问题排查助手'),
   /** 学员编号通过内网 UCenter 查档案（lookup_learner）。 */
   ucenterBaseUrl: z.string().default(UCENTER_DEFAULT_BASE_URL),
   ucenterTimeoutMs: z.coerce.number().int().min(100).max(60_000).default(10_000),
@@ -210,6 +212,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     yachAppSecret: env.HARMONY_AGENT_YACH_APP_SECRET ?? env.YACH_APP_SECRET,
     yachCliPath: env.HARMONY_AGENT_YACH_CLI_PATH,
     yachRobotId: env.HARMONY_AGENT_YACH_ROBOT_ID ?? env.YACH_ROBOT_ID,
+    yachBotName: env.HARMONY_AGENT_YACH_BOT_NAME ?? env.YACH_BOT_NAME,
     ucenterBaseUrl: env.HARMONY_AGENT_UCENTER_BASE_URL,
     ucenterTimeoutMs: env.HARMONY_AGENT_UCENTER_TIMEOUT_MS,
     logMcpUrl: env.LOG_MCP_URL || defaultLogMcpUrl(env),
@@ -281,6 +284,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     yachAppSecret: config.yachAppSecret.trim(),
     yachCliPath: config.yachCliPath.trim() || 'yach-cli',
     yachRobotId: config.yachRobotId.trim(),
+    yachBotName: config.yachBotName.trim() || '培优问题排查助手',
     ucenterBaseUrl: (config.ucenterBaseUrl.trim() || UCENTER_DEFAULT_BASE_URL).replace(/\/+$/, ''),
     ucenterTimeoutMs: config.ucenterTimeoutMs,
     logMcpUrl: normalizeLogMcpUrl(config.logMcpUrl),

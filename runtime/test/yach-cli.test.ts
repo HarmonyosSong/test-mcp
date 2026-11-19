@@ -120,6 +120,20 @@ test('summarizes group history for prompt injection', () => {
   );
 });
 
+test('group history excludes the bot itself and error dumps', () => {
+  const summary = summarizeGroupHistory([
+    { senderName: '甲', content: '单曲循环会自己停' },
+    { senderName: '培优问题排查助手', content: '判定：已定位\n【给支持老师】…' },
+    { senderName: '机器人二号', text: '诊断失败：服务调用异常' },
+    { senderName: '乙', content: '{"message":"Bad Request","name":"AI_APICallError","stack":"AI_APICallError\\n at (/app/x.ts)"}' },
+    { senderName: '丙', content: '任务进度' },
+    { senderName: '乙', content: '7:00-7:40 之间复现' },
+  ], { excludeSenders: ['培优问题排查助手', '机器人二号'] });
+  assert.match(summary, /甲: 单曲循环会自己停/);
+  assert.match(summary, /乙: 7:00-7:40 之间复现/);
+  assert.doesNotMatch(summary, /培优问题排查助手|机器人二号|AI_APICallError|任务进度|判定：/);
+});
+
 test('extractList unwraps yach-cli data.obj.messages envelope', () => {
   const rows = extractList({
     ok: true,

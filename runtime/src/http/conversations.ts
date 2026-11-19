@@ -1,4 +1,7 @@
 import { Hono, type Context } from 'hono';
+import { readFile } from 'node:fs/promises';
+
+import { findConversationObservabilityDir } from '../observability/conversation-span-file-exporter.js';
 
 import {
   CreateConversationRequestSchema,
@@ -28,6 +31,8 @@ import { clearIncompleteSourceBinding, type BoundSourceContext } from '../capabi
 interface ConversationRouteOptions {
   knowledgeQueryLog?: string;
   caseArchiveDir?: string;
+  /** 调试面板读取已落盘 AI trace（.data/observability）；缺省不提供 ai-traces 接口。 */
+  observabilityDir?: string;
   admission?: RunAdmission;
   slotRegistry?: AgentSlotRegistry;
   compassAvailable?: boolean;
@@ -244,6 +249,62 @@ export function createConversationRoutes(
     } catch (error) {
       if (error instanceof ProductNotFoundError) return jsonError('conversation not found', 404);
       throw error;
+    }
+  });
+
+  // —— 调试面板：读取已落盘的 AI trace（模型输入/输出、工具调用原文）——
+  type TraceManifestEntry = {
+    ts: string;
+    trace_id: string;
+    message_id: string | null;
+    file: string;
+    summary?: Record<string, unknown>;
+  };
+
+  const readTraceManifest = async (conversationId: string): Promise<TraceManifestEntry[] | null> => {
+    if (!options.observabilityDir) return null;
+    const dir = await findConversationObservabilityDir(options.observabilityDir, conversationId);
+    if (!dir) return null;
+    let raw: string;
+    try {
+      raw = await readFile(`${dir}/manifest.jsonl`, 'utf8');
+    } catch {
+      return null;
+    }
+    const entries: TraceManifestEntry[] = [];
+    for (const line of raw.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line) as TraceManifestEntry;
+        if (entry.trace_id && entry.file) entries.push(entry);
+      } catch {
+        // 跳过坏行
+      }
+    }
+    return entries.reverse();
+  };
+
+  routes.get('/conversations/:id/ai-traces', async (context) => {
+    const entries = await readTraceManifest(context.req.param('id'));
+    if (!entries) return context.json([]);
+    return context.json(entries.map(({ file: _file, ...entry }) => entry));
+  });
+
+  routes.get('/conversations/:id/ai-traces/:traceId', async (context) => {
+    const conversationId = context.req.param('id');
+    const traceId = context.req.param('traceId');
+    if (!/^[0-9a-zA-Z_-]{1,64}$/.test(traceId)) return jsonError('trace not found', 404);
+    const entries = await readTraceManifest(conversationId);
+    const entry = entries?.find((item) => item.trace_id === traceId);
+    if (!entry) return jsonError('trace not found', 404);
+    const fileName = entry.file.replace(/^traces\//, '');
+    if (!/^[\w.-]+\.json$/.test(fileName)) return jsonError('trace not found', 404);
+    const dir = await findConversationObservabilityDir(options.observabilityDir!, conversationId);
+    try {
+      const raw = await readFile(`${dir}/traces/${fileName}`, 'utf8');
+      return context.json(JSON.parse(raw));
+    } catch {
+      return jsonError('trace not found', 404);
     }
   });
 

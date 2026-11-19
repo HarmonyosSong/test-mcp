@@ -1,4 +1,4 @@
-import { appendFile, chmod, mkdir, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { TracingEvent } from '@mastra/core/observability';
@@ -100,6 +100,26 @@ function formatLocalStamp(date = new Date()): string {
 /** Date-prefixed folder so daily traces sort together: 2026-11-13_conv-xxx */
 export function conversationObservabilityDirName(conversationId: string, date = new Date()): string {
   return `${formatLocalDate(date)}_${safeId(conversationId)}`;
+}
+
+/**
+ * 按会话 ID 定位 trace 目录（目录带日期前缀，需后缀匹配）。
+ * 仅供调试面板读取已落盘 trace；找不到返回 null。
+ */
+export async function findConversationObservabilityDir(
+  rootDir: string,
+  conversationId: string,
+): Promise<string | null> {
+  const suffix = `_${safeId(conversationId)}`;
+  let entries: string[];
+  try {
+    entries = await readdir(join(rootDir, 'conversations'));
+  } catch {
+    return null;
+  }
+  const matches = entries.filter((entry) => entry.endsWith(suffix)).sort();
+  const latest = matches.at(-1);
+  return latest ? join(rootDir, 'conversations', latest) : null;
 }
 
 function preview(value: unknown, limit = DEFAULT_CONTENT_LIMIT): string | undefined {
