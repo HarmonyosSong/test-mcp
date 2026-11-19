@@ -9,10 +9,7 @@ export {
   progressLabelForTool,
   progressLabelForStreamEvent,
   progressStepForTool,
-  PROGRESS_STEPS,
-  createProgressChecklist,
-  applyProgressEvent,
-  renderProgressChecklist,
+  type ProgressStepId,
 } from './progress-map.js';
 export { YachProgressCard } from './progress.js';
 export type { YachCardApi } from './progress.js';

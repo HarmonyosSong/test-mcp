@@ -6,7 +6,10 @@ import { MCPClient } from '@mastra/mcp';
 import { createCapabilitySession, createRoundCapabilitySession } from '../src/capabilities/session.js';
 import {
   CapabilityMcp,
+  LOG_ROUND_LABEL_HEADER,
+  LOG_ROUND_START_HEADER,
   MCP_TOOL_DISCOVERY_TIMEOUT_MS,
+  logRoundHeaders,
   repositoryMcpTimeoutMs,
   repositoryServerEnvironment,
 } from '../src/capabilities/mcp.js';
@@ -212,22 +215,33 @@ test('round factory mounts log toolset when createLogSession succeeds', async ()
   }));
   provider.createKnowledgeSession = async () => null;
   provider.createCodeIndexSession = async () => null;
-  provider.createLogSession = (async () => ({
-    client: { disconnect: async () => undefined },
-    toolsets: {
-      log: {
-        search_both_logs: { id: 'search_both_logs', execute: async () => ({ ok: true }) },
-        query: { id: 'query', execute: async () => ({ ok: true }) },
+  const seenOptions: Array<{ runId?: string; roundStartedAtMs?: number }> = [];
+  provider.createLogSession = (async (_conversationId: string, _messageId: string, options: { runId?: string; roundStartedAtMs?: number } = {}) => {
+    seenOptions.push(options);
+    return {
+      client: { disconnect: async () => undefined },
+      toolsets: {
+        log: {
+          search_both_logs: { id: 'search_both_logs', execute: async () => ({ ok: true }) },
+          query: { id: 'query', execute: async () => ({ ok: true }) },
+        },
       },
-    },
-  })) as unknown as CapabilityMcp['createLogSession'];
+    };
+  }) as unknown as CapabilityMcp['createLogSession'];
+  const roundStartedAtMs = Date.UTC(2026, 10, 19, 7, 50, 20);
   const session = await createRoundCapabilitySession(provider, {
-    conversationId: 'conv-1', messageId: 'msg-1', runId: 'run-1', workspacePath: null,
+    conversationId: 'conv-1',
+    messageId: 'msg-1',
+    runId: 'run-1',
+    workspacePath: null,
+    roundStartedAtMs,
   });
   try {
     assert.ok(session.toolsets.log);
     assert.deepEqual(Object.keys(session.toolsets.log!).sort(), ['query', 'search_both_logs']);
     assert.ok(!session.unavailable.includes('log'));
+    // 轮次开始时刻透传到 log-mcp，服务端据此按秒切文件
+    assert.deepEqual(seenOptions, [{ runId: 'run-1', roundStartedAtMs }]);
   } finally {
     await session.close();
   }
@@ -264,6 +278,66 @@ test('log MCP session 使用 HTTP url 与可选 Bearer，发现超时受配置�
   try {
     assert.ok(session);
     assert.equal(session!.toolsets, toolsets);
+  } finally {
+    await session?.client.disconnect();
+  }
+});
+
+test('log MCP 每轮带 X-Odyssey-Round-Start/Label，供服务端按秒实时切日志', async (context) => {
+  const config = loadRuntimeConfig({ LOG_MCP_URL: 'http://127.0.0.1:8766/mcp' });
+  const roundStartedAtMs = Date.UTC(2026, 10, 19, 7, 50, 20);
+  assert.deepEqual(
+    logRoundHeaders({ roundStartedAtMs, conversationId: 'conv-1', messageId: 'msg-1', runId: 'run-1' }),
+    {
+      [LOG_ROUND_START_HEADER]: String(roundStartedAtMs),
+      [LOG_ROUND_LABEL_HEADER]: 'run=run-1 conv=conv-1 msg=msg-1',
+    },
+  );
+  // 无 runId 时标签不出现空段
+  assert.equal(
+    logRoundHeaders({ roundStartedAtMs, conversationId: 'c', messageId: 'm' })[LOG_ROUND_LABEL_HEADER],
+    'conv=c msg=m',
+  );
+
+  const toolsets = { log: { search_both_logs: {} } };
+  let seenHeaders: Record<string, string> | undefined;
+  context.mock.method(MCPClient.prototype, 'listToolsetsWithErrors', async function (this: MCPClient) {
+    const configured = this as unknown as {
+      serverConfigs: { log: { requestInit?: { headers?: Record<string, string> } } };
+    };
+    seenHeaders = configured.serverConfigs.log.requestInit?.headers;
+    return { toolsets, errors: {}, errorDetails: {} };
+  });
+  const session = await new CapabilityMcp(config).createLogSession('conv-1', 'msg-1', {
+    runId: 'run-1',
+    roundStartedAtMs,
+  });
+  try {
+    assert.deepEqual(seenHeaders, {
+      [LOG_ROUND_START_HEADER]: String(roundStartedAtMs),
+      [LOG_ROUND_LABEL_HEADER]: 'run=run-1 conv=conv-1 msg=msg-1',
+    });
+  } finally {
+    await session?.client.disconnect();
+  }
+});
+
+test('log MCP 未传轮次时刻时用当前时间兜底，不会漏头', async (context) => {
+  const config = loadRuntimeConfig({ LOG_MCP_URL: 'http://127.0.0.1:8766/mcp' });
+  let seenHeaders: Record<string, string> | undefined;
+  context.mock.method(MCPClient.prototype, 'listToolsetsWithErrors', async function (this: MCPClient) {
+    const configured = this as unknown as {
+      serverConfigs: { log: { requestInit?: { headers?: Record<string, string> } } };
+    };
+    seenHeaders = configured.serverConfigs.log.requestInit?.headers;
+    return { toolsets: { log: {} }, errors: {}, errorDetails: {} };
+  });
+  const before = Date.now();
+  const session = await new CapabilityMcp(config).createLogSession('conv-x', 'msg-x');
+  try {
+    const started = Number(seenHeaders?.['X-Odyssey-Round-Start']);
+    assert.ok(Number.isFinite(started) && started >= before - 1000);
+    assert.equal(seenHeaders?.['X-Odyssey-Round-Label'], 'conv=conv-x msg=msg-x');
   } finally {
     await session?.client.disconnect();
   }

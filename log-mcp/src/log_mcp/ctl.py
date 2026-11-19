@@ -34,6 +34,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from filelock import FileLock  # type: ignore[import-not-found]
@@ -82,6 +83,31 @@ def _run_dir() -> Path:
 
 def _log_dir() -> Path:
     return _data_root() / "logs"
+
+
+def _open_session_out() -> tuple[Path, int]:
+    """独占创建本次进程的 stdout/stderr 文件。
+
+    文件名与进程兜底日志同一时刻、相邻排序：
+    `log-mcp-2026-11-19_15-28-12.out.log`（兜底日志为 `.log`）。
+    轮次日志（`log-mcp-round-*`）由运行期按轮次另建，不走这里。
+    返回 (路径, 文件描述符)；调用方负责 fdopen 后交给子进程。
+    """
+    from log_mcp.logging_setup import MAX_SESSION_SEQ, session_filename
+
+    _log_dir().mkdir(parents=True, exist_ok=True, mode=0o700)
+    start = datetime.now()
+    seq = 1
+    while True:
+        path = _log_dir() / session_filename(SERVICE_NAME, start, seq=seq, suffix=".out.log")
+        try:
+            fd = _protected_open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        except FileExistsError:
+            seq += 1
+            if seq > MAX_SESSION_SEQ:
+                raise ControlError("日志文件名用尽；请检查系统时间是否异常") from None
+            continue
+        return path, fd
 
 
 def _settings() -> tuple[object, Service]:
@@ -160,9 +186,7 @@ def _protected_open(path: Path, flags: int) -> int:
 def _assert_can_start(service: Service) -> None:
     """启动前冲突检查（前台/后台共用）。"""
     if _managed_running(service.name):
-        raise ControlError(
-            f"{service.name} 已在后台运行；请先 `uv run stop`，再重新启动"
-        )
+        raise ControlError(f"{service.name} 已在后台运行；请先 `uv run stop`，再重新启动")
     if _listening(service.host, service.port):
         raise ControlError(f"{service.name} 端口被占用（{service.host}:{service.port}）")
 
@@ -191,11 +215,11 @@ def _start_service(service: Service) -> bool:
         print(f"{service.name}: already running", flush=True)
         return False
     _assert_can_start(service)
-    _log_dir().mkdir(parents=True, exist_ok=True, mode=0o700)
-    log_path = _log_dir() / f"{service.name}.log"
+    # 每次启动一个落盘文件：log-mcp-YYYY-MM-DD_HH-MM-SS.out.log（与主日志同时刻、相邻排序）
+    log_path, log_fd = _open_session_out()
     # PYTHONUNBUFFERED：子进程日志立即落盘，便于排查；也避免部分环境下缓冲导致启动异常
     child_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
-    with os.fdopen(_protected_open(log_path, os.O_WRONLY | os.O_APPEND), "ab") as output:
+    with os.fdopen(log_fd, "ab") as output:
         child = subprocess.Popen(  # noqa: S603
             service.command,
             cwd=PROJECT_ROOT,

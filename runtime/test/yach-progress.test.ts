@@ -2,11 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  applyProgressEvent,
-  createProgressChecklist,
+  progressLabelForStreamEvent,
   progressLabelForTool,
   progressStepForTool,
-  renderProgressChecklist,
 } from '../src/channels/yach/progress-map.js';
 import { YachProgressCard, type YachCardApi } from '../src/channels/yach/progress.js';
 
@@ -25,48 +23,45 @@ test('progressStepForTool 区分学员/源码/知识/协查/远程日志', () =>
   assert.equal(progressLabelForTool('search_both_logs'), '正在查询远程日志');
 });
 
-test('applyProgressEvent 按工具起止勾选清单', () => {
-  let state = createProgressChecklist();
-  let applied = applyProgressEvent(state, {
-    type: 'tool-start',
-    event: { tool: 'lookup_learner' } as never,
-  });
-  assert.equal(applied.checklist.learner, 'active');
-  assert.match(applied.label ?? '', /学员/);
-
-  applied = applyProgressEvent(applied.checklist, {
-    type: 'tool-end',
-    event: { tool: 'lookup_learner' } as never,
-    evidence_state: {},
-  });
-  assert.equal(applied.checklist.learner, 'done');
-
-  applied = applyProgressEvent(applied.checklist, { type: 'text', delta: '结论' });
-  assert.equal(applied.checklist.report, 'active');
-
-  applied = applyProgressEvent(applied.checklist, {
-    type: 'completed',
-    text: 'ok',
-    report: null,
-    verdict: null,
-    evidence_state: {},
-    messages_state: [],
-    input_tokens: null,
-    output_tokens: null,
-    tool_usage: {},
-  });
-  assert.equal(applied.checklist.report, 'done');
+test('progressLabelForStreamEvent 只产出动态状态文案', () => {
+  assert.equal(
+    progressLabelForStreamEvent({ type: 'tool-start', event: { tool: 'lookup_learner' } as never }),
+    '正在查询学员信息',
+  );
+  assert.equal(progressLabelForStreamEvent({ type: 'text', delta: '结论' }), '正在整理结论');
+  assert.equal(
+    progressLabelForStreamEvent({ type: 'failed', error: 'boom', failure_category: 'runtime_error' } as never),
+    '诊断失败',
+  );
+  assert.equal(
+    progressLabelForStreamEvent({ type: 'tool-end', event: { tool: 'lookup_learner' } as never, evidence_state: {} }),
+    null,
+  );
 });
 
-test('renderProgressChecklist 输出任务进度摘要', () => {
-  const checklist = createProgressChecklist();
-  checklist.learner = 'done';
-  checklist.logs = 'active';
-  const text = renderProgressChecklist(checklist, '正在查询远程日志', 12);
-  assert.match(text, /已完成 1\/6/);
-  assert.match(text, /✓ 查询学员信息/);
-  assert.match(text, /→ 检索线上日志/);
-  assert.match(text, /正在查询远程日志（12 秒）/);
+test('进度卡首屏不含固定任务清单，只有动态状态行', async () => {
+  const pushed: string[] = [];
+  const api: YachCardApi = {
+    async createCard() {
+      return 'card-1';
+    },
+    async pushCard(_cardId, content) {
+      pushed.push(content);
+    },
+    async closeCard() {},
+  };
+  const card = new YachProgressCard(api, { toId: 'user-1', conversationType: '1' });
+  card.onStreamEvent({ type: 'tool-start', event: { tool: 'lookup_learner' } as never });
+  await card.finish('诊断完成');
+
+  const all = pushed.join('\n');
+  assert.doesNotMatch(all, /○/);
+  assert.doesNotMatch(all, /已完成 \d\/\d/);
+  assert.doesNotMatch(all, /检索线上日志/);
+  assert.doesNotMatch(all, /核对源码线索/);
+  assert.doesNotMatch(all, /诊断进度/);
+  assert.match(all, /正在查询学员信息/);
+  assert.match(all, /\*\*诊断完成\*\*/);
 });
 
 test('YachProgressCard 建卡/追加/关卡，失败不抛出', async () => {
@@ -87,11 +82,6 @@ test('YachProgressCard 建卡/追加/关卡，失败不抛出', async () => {
   card.onStreamEvent({
     type: 'tool-start',
     event: { tool: 'lookup_learner' } as never,
-  });
-  card.onStreamEvent({
-    type: 'tool-end',
-    event: { tool: 'lookup_learner' } as never,
-    evidence_state: {},
   });
   await card.finish('诊断完成');
   assert.ok(calls.some((line) => line.startsWith('create:')));

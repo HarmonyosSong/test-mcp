@@ -20,14 +20,14 @@
 - 进程启动拉起 `yach-cli event consume`，读 NDJSON → 解析 → 排队 → `runDiagnosisRound`
 - 群 @ 时渠道层先 `yach-cli im history`，摘要注入本轮用户上下文，再进诊断
 - 回信：`yach-cli im send --robot`
-- 进度卡：`yach-cli api` → `msg_card/create` / `msg_content/push` / `msg_card/close`（渠道层，Agent 无感）
+- 进度卡：`yach-cli api` → `msg_card/create` / `msg_content/push` / `msg_card/close`（渠道层，Agent 无感）；卡片正文只有**动态状态行**，无固定清单、无标题
 
 诊断 Agent **不感知** yach-cli；不把收信/发信做成模型工具。
 
 ```text
 yach-cli event (入站)
     → YachChannel（解析 / 排队 / 群@拉历史）
-    → DiagnosisAgent（onEvent → 进度卡勾选）
+    → DiagnosisAgent（onEvent → 进度卡动态状态行）
     → yach-cli api 进度卡 close + im send 终态 markdown
 ```
 
@@ -55,7 +55,7 @@ yach-cli event (入站)
 - `parse.ts`：适配 CLI event（`data` 可能二次 JSON；`conversationType` 1/2；群 @）
 - `channel.ts`：消费 CLI 事件流；群按 `group_id`；@ 触发诊断；回信走 CLI；诊断中挂进度卡
 - 新增 `cli.ts`：`event consume` 子进程 + `im send` / `im history` / `im robot-groups` + `api` 进度卡
-- `progress.ts` / `progress-map.ts`：任务清单进度卡（`msg_card/create` → `push` → `close`）；失败不阻断终态
+- `progress.ts` / `progress-map.ts`：进度卡（`msg_card/create` → `push` → `close`），内容为动态状态行；失败不阻断终态
 - 配置与 `.env.example`：保留 app key/secret；增加 CLI 路径；去掉 SDK 专用项
 
 **保留**
@@ -102,7 +102,7 @@ yach-cli config init --app_key "$HARMONY_AGENT_YACH_APP_KEY" --app_secret "$HARM
 - 私聊文本进诊断并回 markdown
 - 群 @ 进诊断并回群
 - @ 时可带近期群历史（平台限制内）
-- 诊断过程出现任务进度卡（创建 → 勾选追加 → 关闭），失败不阻断终态
+- 诊断过程出现进度卡（创建 → 动态状态行追加 → 关闭），失败不阻断终态
 - 不启 yach-mcp；不启旧 SDK 桥
 
 ## 7. 参考

@@ -11,6 +11,8 @@ export interface CapabilityContext {
   readonly repositoryId?: string | null;
   readonly resolvedCommit?: string | null;
   readonly abortSignal?: AbortSignal;
+  /** 本轮开始时刻（epoch 毫秒）；log-mcp 用它把日志按轮次实时切成独立文件。 */
+  readonly roundStartedAtMs?: number;
 }
 
 export interface MountedCapability {
@@ -110,8 +112,8 @@ export function createRoundCapabilitySession(provider: CapabilityMcp, context: C
   registrations.push({
     id: 'log',
     optional: true,
-    create: async ({ conversationId, messageId }) => {
-      const session = await provider.createLogSession(conversationId, messageId);
+    create: async ({ conversationId, messageId, runId, roundStartedAtMs }) => {
+      const session = await provider.createLogSession(conversationId, messageId, { runId, roundStartedAtMs });
       return session ? { toolsets: session.toolsets, close: () => session.client.disconnect() } : null;
     },
   });

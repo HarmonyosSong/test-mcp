@@ -3,32 +3,11 @@ import { LOG_MCP_TOOL_NAMES } from '../../model/metadata.js';
 
 const LOG_MCP_TOOL_NAME_SET = new Set<string>(LOG_MCP_TOOL_NAMES);
 
-/** 固定任务清单；知音楼进度卡按此顺序勾选。 */
-export const PROGRESS_STEPS = [
-  { id: 'learner', title: '查询学员信息' },
-  { id: 'knowledge', title: '查阅产品知识' },
-  { id: 'logs', title: '检索线上日志' },
-  { id: 'source', title: '核对源码线索' },
-  { id: 'consult', title: '服务端协查' },
-  { id: 'report', title: '整理结论' },
-] as const;
-
-export type ProgressStepId = (typeof PROGRESS_STEPS)[number]['id'];
-
-export type ProgressStepState = 'pending' | 'active' | 'done';
-
-export type ProgressChecklist = Record<ProgressStepId, ProgressStepState>;
-
-export function createProgressChecklist(): ProgressChecklist {
-  return {
-    learner: 'pending',
-    knowledge: 'pending',
-    logs: 'pending',
-    source: 'pending',
-    consult: 'pending',
-    report: 'pending',
-  };
-}
+/**
+ * 内部阶段分类：只用于把同类工具归到同一阶段、生成通俗进度文案。
+ * 进度卡不展示固定任务清单（无 ○ 列表、无 x/y 计数），只推动态状态行。
+ */
+export type ProgressStepId = 'learner' | 'knowledge' | 'logs' | 'source' | 'consult' | 'report';
 
 export function progressStepForTool(toolName: string): ProgressStepId | null {
   const name = toolName.toLowerCase();
@@ -76,79 +55,14 @@ export function progressLabelForTool(toolName: string): string {
   return '正在收集证据';
 }
 
-export function applyProgressEvent(
-  checklist: ProgressChecklist,
-  event: DiagnosisStreamEvent,
-): { checklist: ProgressChecklist; label: string | null; changed: boolean } {
-  const next = { ...checklist };
-  let label: string | null = null;
-  let changed = false;
-
-  const activate = (id: ProgressStepId, text: string) => {
-    label = text;
-    if (next[id] === 'done') return;
-    if (next[id] !== 'active') {
-      next[id] = 'active';
-      changed = true;
-    }
-  };
-
-  const complete = (id: ProgressStepId) => {
-    if (next[id] !== 'done') {
-      next[id] = 'done';
-      changed = true;
-    }
-  };
-
-  if (event.type === 'tool-start') {
-    const step = progressStepForTool(event.event.tool);
-    label = progressLabelForTool(event.event.tool);
-    if (step) activate(step, label);
-  } else if (event.type === 'tool-end') {
-    const step = progressStepForTool(event.event.tool);
-    if (step) complete(step);
-    label = null;
-  } else if (event.type === 'text') {
-    activate('report', '正在整理结论');
-  } else if (event.type === 'completed') {
-    for (const step of PROGRESS_STEPS) {
-      if (next[step.id] === 'active') complete(step.id);
-    }
-    complete('report');
-    label = '诊断完成';
-  } else if (event.type === 'failed') {
-    activate('report', '诊断失败');
-    label = '诊断失败';
-  }
-
-  return { checklist: next, label, changed };
-}
-
-export function renderProgressChecklist(
-  checklist: ProgressChecklist,
-  currentLabel: string | null,
-  elapsedSeconds: number,
-): string {
-  const done = PROGRESS_STEPS.filter((step) => checklist[step.id] === 'done').length;
-  const total = PROGRESS_STEPS.length;
-  const lines = [
-    '**任务进度**',
-    '',
-    `已完成 ${done}/${total} 项`,
-    '',
-  ];
-  for (const step of PROGRESS_STEPS) {
-    const state = checklist[step.id];
-    const mark = state === 'done' ? '✓' : state === 'active' ? '→' : '○';
-    const suffix = state === 'active' && currentLabel ? `（进行中）` : '';
-    lines.push(`${mark} ${step.title}${suffix}`);
-  }
-  if (currentLabel) {
-    lines.push('', `- ${currentLabel}（${elapsedSeconds} 秒）`);
-  }
-  return lines.join('\n');
-}
-
+/**
+ * 把诊断流事件翻译成一条动态进度文案。
+ * 工具开始 → 该工具对应的进行中文案；正文开始输出 → 正在整理结论；异常 → 诊断失败。
+ * 返回 null 表示该事件不产生进度文案（如工具结束）。
+ */
 export function progressLabelForStreamEvent(event: DiagnosisStreamEvent): string | null {
-  return applyProgressEvent(createProgressChecklist(), event).label;
+  if (event.type === 'tool-start') return progressLabelForTool(event.event.tool);
+  if (event.type === 'text') return '正在整理结论';
+  if (event.type === 'failed') return '诊断失败';
+  return null;
 }

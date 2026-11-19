@@ -192,6 +192,8 @@ export async function runLive(datasetPath: string, outputPath: string, timeoutSe
             repositoryId: conversation.repository_id ?? null,
             resolvedCommit: conversation.resolved_commit ?? null,
             abortSignal,
+            // 评测轮同样按轮次切日志，便于单轮复盘。
+            roundStartedAtMs: started,
           });
           const run = runtime.diagnosisAgent.stream({ conversation, content: prompt, toolsets: capabilitySession.toolsets, abortSignal });
           for await (const event of run) {

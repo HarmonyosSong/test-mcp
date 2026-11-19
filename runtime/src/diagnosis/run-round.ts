@@ -257,6 +257,8 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
       runId,
       workspacePath: null,
       abortSignal,
+      // 本轮开始时刻：log-mcp 据此把本轮日志实时写进独立文件（秒级粒度）。
+      roundStartedAtMs: Date.parse(assistantMessage.created_at) || Date.now(),
     });
 
     const capabilityContext: CapabilityContext = {

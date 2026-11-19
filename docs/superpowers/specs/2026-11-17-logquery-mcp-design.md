@@ -1016,9 +1016,16 @@ ${HARMONY_AGENT_DATA_ROOT:-.data}/log-mcp/
     log-mcp.json      # {pid, signature, profile}，权限 0600
     manage.lock       # 管理脚本互斥锁
   logs/
-    log-mcp.log       # 进程 stdout/stderr，权限 0600
+    log-mcp-YYYY-MM-DD_HH-MM-SS.log                    # 进程启动/关闭/直连调试（兜底）
+    log-mcp-round-YYYY-MM-DD_HH-MM-SS.log              # 一轮问答一个文件（主）
   auth.db             # OAuth 凭据库（见 5.4），权限 0600
 ```
+
+日志按**轮次**实时切分：runtime 每轮诊断建立 log-mcp 连接时带上
+`X-Odyssey-Round-Start`（本轮开始时刻，epoch 毫秒）与 `X-Odyssey-Round-Label`（run/conv/msg），
+log-mcp 收到该轮第一条日志即建 `log-mcp-round-<轮次开始时刻>.log`，本轮后续工具调用与上游 HTTP
+日志全部追加其中；同秒两轮顺延 `_02`。没有轮次上下文的日志（进程启停、外部直连调试）写进程兜底文件，
+不丢日志。
 
 本地默认落到 `troubleshoot-odyssey/.data/log-mcp/`（已被 `.gitignore` 的 `.data/` 覆盖）；容器内为 `/data/troubleshoot-odyssey/log-mcp/`，随主数据卷持久化。
 

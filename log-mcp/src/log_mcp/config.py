@@ -144,7 +144,7 @@ class Settings(BaseModel):
 
     @property
     def logs_dir(self) -> Path:
-        """调用/运行日志目录：`<data_root>/logs`，按日文件落盘。"""
+        """调用/运行日志目录：`<data_root>/logs`，按轮次实时切分落盘。"""
         return self.data_root_path / "logs"
 
 

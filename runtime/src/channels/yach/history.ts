@@ -10,7 +10,9 @@ export interface GroupHistoryOptions {
  *  错误转储（AI_APICallError 等）无论谁发的都不进 prompt。 */
 const BOT_CONTENT_PATTERNS: RegExp[] = [
   /^判定\s*[:：]/,
-  /^(诊断失败|诊断完成|任务进度|已开启新的诊断会话|已取消)/,
+  /^(诊断失败|诊断完成|诊断进度|任务进度|已开启新的诊断会话|已取消)/,
+  // 进度卡正文：动态状态行（- 已收到问题…／- 正在…）与终态耗时行。
+  /^[-*]\s*(已收到问题|正在[^\n]{0,20}（\d+\s*秒）)/,
   /AI_APICallError|"stack"\s*:|\\n\s*at \(/,
 ];
 

@@ -58,6 +58,34 @@ export function codeIndexServerEnvironment(config: RuntimeConfig): Record<string
 
 export type MastraToolsets = Awaited<ReturnType<MCPClient['listToolsets']>>;
 
+/** log-mcp 轮次头：告诉服务端这一轮从什么时候开始，日志按轮次实时切文件。 */
+export const LOG_ROUND_START_HEADER = 'X-Odyssey-Round-Start';
+export const LOG_ROUND_LABEL_HEADER = 'X-Odyssey-Round-Label';
+
+/**
+ * 生成本轮日志切分所需的请求头。
+ *
+ * `X-Odyssey-Round-Start` 是 epoch 毫秒，log-mcp 用它命名本轮的
+ * `log-mcp-round-YYYY-MM-DD_HH-MM-SS.log`；`X-Odyssey-Round-Label` 只进文件头注释，
+ * 便于人肉定位是哪一轮（不含密钥/用户内容）。
+ */
+export function logRoundHeaders(input: {
+  roundStartedAtMs: number;
+  conversationId: string;
+  messageId: string;
+  runId?: string;
+}): Record<string, string> {
+  const label = [
+    input.runId ? `run=${input.runId}` : '',
+    `conv=${input.conversationId}`,
+    `msg=${input.messageId}`,
+  ].filter(Boolean).join(' ');
+  return {
+    [LOG_ROUND_START_HEADER]: String(Math.floor(input.roundStartedAtMs)),
+    [LOG_ROUND_LABEL_HEADER]: label,
+  };
+}
+
 export class CapabilityMcp {
   constructor(private readonly config: RuntimeConfig) {}
 
@@ -169,7 +197,18 @@ export class CapabilityMcp {
     }
   }
 
-  async createLogSession(conversationId: string, messageId: string): Promise<{
+  /**
+   * 挂载本轮 log-mcp 工具面。
+   *
+   * 每轮诊断都会新建一个会话，这里把「本轮开始时刻」通过请求头带给 log-mcp：
+   * 服务端据此把本轮所有日志实时写进 `log-mcp-round-YYYY-MM-DD_HH-MM-SS.log`，
+   * 而不是混进进程启动的那个大文件。`roundStartedAtMs` 缺省取当前时刻。
+   */
+  async createLogSession(
+    conversationId: string,
+    messageId: string,
+    options: { roundStartedAtMs?: number; runId?: string } = {},
+  ): Promise<{
     client: MCPClient;
     toolsets: MastraToolsets;
   } | null> {
@@ -184,6 +223,12 @@ export class CapabilityMcp {
     }
     const timeout = this.config.logMcpTimeoutMs;
     const token = this.config.logMcpBearerToken.trim();
+    const roundHeaders = logRoundHeaders({
+      roundStartedAtMs: options.roundStartedAtMs ?? Date.now(),
+      conversationId,
+      messageId,
+      runId: options.runId,
+    });
     const client = new MCPClient({
       id: `troubleshoot-log-${conversationId}-${messageId}`,
       timeout,
@@ -192,9 +237,11 @@ export class CapabilityMcp {
         log: {
           url: endpoint,
           timeout,
-          ...(token
-            ? { requestInit: { headers: { Authorization: `Bearer ${token}` } } }
-            : {}),
+          requestInit: {
+            headers: token
+              ? { Authorization: `Bearer ${token}`, ...roundHeaders }
+              : roundHeaders,
+          },
         },
       },
     });

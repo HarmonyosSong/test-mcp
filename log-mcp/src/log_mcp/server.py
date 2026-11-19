@@ -37,6 +37,7 @@ from log_mcp.clients.redact import redact
 from log_mcp.config import Settings, load_settings
 from log_mcp.errors import LogMcpToolError, internal_error, make_error_result
 from log_mcp.logging_setup import setup_logging
+from log_mcp.round_context import RoundContextMiddleware
 from log_mcp.token_store import TokenStore
 from log_mcp.tools.aggregate import register_aggregate_tools
 from log_mcp.tools.cloudlog import register_cloudlog_tools
@@ -285,11 +286,15 @@ def create_app(
     def auth_wrap(app: ASGIApp) -> BearerAuthDispatcher:
         return BearerAuthDispatcher(app=app, token_store=store, auth_disabled=auth_disabled)
 
+    def round_wrap(app: ASGIApp) -> ASGIApp:
+        """轮次头 → contextvar；放在鉴权内侧，只影响已放行的 MCP 请求。"""
+        return RoundContextMiddleware(app)
+
     # 三个 MCP path → 鉴权包装后的 app（方案 7.5）
     mcp_routes = {
-        "/mcp": auth_wrap(apps["all"]),
-        "/mcp/logcenter": auth_wrap(apps["logcenter"]),
-        "/mcp/cloud": auth_wrap(apps["cloud"]),
+        "/mcp": auth_wrap(round_wrap(apps["all"])),
+        "/mcp/logcenter": auth_wrap(round_wrap(apps["logcenter"])),
+        "/mcp/cloud": auth_wrap(round_wrap(apps["cloud"])),
     }
     path_dispatcher = MCPPathDispatcher(mcp_routes)
 
@@ -416,7 +421,11 @@ def main() -> None:
     settings = load_settings()
     log_file = setup_logging(settings.logs_dir)
     _log_startup_config(settings)
-    LOGGER.info("call/runtime logs → %s (按日切换)", log_file)
+    LOGGER.info("process logs → %s", log_file)
+    LOGGER.info(
+        "round logs → %s/log-mcp-round-YYYY-MM-DD_HH-MM-SS.log（每轮问答一个文件）",
+        settings.logs_dir,
+    )
     app = create_app(settings)
     LOGGER.info(
         "listening http://%s:%s/mcp  (boot env=%s)",
