@@ -19,7 +19,6 @@ import type {
 import { AiTraceDialog } from './AiTracePanel';
 import { PixelOrb } from '../PixelOrb';
 import { ChatComposer } from './ChatComposer';
-import { ConsultationCard } from './ConsultationCard';
 import { MarkdownContent } from './MarkdownContent';
 import { ReportCard } from './ReportCard';
 import { ToolStepCard } from './ToolStepCard';
@@ -350,9 +349,6 @@ export function ChatThread({
             ),
           )
         )}
-        {consultations.map((consultation) => (
-          <ConsultationCard key={consultation.id} consultation={consultation} />
-        ))}
         <div ref={bottomRef} />
       </div>
 
