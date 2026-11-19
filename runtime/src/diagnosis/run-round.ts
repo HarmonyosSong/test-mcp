@@ -9,7 +9,18 @@ import { createRoundCapabilitySession, type CapabilitySession, type CapabilityCo
 import type { ToolsetsInput } from '@mastra/core/agent';
 import { createLazySourceToolset, LazySourceHolder } from '../capabilities/lazy-source.js';
 import { createPrepareSourceTool } from '../capabilities/prepare-source-tool.js';
-import { createConsultCompassTool } from '../capabilities/consult-tool.js';
+import {
+  composeFollowupMessage,
+  createConsultCompassTool,
+  createRequestCompassFollowupTool,
+  type CompassFollowupOutcome,
+  type CompassFollowupState,
+} from '../capabilities/consult-tool.js';
+import {
+  transitionExternalConsultation,
+  type ExternalConsultation,
+} from '../orchestration/consultation.js';
+import type { RemoteConclusion } from '../domain/schemas.js';
 import type { BoundSourceContext } from '../capabilities/source-binding.js';
 import { prepareConversationSource } from '../capabilities/prepare-source.js';
 import type { ModelConfiguration } from '../model/configuration.js';
@@ -34,6 +45,12 @@ export interface RunDiagnosisRoundOptions {
   /** Compass A2A 配置完成才挂载 consult_compass 工具（工具可用性即能力边界）。 */
   compassAvailable?: boolean;
   investigationBudget?: InvestigationBudget;
+  /** 后台协查（request_compass_followup）出结果后回调：知音楼用来主动推送，web 缺省只落库。 */
+  onCompassFollowupSettled?: (info: {
+    conversation: ConversationRecord;
+    message: ChatMessage;
+    outcome: CompassFollowupOutcome;
+  }) => void | Promise<void>;
   /** Bind a read-only source snapshot after logs reveal the real client/version. */
   createConversationSource?: (input: {
     platform: Exclude<ConversationRecord['platform'], null>;
@@ -80,6 +97,8 @@ export interface RunDiagnosisRoundResult {
   terminal: 'completed' | 'failed';
   terminalPersisted: boolean;
   text: string;
+  /** 本轮发起了后台协查且结果待同步。 */
+  compassFollowupPending: boolean;
 }
 
 async function persistTerminalConversation(
@@ -113,8 +132,74 @@ async function recordTerminalCase(
   ]);
 }
 
-function newAssistantMessage(): ChatMessage {
-  return {
+/** 后台协查收尾：等远端出结果 → 更新 consultation/finding → 追加协查消息 → 落库 → 回调渠道。 */
+function scheduleCompassFollowupSettle(input: {
+  store: ProductStore;
+  redact: (text: string) => string;
+  conversationId: string;
+  followupState: CompassFollowupState;
+  options?: RunDiagnosisRoundOptions;
+}): void {
+  const handle = input.followupState.handle;
+  if (!handle) return;
+  const settle = async () => {
+    const outcome = await handle.promise;
+    // 重新拉取会话：协查等待期间用户可能已开始下一轮，不能用旧对象覆盖。
+    const conversation = await input.store.getConversation(input.conversationId);
+    const index = conversation.consultations.findIndex((item) => item.id === handle.consultationId);
+    if (index >= 0) {
+      conversation.consultations[index] = transitionExternalConsultation(
+        conversation.consultations[index] as ExternalConsultation,
+        outcome.state === 'completed' ? 'completed' : 'failed',
+        { taskId: outcome.taskId, contextId: outcome.contextId },
+      );
+    }
+    const consultation = conversation.consultations.find((item) => item.id === handle.consultationId);
+    if (outcome.state === 'completed' && consultation) {
+      const finding: RemoteConclusion = {
+        consultation_id: handle.consultationId,
+        task_id: outcome.taskId,
+        context_id: outcome.contextId,
+        agent_id: 'compass',
+        agent_version: null,
+        state: 'TASK_STATE_COMPLETED',
+        text: outcome.text,
+        truncated: outcome.truncated,
+        scope: ['current_question', 'correlation'],
+        limitations: outcome.limitations ?? [],
+        request_digest: consultation.outbound_digest,
+        received_at: new Date().toISOString(),
+      };
+      const findingIndex = conversation.external_findings.findIndex(
+        (item) => item.consultation_id === handle.consultationId,
+      );
+      if (findingIndex < 0) conversation.external_findings.push(finding);
+      else conversation.external_findings[findingIndex] = finding;
+    }
+    const message: ChatMessage = {
+      id: `msg-${randomUUID().replaceAll('-', '').slice(0, 10)}`,
+      role: 'assistant',
+      content: composeFollowupMessage(outcome),
+      steps: [],
+      status: 'completed',
+      error: null,
+      report: null,
+      input_tokens: null,
+      output_tokens: null,
+      tool_usage: { compass_followup: 1 },
+      created_at: new Date().toISOString(),
+    };
+    conversation.messages.push(message);
+    conversation.updated_at = new Date().toISOString();
+    await input.store.saveConversation(redactConversationForPersistence(conversation, input.redact));
+    await input.options?.onCompassFollowupSettled?.({ conversation, message, outcome });
+  };
+  void settle().catch(() => {
+    // 协查收尾失败不拖累主流程；consultation 停留在 sent，重启后按中断修复。
+  });
+}
+
+function newAssistantMessage(): ChatMessage {  return {
     id: `msg-${randomUUID().replaceAll('-', '').slice(0, 10)}`,
     role: 'assistant',
     content: '',
@@ -224,6 +309,7 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
   let text = '';
   let capabilitySession: CapabilitySession | undefined;
   let sourceHolder: LazySourceHolder | undefined;
+  const followupState: CompassFollowupState = { handle: null };
   let terminal: 'completed' | 'failed' | null = null;
   let terminalPersisted = false;
 
@@ -288,6 +374,16 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
         saveConversation,
         content,
         maxCalls: budget.maxRemoteCalls,
+      });
+      roundTools.request_compass_followup = createRequestCompassFollowupTool({
+        conversation,
+        messageId: assistantMessage.id,
+        runId,
+        registry: options.slotRegistry,
+        capabilityContext,
+        saveConversation,
+        content,
+        followupState,
       });
     }
 
@@ -395,6 +491,15 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
     await sourceHolder?.close().catch(() => undefined);
   }
 
+  // 后台协查：轮次终态后才开始等远端，不占用用户等待；结果以新消息追加。
+  scheduleCompassFollowupSettle({
+    store: input.store,
+    redact,
+    conversationId: conversation.id,
+    followupState,
+    options,
+  });
+
   return {
     conversation,
     assistantMessage,
@@ -402,5 +507,6 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
     terminal,
     terminalPersisted,
     text: assistantMessage.content || text,
+    compassFollowupPending: followupState.handle !== null,
   };
 }

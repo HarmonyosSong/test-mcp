@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildConsultationBrief, createConsultCompassTool } from '../src/capabilities/consult-tool.js';
+import { buildConsultationBrief, composeFollowupMessage, createConsultCompassTool, createRequestCompassFollowupTool } from '../src/capabilities/consult-tool.js';
 import { InMemoryAgentSlotRegistry } from '../src/orchestration/agent-slot-registry.js';
 import { ConversationRecordSchema } from '../src/domain/schemas.js';
 
@@ -147,4 +147,87 @@ test('Slot 未注册时返回 unavailable', async () => {
   const result = await tool.execute!({ question: 'q' }, {} as never) as Record<string, unknown>;
   assert.equal(result.status, 'unavailable');
   assert.equal(conversation.consultations.length, 0);
+});
+
+// ———— request_compass_followup（异步协查） ————
+
+test('后台协查：发起即返回 started，不落等待；重复发起被拒', async () => {
+  const conversation = makeConversation(['学员 uid 5570040 磨耳朵停播']);
+  const saveLog: string[] = [];
+  const followupState: { handle: import('../src/capabilities/consult-tool.js').CompassFollowupHandle | null } = { handle: null };
+  let resolveRemote!: (value: import('../src/orchestration/agent-slot-registry.js').CapabilityResult) => void;
+  const slot = {
+    slotId: 'compass',
+    agentCardUrl: 'http://compass.internal/agent',
+    role: 'external' as const,
+    capabilities: ['server'],
+    authRef: 'token-ref',
+    timeoutMs: 30_000,
+    maxOutputChars: 8_000,
+    evidenceMode: 'external_findings' as const,
+  };
+  const adapter = {
+    invoke: () => new Promise<import('../src/orchestration/agent-slot-registry.js').CapabilityResult>((resolve) => { resolveRemote = resolve; }),
+    async cancel() {},
+  };
+  const registry = new InMemoryAgentSlotRegistry([{ slot, adapter }]);
+  const tool = createRequestCompassFollowupTool({
+    conversation,
+    messageId: 'msg-a',
+    runId: 'run-1',
+    registry,
+    capabilityContext: capabilityContext(),
+    content: '学员 uid 5570040 磨耳朵停播',
+    saveConversation: async () => { saveLog.push('save'); },
+    followupState,
+  });
+
+  const started = await tool.execute!({ question: '请核查播放心跳接口' }, {} as never) as { status: string };
+  assert.equal(started.status, 'started');
+  assert.ok(saveLog.length >= 1, '发送检查点已落库');
+  assert.ok(followupState.handle, '已登记后台句柄');
+  const consultation = conversation.consultations.at(-1)!;
+  assert.equal(consultation.status, 'sent');
+
+  const again = await tool.execute!({ question: '重复问题' }, {} as never) as { status: string };
+  assert.equal(again.status, 'already_started');
+
+  // 远端尚未返回时 promise 挂起；返回后产出 completed 结果与消息文案。
+  let settled = false;
+  void followupState.handle.promise.then(() => { settled = true; });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(settled, false);
+  resolveRemote({
+    data: { text: '服务端确认心跳超时阈值过短', taskId: 'task-9', contextId: 'ctx-9', state: 'TASK_STATE_COMPLETED' },
+    truncated: false,
+    limitations: [],
+    audit: { slotId: 'compass', taskId: 'task-9', state: 'TASK_STATE_COMPLETED', durationMs: 5, truncated: false },
+  });
+  const outcome = await followupState.handle.promise;
+  assert.equal(outcome.state, 'completed');
+  const message = composeFollowupMessage(outcome);
+  assert.match(message, /【服务端协查结果】/);
+  assert.match(message, /心跳超时阈值过短/);
+});
+
+test('后台协查：远端失败时产出失败文案', async () => {
+  const conversation = makeConversation(['q']);
+  const followupState: { handle: import('../src/capabilities/consult-tool.js').CompassFollowupHandle | null } = { handle: null };
+  const registry = makeSlotRegistry({ invokeResult: new Error('A2A timeout') });
+  const tool = createRequestCompassFollowupTool({
+    conversation,
+    messageId: 'msg-a',
+    runId: 'run-1',
+    registry,
+    capabilityContext: capabilityContext(),
+    content: 'q',
+    saveConversation: async () => {},
+    followupState,
+  });
+  const started = await tool.execute!({ question: 'q' }, {} as never) as { status: string };
+  assert.equal(started.status, 'started');
+  const outcome = await followupState.handle!.promise;
+  assert.equal(outcome.state, 'failed');
+  assert.match(outcome.error!, /A2A timeout/);
+  assert.match(composeFollowupMessage(outcome), /协查超时或失败/);
 });

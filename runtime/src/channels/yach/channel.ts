@@ -316,6 +316,14 @@ export class YachChannel {
           knowledgeQueryLog: this.deps.config.knowledgeQueryLog,
           caseArchiveDir: this.deps.config.caseArchiveDir,
           ...this.deps.diagnosisOptions,
+          // 后台协查出结果后主动推送到群/私聊。
+          onCompassFollowupSettled: async ({ message }) => {
+            try {
+              await this.reply(event, message.content);
+            } catch {
+              // 推送失败不影响落库结果，用户下一轮仍能在工作台看到。
+            }
+          },
         },
         onEvent: (streamEvent) => {
           if (streamEvent.type === 'text') {

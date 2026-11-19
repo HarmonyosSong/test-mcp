@@ -74,40 +74,60 @@ async function readEventStream<TState>(
   let current: TState | null = null;
   let receivedEvent = false;
 
-  const consume = (block: string) => {
-    const event = decodeAguiEventBlock(block);
-    if (!event) return;
-    receivedEvent = true;
-    current = options.reduce(current, event);
-    options.onEvent?.(event, current);
-    if (event.type === 'RUN_ERROR') {
-      throw new AguiRunError(event.error, current);
-    }
-  };
+  // 终态事件即让调用方继续（输入框解锁）；流保持后台读取，
+  // 服务端可能在终态后补推后台协查结果（STATE_SNAPSHOT）。
+  return await new Promise<TState>((resolvePromise, rejectPromise) => {
+    let settled = false;
+    const finishOk = () => {
+      if (settled) return;
+      settled = true;
+      if (current) resolvePromise(current);
+      else rejectPromise(new AguiUnavailableError('AG-UI 事件流为空'));
+    };
+    const finishErr = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      rejectPromise(error);
+    };
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      buffer += decoder.decode(value, { stream: !done });
-      const blocks = buffer.split(/\r?\n\r?\n/);
-      buffer = blocks.pop() || '';
-      blocks.forEach(consume);
-      if (done) break;
-    }
-    if (buffer.trim()) consume(buffer);
-  } catch (error) {
-    if (error instanceof AguiRunError) throw error;
-    if (!receivedEvent) {
-      const message = error instanceof Error ? error.message : 'AG-UI 事件流读取失败';
-      throw new AguiUnavailableError(message);
-    }
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
+    const consume = (block: string) => {
+      const event = decodeAguiEventBlock(block);
+      if (!event) return;
+      receivedEvent = true;
+      current = options.reduce(current, event);
+      options.onEvent?.(event, current);
+      if (event.type === 'RUN_ERROR') {
+        finishErr(new AguiRunError(event.error, current));
+        return;
+      }
+      if (event.type === 'RUN_FINISHED') finishOk();
+    };
 
-  if (!current) throw new AguiUnavailableError('AG-UI 事件流为空');
-  return current;
+    (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          buffer += decoder.decode(value, { stream: !done });
+          const blocks = buffer.split(/\r?\n\r?\n/);
+          buffer = blocks.pop() || '';
+          blocks.forEach(consume);
+          if (done) break;
+        }
+        if (buffer.trim()) consume(buffer);
+        finishOk();
+      } catch (error) {
+        if (!receivedEvent) {
+          const message = error instanceof Error ? error.message : 'AG-UI 事件流读取失败';
+          finishErr(new AguiUnavailableError(message));
+        } else if (!settled) {
+          finishErr(error);
+        }
+        // 已按终态收尾后，后台补推阶段的读取失败静默忽略。
+      } finally {
+        reader.releaseLock();
+      }
+    })();
+  });
 }
 
 export async function streamChatMessage(

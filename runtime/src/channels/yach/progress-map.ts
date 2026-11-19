@@ -53,7 +53,7 @@ export function progressStepForTool(toolName: string): ProgressStepId | null {
   const name = toolName.toLowerCase();
   if (name.includes('lookup_learner') || name.includes('ucenter')) return 'learner';
   if (name.includes('prepare_source')) return 'source';
-  if (name.includes('consult_compass')) return 'consult';
+  if (name.includes('consult_compass') || name.includes('compass_followup')) return 'consult';
   if (canonicalLogToolName(toolName)) return 'logs';
   if (
     name.includes('repository')
@@ -92,6 +92,7 @@ function logProgressLabel(source: LogSourceKind | null): string {
 export function progressLabelForTool(toolName: string): string {
   const name = toolName.toLowerCase();
   if (name.includes('prepare_source')) return '正在绑定源码快照';
+  if (name.includes('compass_followup')) return '已发起服务端协查（后台跟进）';
   if (name.includes('consult_compass')) return '正在请求服务端协查';
   const step = progressStepForTool(toolName);
   if (step === 'learner') return '正在查询学员信息';

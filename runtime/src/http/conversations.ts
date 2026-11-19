@@ -121,8 +121,16 @@ export function createConversationRoutes(
           }
         };
         const keepalive = setInterval(() => {
-          if (!terminalSent) send(': keepalive\n\n');
+          if (!streamClosed) send(': keepalive\n\n');
         }, 10_000);
+        // 后台协查：终态事件照发，但连接保持到协查结果落地（或客户端断开/超时），
+        // 让 web 用户不刷新也能看到协查结论。
+        let followupResolve!: () => void;
+        const followupDone = new Promise<void>((resolve) => { followupResolve = resolve; });
+        const clientGone = new Promise<void>((resolve) => {
+          if (requestSignal.aborted) resolve();
+          else requestSignal.addEventListener('abort', () => resolve(), { once: true });
+        });
         try {
           const result = await runDiagnosisRound({
             store,
@@ -140,6 +148,14 @@ export function createConversationRoutes(
               compassAvailable: options.compassAvailable,
               investigationBudget: options.investigationBudget,
               createConversationSource: options.createConversationSource,
+              onCompassFollowupSettled: ({ conversation: settled, message: followupMessage }) => {
+                send(sse('STATE_SNAPSHOT', runId, {
+                  conversation_id: id,
+                  followup_message_id: followupMessage.id,
+                  conversation: publicView(settled),
+                }));
+                followupResolve();
+              },
             },
             onPrepared: ({ assistantMessage, runId: preparedRunId, conversation: prepared }) => {
               runId = preparedRunId;
@@ -184,6 +200,15 @@ export function createConversationRoutes(
             }));
           }
           terminalSent = true;
+          if (result.compassFollowupPending) {
+            send(sse('FOLLOWUP_PENDING', runId, { conversation_id: id }));
+            // 协查后台等待（上限=远端 invoke 超时 + 收尾余量）；客户端断开则提前放行。
+            await Promise.race([
+              followupDone,
+              clientGone,
+              new Promise<void>((resolve) => setTimeout(resolve, 660_000)),
+            ]);
+          }
         } catch (error) {
           const message = redact(error instanceof Error ? error.message : '诊断运行失败');
           if (runId) {
