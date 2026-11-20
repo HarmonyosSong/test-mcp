@@ -223,10 +223,11 @@ export class YachCli {
     });
   }
 
-  async groupHistory(groupId: string): Promise<unknown[]> {
+  async groupHistory(groupId: string, windowMinutes = 30): Promise<unknown[]> {
     await this.ensureConfigured();
     const end = Math.floor(Date.now() / 1000);
-    const start = end - 24 * 60 * 60;
+    // 只取近 30 分钟：群聊多话题混杂，过早的历史是噪音而非上下文。
+    const start = end - windowMinutes * 60;
     const result = await this.runCommand([
       'im',
       'history',

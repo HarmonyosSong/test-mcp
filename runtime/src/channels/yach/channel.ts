@@ -10,6 +10,7 @@ import type { ProductStore } from '../../product/store.js';
 import type { ConversationRecord } from '../../domain/schemas.js';
 import { IM_MESSAGE_LIMIT, YachCli } from './cli.js';
 import { buildGroupDiagnosisContent, summarizeGroupHistory } from './history.js';
+import { isTopicSwitch } from './topic-switch.js';
 import { yachHistory, yachInbound, yachInboundSkipped, yachOutbound } from './log.js';
 import { InvalidYachEvent, parseYachEvent, peekWorkCode, type YachEvent } from './parse.js';
 import { YachProgressCard } from './progress.js';
@@ -233,6 +234,8 @@ export class YachChannel {
     session: EmployeeSession,
     event: YachEvent,
     forceNew: boolean,
+    /** 当前消息原文：非强制复用时先跑话题切换检测，命中即开新会话。 */
+    incomingText?: string,
   ): Promise<ConversationRecord> {
     const key = this.mappingKey(event);
     if (!forceNew) {
@@ -240,17 +243,32 @@ export class YachChannel {
       if (existingId) {
         try {
           const existing = await this.deps.store.getConversation(existingId);
-          session.conversationId = existing.id;
-          this.mapping.set(key, existing.id);
-          return existing;
+          // 群里话题换了还复用旧会话，历史会扰乱新问题；强信号命中即弃旧开新。
+          const switchTopic = incomingText
+            ? isTopicSwitch({
+              text: incomingText,
+              historyUserTexts: existing.messages
+                .filter((message) => message.role === 'user')
+                .map((message) => message.content),
+              conversationUpdatedAt: existing.updated_at,
+            })
+            : false;
+          if (!switchTopic) {
+            session.conversationId = existing.id;
+            this.mapping.set(key, existing.id);
+            return existing;
+          }
         } catch {
           // create below
         }
       }
     }
+    // 同一人/群的话题会话多了会撞名，标题带时分便于在工作台列表区分。
+    const now = new Date();
+    const stamp = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const title = event.groupId
-      ? `IM群 · ${event.displayName || event.workCode}`
-      : `IM · ${event.displayName || event.workCode}`;
+      ? `IM群 · ${event.displayName || event.workCode} · ${stamp}`
+      : `IM · ${event.displayName || event.workCode} · ${stamp}`;
     const created = await this.deps.store.createConversation({
       title,
       channel: 'yach_im',
@@ -297,7 +315,7 @@ export class YachChannel {
       return;
     }
 
-    const conversation = await this.resolveConversation(session, event, false);
+    const conversation = await this.resolveConversation(session, event, false, event.text);
     const progress = new YachProgressCard(this.cli, event);
     const abort = new AbortController();
     session.abort = abort;

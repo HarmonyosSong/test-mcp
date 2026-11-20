@@ -47,6 +47,12 @@
   --quote-ink: #847250;
   --spinner-track: rgba(255, 255, 255, 0.4);
   --spinner-head: #ffffff;
+  /* 日光色系（与 PixelOrb SUN_PALETTE 同源，日主题专属氛围色） */
+  --sun: #f09724;
+  --sun-deep: #c96a18;
+  --sun-cream: #fff3cf;
+  --sun-tint: rgba(240, 151, 36, 0.12);
+  --sun-shadow: rgba(122, 60, 14, 0.12);
 }
 
 * {
@@ -122,6 +128,8 @@ button:disabled {
 
 .main-area {
   display: flex;
+  position: relative;
+  isolation: isolate; /* 让 .sun-sky 的 z-index:-1 落在 main-area 背景之上、内容之下 */
   min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
@@ -3932,14 +3940,148 @@ button:disabled {
     inset 0 3px 0 rgba(255, 255, 255, 0.18);
 }
 
-/* 主区域：右上角 Bayer 抖动日光（与暗色星野镜像） + 浅色点阵底纹 */
+/* 主区域：印刷网点底纹；太阳场景由 SunSky 组件按真实时间驱动（见 components/SunSky.tsx） */
 [data-theme='light'] .main-area {
-  background-image:
-    url('/assets/sun-glow.png'),
-    radial-gradient(rgba(60, 45, 20, 0.06) 1px, transparent 1px);
-  background-repeat: no-repeat, repeat;
-  background-position: right -70px top -60px, 0 0;
-  background-size: 480px 360px, 14px 14px;
+  background-image: radial-gradient(rgba(60, 45, 20, 0.055) 1px, transparent 1.4px);
+  background-repeat: repeat;
+  background-position: 0 0;
+  background-size: 8px 8px;
+}
+
+/* —— 天空层：默认隐藏，仅日主题显示；暗色的星野对应物 —— */
+.sun-sky {
+  display: none;
+}
+
+[data-theme='light'] .sun-sky {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  /* 首帧兜底色（组件 mount 后立即被内联 style 覆盖） */
+  --sun-lv0: #c96a18;
+  --sun-lv1: #f09724;
+  --sun-lv2: #ffc95e;
+  --sun-lv3: #fff3cf;
+  --sun-glow-near: #f09724;
+  --sun-glow-far: #ffc95e;
+  --sun-dust: #c96a18;
+}
+
+.sun-sky-tint {
+  position: absolute;
+  inset: 0;
+  transition: opacity 90s ease;
+}
+
+.sun-sky-body {
+  position: absolute;
+  transition:
+    left 40s linear,
+    top 40s linear,
+    opacity 90s ease;
+}
+
+/* 太阳各层着色：随时间插值，transition 让换色连续 */
+.sun-sky-body .sun-lv0,
+.sun-sky-body .sun-lv1,
+.sun-sky-body .sun-lv2,
+.sun-sky-body .sun-lv3,
+.sun-sky-body .sun-glow-near,
+.sun-sky-body .sun-glow-far,
+.sun-sky-body .sun-ray-hi,
+.sun-sky-body .sun-ray-lo,
+.sun-sky-body .sun-dust {
+  transition: fill 40s linear;
+}
+
+.sun-sky-body .sun-lv0 { fill: var(--sun-lv0); }
+.sun-sky-body .sun-lv1 { fill: var(--sun-lv1); }
+.sun-sky-body .sun-lv2 { fill: var(--sun-lv2); }
+.sun-sky-body .sun-lv3 { fill: var(--sun-lv3); }
+.sun-sky-body .sun-glow-near { fill: var(--sun-glow-near); fill-opacity: 0.34; }
+.sun-sky-body .sun-glow-far { fill: var(--sun-glow-far); fill-opacity: 0.2; }
+.sun-sky-body .sun-ray-hi { fill: var(--sun-lv1); }
+.sun-sky-body .sun-ray-lo { fill: var(--sun-lv2); }
+.sun-sky-body .sun-dust { fill: var(--sun-dust); }
+
+/* —— 纸面组件统一 1-bit 语言：直角轮廓 + 像素硬阴影（替代现代柔阴影） —— */
+[data-theme='light'] .case-card,
+[data-theme='light'] .chat-composer,
+[data-theme='light'] .consultation-card,
+[data-theme='light'] .ai-trace-dialog,
+[data-theme='light'] .conversation-settings-popover {
+  border-radius: 0;
+  border-color: var(--border-strong);
+  box-shadow: 4px 4px 0 var(--sun-shadow);
+}
+
+[data-theme='light'] .case-card {
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+[data-theme='light'] .case-card:hover {
+  border-color: var(--sun-deep);
+  box-shadow: 5px 5px 0 rgba(122, 60, 14, 0.18);
+  transform: translate(-1px, -1px);
+}
+
+/* 选中 = 被阳光照亮：墨边 + 琥珀影 + 左侧日冕条 */
+[data-theme='light'] .case-card.selected {
+  background: var(--surface);
+  border-color: var(--ink);
+  box-shadow:
+    5px 5px 0 rgba(240, 151, 36, 0.32),
+    inset 4px 0 0 var(--sun);
+}
+
+[data-theme='light'] .chat-composer:focus-within {
+  border-color: var(--ink);
+  box-shadow: 5px 5px 0 rgba(240, 151, 36, 0.3);
+}
+
+/* 聊天气泡已有切角（clip-path 会裁外阴影），用 drop-shadow 沿切角走 */
+[data-theme='light'] .chat-bubble {
+  filter: drop-shadow(3px 3px 0 rgba(122, 60, 14, 0.1));
+}
+
+/* —— 导航选中项：页边琥珀标记 —— */
+[data-theme='light'] .sidebar-nav button {
+  border-radius: 0;
+}
+
+[data-theme='light'] .sidebar-nav button.selected {
+  color: var(--ink);
+  background: var(--sun-tint);
+  box-shadow: inset 3px 0 0 var(--sun);
+}
+
+/* —— 凸版印刷：亮色标题不用辉光，用 1px 下凹高光 —— */
+[data-theme='light'] .sidebar-brand strong,
+[data-theme='light'] .chat-thread-header h2,
+[data-theme='light'] .chat-guide h2 {
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* 小控件一并直角化，语言统一 */
+[data-theme='light'] .chat-model-select .arco-select-view {
+  border-radius: 0;
+}
+
+/* —— 主按钮 hover：暗色发磷光，亮色发日照暖光 —— */
+[data-theme='light'] .primary-button:hover:not(:disabled),
+[data-theme='light'] .new-chat-button:hover:not(:disabled),
+[data-theme='light'] .chat-send-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.28),
+    inset 0 3px 0 rgba(255, 255, 255, 0.18),
+    0 0 14px rgba(240, 151, 36, 0.45);
 }
 
 /* 选中反色 */
@@ -3957,9 +4099,11 @@ button:disabled {
   display: flex;
 }
 
+/* HUD 亮色：报纸版式——纸底 + 2px 墨线顶边 */
 [data-theme='light'] .hud-bar {
   color: var(--ink);
-  background: var(--surface);
+  background: var(--canvas);
+  border-top: 2px solid var(--ink);
   text-shadow: none;
 }
 

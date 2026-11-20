@@ -8,6 +8,7 @@ import { ChatThread } from './components/chat/ChatThread';
 import { HudBar } from './components/HudBar';
 import { ModelSettingsDialog } from './components/ModelSettingsDialog';
 import { Sidebar } from './components/Sidebar';
+import { SunSky } from './components/SunSky';
 import { Typewriter } from './components/Typewriter';
 import { useChatSessions } from './hooks/useChatSessions';
 import type {
@@ -161,6 +162,7 @@ function App() {
         </Sidebar>
 
         <main className="main-area">
+          <SunSky />
           {connection === 'demo' && (
             <div className="demo-banner" role="status">
               <AlertTriangle size={15} />
