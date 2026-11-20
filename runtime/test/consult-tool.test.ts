@@ -97,6 +97,35 @@ test('摘要只含用户原文与协查问题，逐条与总量限长', () => {
   assert.match(longBrief, /未包含/, '总量超限时标注未包含条数');
 });
 
+test('知音楼群聊消息剥离上下文段，外发只带当前提问', () => {
+  const groupMessage = [
+    '下面是本群近 30 分钟内通过开放平台拉取的群聊记录摘要，请优先据此回答与群消息相关的问题。',
+    '',
+    '【群聊近期上下文】',
+    '张鑫鑫: 学员编号：253010882384 日历打开了还是没发同步课程表',
+    '张鑫鑫: iOS 课程日历同步到系统的逻辑是什么',
+    '',
+    '【当前提问】',
+    '@培优问题排查助手 鸿蒙端7.105.0学而思app 跨报成功记录多退少补不展示「去结算」按钮',
+  ].join('\n');
+  const conversation = makeConversation([groupMessage]);
+  const brief = buildConsultationBrief(conversation, '请核查去结算按钮展示条件', '兜底');
+  assert.match(brief, /跨报成功记录多退少补不展示/);
+  assert.doesNotMatch(brief, /群聊近期上下文/, '不得外发群聊上下文标记');
+  assert.doesNotMatch(brief, /日历打开了还是没发同步/, '不得外发群内无关问题');
+  assert.doesNotMatch(brief, /日历同步到系统的逻辑/, '不得外发群内其他提问');
+
+  // 无标记的普通消息（web 渠道）原样透传
+  const plain = makeConversation(['直接的用户提问原文']);
+  assert.match(buildConsultationBrief(plain, 'q', '兜底'), /直接的用户提问原文/);
+
+  // fallback（user 消息为空）同样剥离
+  const empty = makeConversation(['']);
+  const fallbackBrief = buildConsultationBrief(empty, 'q', groupMessage);
+  assert.match(fallbackBrief, /跨报成功记录多退少补不展示/);
+  assert.doesNotMatch(fallbackBrief, /日历同步到系统的逻辑/);
+});
+
 test('成功协查：咨询记录直写 approved→sent→completed，审计与外部结论落库', async () => {
   const conversation = makeConversation(['鸿蒙 3.2.1 提交作业失败']);
   const invokeCalls: unknown[] = [];

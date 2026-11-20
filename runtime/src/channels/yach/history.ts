@@ -52,6 +52,19 @@ export function summarizeGroupHistory(messages: unknown[], options: GroupHistory
   return lines.join('\n');
 }
 
+const CURRENT_QUESTION_MARKER = '【当前提问】';
+
+/**
+ * 群聊诊断消息剥离「群聊近期上下文」段，只留当前提问；无标记时原样返回。
+ * A2A 外发等场景只需要用户的真实问题，不能把群里无关问题一并带上。
+ */
+export function extractCurrentQuestion(content: string): string {
+  const index = content.indexOf(CURRENT_QUESTION_MARKER);
+  if (index < 0) return content;
+  const question = content.slice(index + CURRENT_QUESTION_MARKER.length).trim();
+  return question || content;
+}
+
 export function buildGroupDiagnosisContent(question: string, historySummary: string): string {
   if (!historySummary.trim()) return question;
   return [
@@ -60,7 +73,7 @@ export function buildGroupDiagnosisContent(question: string, historySummary: str
     '【群聊近期上下文】',
     historySummary.trim(),
     '',
-    '【当前提问】',
+    CURRENT_QUESTION_MARKER,
     question,
   ].join('\n');
 }

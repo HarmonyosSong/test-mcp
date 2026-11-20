@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createTool } from '@mastra/core/tools';
 
 import type { ConversationRecord, ChatMessage, RemoteConclusion } from '../domain/schemas.js';
+import { extractCurrentQuestion } from '../channels/yach/history.js';
 import type { CapabilityContext } from './session.js';
 import {
   approveExternalConsultation,
@@ -31,7 +32,9 @@ function clipCodepoints(text: string, max: number): string {
   return chars.length <= max ? text : `${chars.slice(0, max).join('')}…（截断）`;
 }
 
-/** 固定摘要构造：全部用户消息原文（逐条与总量限长）+ 模型给出的协查问题。 */
+/** 固定摘要构造：全部用户消息原文（逐条与总量限长）+ 模型给出的协查问题。
+ *  知音楼群聊消息先剥离「群聊近期上下文」段，只带当前提问——
+ *  群里无关问题外发只会干扰 Compass 判断。 */
 export function buildConsultationBrief(
   conversation: ConversationRecord,
   question: string,
@@ -39,7 +42,7 @@ export function buildConsultationBrief(
 ): string {
   const userMessages = conversation.messages
     .filter((message) => message.role === 'user' && message.content.trim())
-    .map((message) => clipCodepoints(message.content.trim(), OUTBOUND_USER_MESSAGE_MAX));
+    .map((message) => clipCodepoints(extractCurrentQuestion(message.content.trim()), OUTBOUND_USER_MESSAGE_MAX));
   const userLines: string[] = [];
   let userTotal = 0;
   for (const [index, text] of userMessages.entries()) {
@@ -51,7 +54,7 @@ export function buildConsultationBrief(
     userTotal += text.length;
   }
   return [
-    `用户问题原文：\n${userLines.join('\n') || clipCodepoints(fallbackContent, OUTBOUND_USER_MESSAGE_MAX)}`,
+    `用户问题原文：\n${userLines.join('\n') || clipCodepoints(extractCurrentQuestion(fallbackContent), OUTBOUND_USER_MESSAGE_MAX)}`,
     `请协查的问题：\n${clipCodepoints(question, OUTBOUND_QUESTION_MAX)}`,
   ].join('\n\n');
 }
