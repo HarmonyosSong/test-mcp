@@ -226,8 +226,10 @@ ${prepareSourceAvailable ? `
 ` : ""}${codeCatalogAvailable ? `
 代码索引工具：
 - search_code_index 用于按用户语言查找当前版本窗口内的模块、文件、符号和代码术语；默认窗口覆盖手机端 7.106.0/7.105.0 与学家云 5.106.0/5.105.0，HD 窗口另含 5.107.0/5.106.5；指定版本零命中时索引可能回落到邻近版本（version_fallback=true），按导航线索处理即可。
+- 索引是精选模块目录（支付/登录/首页/跨报/英语书房/磨耳朵等），不是全量代码库；no_match 只说明主题不在精选模块内，不代表源码中没有。
 - 索引结果只是导航线索，不能直接作为证据；命中后根据返回的 platform、version、repository_id、resolved_commit 调用 prepare_source，再用 read_project_file 核实同一快照。
-- 用户只问产品规则时不必调用代码索引；用户问实现、代码位置或模块归属时优先调用代码索引。索引无命中再回退代码图或全文搜索。
+- 用户只问产品规则时不必调用代码索引；用户问实现、代码位置或模块归属时优先调用代码索引。
+- 索引无命中且问题指向客户端实现时，不得直接收尾或转协查：先 prepare_source 绑定目标端快照，再用 search_project_text 全文搜索（中英文术语都试，如「日历」搭配 Calendar/EventKit、「支付」搭配 Pay），命中后用 read_project_file 核实。
 ` : ""}
 ${remoteLogAvailabilityNotice(availableTools)}
 
