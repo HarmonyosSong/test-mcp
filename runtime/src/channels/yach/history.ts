@@ -55,7 +55,7 @@ export function summarizeGroupHistory(messages: unknown[], options: GroupHistory
 export function buildGroupDiagnosisContent(question: string, historySummary: string): string {
   if (!historySummary.trim()) return question;
   return [
-    '下面是本群近 24 小时内通过开放平台拉取的群聊记录摘要，请优先据此回答与群消息相关的问题。',
+    '下面是本群近 30 分钟内通过开放平台拉取的群聊记录摘要，请优先据此回答与群消息相关的问题。',
     '',
     '【群聊近期上下文】',
     historySummary.trim(),
