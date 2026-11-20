@@ -117,7 +117,7 @@ test('conversation routes preserve product DTO and hide runtime-only state', asy
 
     const list = await app.request('/conversations');
     assert.deepEqual(await list.json(), [{
-      id, title: 'renamed only', repository_name: null, message_count: 0,
+      id, title: 'renamed only', repository_name: null, channel: 'web', message_count: 0,
       updated_at: (await store.getConversation(id)).updated_at,
     }]);
 

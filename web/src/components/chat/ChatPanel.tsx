@@ -37,6 +37,7 @@ export function ChatPanel({ summaries, activeId, onSelect, onCreate, onDelete }:
                   <span className="chat-card-title">
                     <MessageSquare size={13} aria-hidden="true" />
                     <strong>{item.title}</strong>
+                    {item.channel === 'yach_im' && <span className="chat-channel-badge">知音楼</span>}
                   </span>
                   <span className="case-date">{formatDate(item.updated_at)}</span>
                 </span>

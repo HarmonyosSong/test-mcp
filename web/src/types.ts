@@ -158,6 +158,8 @@ export interface ChatConversationSummary {
   id: string;
   title: string;
   repository_name?: string | null;
+  /** 渠道：web=工作台创建；yach_im=知音楼接入（同步展示便于排查 IM 侧问题）。 */
+  channel?: 'web' | 'yach_im';
   message_count: number;
   updated_at: string;
 }

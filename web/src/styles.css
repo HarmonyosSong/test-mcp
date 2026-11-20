@@ -497,6 +497,16 @@ button:disabled {
   white-space: nowrap;
 }
 
+.chat-channel-badge {
+  flex-shrink: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0 7px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 16px;
+}
+
 .chat-card-delete {
   display: grid;
   width: 30px;

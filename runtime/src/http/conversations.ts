@@ -235,12 +235,9 @@ export function createConversationRoutes(
   };
 
   routes.get('/conversations', async (context) => {
+    // 知音楼会话同步进工作台列表（channel 字段保留，前端用于标识渠道），便于排查 IM 侧问题。
     const items = (await store.listConversations())
-      .filter((item) => item.channel !== 'yach_im')
-      .map((item) => {
-        const { channel: _channel, ...publicItem } = item;
-        return redactRecord(publicItem, redact);
-      });
+      .map((item) => redactRecord(item, redact));
     return context.json(items);
   });
 
@@ -269,7 +266,6 @@ export function createConversationRoutes(
   routes.get('/conversations/:id', async (context) => {
     try {
       const conversation = await store.getConversation(context.req.param('id'));
-      if (conversation.channel === 'yach_im') return jsonError('conversation not found', 404);
       return context.json(publicView(redactRecord(conversation, redact)));
     } catch (error) {
       if (error instanceof ProductNotFoundError) return jsonError('conversation not found', 404);
@@ -344,7 +340,6 @@ export function createConversationRoutes(
     if (!parsed.success) return requestValidationError(parsed.error.issues);
     try {
       const conversation = await store.getConversation(context.req.param('id'));
-      if (conversation.channel === 'yach_im') return jsonError('conversation not found', 404);
       if (parsed.data.title != null) conversation.title = parsed.data.title;
       if (parsed.data.model_override !== undefined) conversation.model_override = parsed.data.model_override || null;
       conversation.updated_at = new Date().toISOString();
@@ -359,7 +354,6 @@ export function createConversationRoutes(
   routes.delete('/conversations/:id', async (context) => {
     try {
       const conversation = await store.getConversation(context.req.param('id'));
-      if (conversation.channel === 'yach_im') return jsonError('conversation not found', 404);
       await store.deleteConversation(context.req.param('id'));
       return context.body(null, 204);
     } catch (error) {
@@ -384,7 +378,6 @@ export function createConversationRoutes(
     let conversation;
     try {
       conversation = await store.getConversation(id);
-      if (conversation.channel === 'yach_im') return jsonError('conversation not found', 404);
       redactRecordInPlace(conversation, redact);
     } catch (error) {
       if (error instanceof ProductNotFoundError) return jsonError('conversation not found', 404);
