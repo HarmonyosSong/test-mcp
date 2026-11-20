@@ -28,6 +28,7 @@ import type { ProductStore } from '../product/store.js';
 import { redactRecord, redactRecordInPlace, redactSensitiveText } from '../security/redaction.js';
 import { appendDiagnosisOutcome, archiveDiagnosisCase } from '../observability/cases.js';
 import { DiagnosisAgent, type DiagnosisStreamEvent } from './agent.js';
+import { analyzeFollowupWithSource } from './followup-analysis.js';
 import { createStreamRedactor } from '../security/stream-redaction.js';
 import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js';
 
@@ -139,6 +140,11 @@ function scheduleCompassFollowupSettle(input: {
   conversationId: string;
   followupState: CompassFollowupState;
   options?: RunDiagnosisRoundOptions;
+  /** 协查成功后的客户端侧源码交叉分析；返回 null 表示无可分析内容（含纯服务端原因）。 */
+  analyzeFollowup?: (info: {
+    conversation: ConversationRecord;
+    outcome: CompassFollowupOutcome;
+  }) => Promise<{ text: string; inputTokens: number | null; outputTokens: number | null } | null>;
 }): void {
   const handle = input.followupState.handle;
   if (!handle) return;
@@ -176,17 +182,21 @@ function scheduleCompassFollowupSettle(input: {
       if (findingIndex < 0) conversation.external_findings.push(finding);
       else conversation.external_findings[findingIndex] = finding;
     }
+    // 协查成功时尝试客户端侧源码交叉分析（纯服务端原因/失败时返回 null，消息保持纯转发）。
+    const analysis = input.analyzeFollowup
+      ? await input.analyzeFollowup({ conversation, outcome }).catch(() => null)
+      : null;
     const message: ChatMessage = {
       id: `msg-${randomUUID().replaceAll('-', '').slice(0, 10)}`,
       role: 'assistant',
-      content: composeFollowupMessage(outcome),
+      content: composeFollowupMessage(outcome, analysis?.text),
       steps: [],
       status: 'completed',
       error: null,
       report: null,
-      input_tokens: null,
-      output_tokens: null,
-      tool_usage: { compass_followup: 1 },
+      input_tokens: analysis?.inputTokens ?? null,
+      output_tokens: analysis?.outputTokens ?? null,
+      tool_usage: { compass_followup: 1, ...(analysis ? { followup_analysis: 1 } : {}) },
       created_at: new Date().toISOString(),
     };
     conversation.messages.push(message);
@@ -498,6 +508,14 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
     conversationId: conversation.id,
     followupState,
     options,
+    analyzeFollowup: ({ conversation: latest, outcome }) =>
+      analyzeFollowupWithSource({
+        modelConfiguration: input.modelConfiguration,
+        capabilities: input.capabilities,
+        conversation: latest,
+        outcome,
+        mastra: input.diagnosisAgent.tracingMastra,
+      }),
   });
 
   return {

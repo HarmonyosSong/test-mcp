@@ -1,0 +1,180 @@
+import { Agent } from '@mastra/core/agent';
+import type { Mastra } from '@mastra/core/mastra';
+
+import type { CapabilityMcp } from '../capabilities/mcp.js';
+import { LazySourceHolder, createLazySourceToolset } from '../capabilities/lazy-source.js';
+import type { CompassFollowupOutcome } from '../capabilities/consult-tool.js';
+import type { ConversationRecord } from '../domain/schemas.js';
+import type { ModelConfiguration } from '../model/configuration.js';
+
+/**
+ * 协查回执后的客户端侧交叉分析（方案 A 的下半场）。
+ *
+ * 动机：服务端协查常带回"客户端请求里某参数为空/异常"这类新事实，静态拼接转发
+ * 并不能回答"客户端为什么会这么传"。本函数在 settle 时跑一次轻量模型轮，
+ * 只挂源码工具，把协查结论映射回客户端请求构造代码。
+ *
+ * 成本控制：
+ * - 先让模型判断协查结论是否与客户端代码有关——纯服务端原因直接回哨兵词
+ *   （SKIP_SENTINEL），一个工具都不调，本函数返回 null，消息保持原样；
+ * - maxSteps/超时硬上限；任何失败（超时/模型异常/空输出）都返回 null，
+ *   绝不影响协查结果本身的落库与推送。
+ */
+
+export interface FollowupAnalysis {
+  text: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+}
+
+/** 模型判定协查结论为纯服务端原因时的回复前缀（不追加分析段）。 */
+const SKIP_SENTINEL = '无需客户端分析';
+
+const MAX_ANALYSIS_CHARS = 1_500;
+// 步数上限要同时容纳「源码阅读 + 输出正文」：实测 8 步会被全面阅读耗尽，正文还没写就被截断。
+const MAX_STEPS = 14;
+const TIMEOUT_MS = 180_000;
+
+const INSTRUCTIONS = `你是客户端源码分析助手。输入是用户的问题原文和一份服务端协查结论（远端 Agent 对服务端日志/代码的核查结果）。
+
+第一步先判断：协查结论是否与客户端代码有关。以下情形一律视为「与客户端有关」，不得回哨兵词：
+- 结论提到客户端请求参数缺失、为空或异常（如"客户端请求体 X 为空""App 端未携带 Y""下单时没有携带 Z"）；
+- 结论提到端侧调用方式、操作路径、版本/平台行为差异；
+- 结论建议或暗示需要再核查端侧实现。
+仅当结论完全是服务端逻辑、配置或数据问题、且与客户端请求构造无关时，才直接回复「${SKIP_SENTINEL}」加一句理由，不要调用任何工具。
+
+判定与客户端有关后，用源码工具定位并阅读客户端的请求构造代码，回答：协查指出的失败参数/行为在客户端哪里构造、什么条件下会出错、为什么用户现场会命中该条件。
+阅读控制在 8 次工具调用以内：先 search_project_text 定位构造点，再 read_project_file 读关键段，拿到答案立刻写正文，不要穷尽式阅读；最后一步必须只输出正文、不再调工具。
+
+输出纪律：
+- 只输出分析正文（中文，≤400 字），不要标题、不要「判定：」前缀、不要重复协查结论原文；
+- 关键结论引用「文件路径:行号」；
+- 源码里找不到解释时如实说明「现有源码无法解释该现象」，不要编造。`;
+
+function lastUserText(conversation: ConversationRecord): string {
+  return conversation.messages.filter((message) => message.role === 'user').at(-1)?.content ?? '';
+}
+
+/** 去掉模型可能违规带上的判定锚点行，避免污染知音楼判定标签解析。 */
+function stripVerdictLines(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !/^\s*判定\s*[:：]/.test(line))
+    .join('\n')
+    .trim();
+}
+
+export async function analyzeFollowupWithSource(input: {
+  modelConfiguration: ModelConfiguration;
+  capabilities: Pick<CapabilityMcp, 'createRepositorySession'>;
+  conversation: ConversationRecord;
+  outcome: CompassFollowupOutcome;
+  /** 挂上后分析轮 trace 才会落盘进调试面板（与主诊断同一个 exporter）。 */
+  mastra?: Mastra;
+  /** 测试可注入的模型轮实现；缺省走真实 Mastra Agent。 */
+  runRound?: (prompt: string) => Promise<FollowupAnalysis | null>;
+}): Promise<FollowupAnalysis | null> {
+  const { conversation, outcome } = input;
+  if (outcome.state !== 'completed' || !outcome.text.trim()) return null;
+
+  const userQuestion = lastUserText(conversation);
+  const prompt = [
+    `用户问题原文：${userQuestion}`,
+    '',
+    '服务端协查结论：',
+    outcome.text,
+  ].join('\n');
+
+  const runRound = input.runRound ?? (async (text: string) => runSourceAnalysisRound({
+    modelConfiguration: input.modelConfiguration,
+    capabilities: input.capabilities,
+    conversation,
+    prompt: text,
+    mastra: input.mastra,
+  }));
+
+  try {
+    const result = await runRound(prompt);
+    if (!result) {
+      console.warn('[followup-analysis] 分析轮无产出（未绑源码/超时/空输出），按纯转发处理');
+      return null;
+    }
+    const cleaned = stripVerdictLines(result.text);
+    if (!cleaned || cleaned.startsWith(SKIP_SENTINEL)) {
+      console.warn('[followup-analysis] 模型判定为纯服务端原因，跳过客户端侧分析', {
+        conversationId: conversation.id,
+        preview: cleaned.slice(0, 120),
+      });
+      return null;
+    }
+    console.warn('[followup-analysis] 客户端侧分析完成', {
+      conversationId: conversation.id,
+      chars: cleaned.length,
+    });
+    return {
+      text: cleaned.length > MAX_ANALYSIS_CHARS ? `${cleaned.slice(0, MAX_ANALYSIS_CHARS)}…` : cleaned,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+    };
+  } catch (error) {
+    // 分析轮是增强项：失败一律回退为纯转发协查结果，但要留痕可查。
+    console.warn('[followup-analysis] 分析轮失败，按纯转发处理', {
+      conversationId: conversation.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/** 真实模型轮：临时绑定会话已挂载的源码快照，小步数、硬超时。 */
+async function runSourceAnalysisRound(input: {
+  modelConfiguration: ModelConfiguration;
+  capabilities: Pick<CapabilityMcp, 'createRepositorySession'>;
+  conversation: ConversationRecord;
+  prompt: string;
+  mastra?: Mastra;
+}): Promise<FollowupAnalysis | null> {
+  const workspacePath = input.conversation.workspace_path;
+  if (!workspacePath) return null;
+
+  const holder = new LazySourceHolder(input.capabilities, input.conversation.id);
+  try {
+    await holder.bind(workspacePath);
+    const model = await input.modelConfiguration.languageModel(input.conversation.model_override);
+    const agent = new Agent({
+      id: 'followup-source-analysis',
+      name: 'Followup Source Analysis',
+      instructions: INSTRUCTIONS,
+      model,
+      // 与主诊断同一个 Mastra：trace 经 ConversationSpanFileExporter 落盘，调试面板可见。
+      ...(input.mastra ? { mastra: input.mastra } : {}),
+    });
+    const output = await agent.stream(input.prompt, {
+      toolsets: createLazySourceToolset(holder),
+      abortSignal: AbortSignal.timeout(TIMEOUT_MS),
+      maxSteps: MAX_STEPS,
+      tracingOptions: {
+        metadata: {
+          conversation_id: input.conversation.id,
+          conversation_created_at: input.conversation.created_at ?? null,
+          message_id: null,
+          purpose: 'compass_followup_analysis',
+        },
+      },
+    });
+    const usagePromise = output.usage.catch(() => null);
+    let text = '';
+    for await (const chunk of output.fullStream) {
+      if (chunk.type === 'text-delta') text += chunk.payload.text;
+    }
+    const usage = await usagePromise;
+    if (!text.trim()) return null;
+    return {
+      text,
+      inputTokens: usage?.inputTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
+    };
+  } finally {
+    await holder.close().catch(() => undefined);
+  }
+}

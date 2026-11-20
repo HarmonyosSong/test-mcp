@@ -237,15 +237,18 @@ export type CompassFollowupState = {
   handle: CompassFollowupHandle | null;
 };
 
-/** 协查结果追加进会话的消息文本。 */
-export function composeFollowupMessage(outcome: CompassFollowupOutcome): string {
+/** 协查结果追加进会话的消息文本；analysis 为客户端侧源码交叉分析（有则附上）。 */
+export function composeFollowupMessage(outcome: CompassFollowupOutcome, analysis?: string | null): string {
   if (outcome.state === 'completed') {
-    return [
+    const parts = [
       '【服务端协查结果】',
       outcome.text,
-      '',
-      '以上为服务端协查（Compass）结论，请与此前的初步判定一并参考；如有冲突以可观测证据为准。',
-    ].join('\n');
+    ];
+    if (analysis?.trim()) {
+      parts.push('', '【客户端侧补充分析】', analysis.trim());
+    }
+    parts.push('', '以上为服务端协查（Compass）结论，请与此前的初步判定一并参考；如有冲突以可观测证据为准。');
+    return parts.join('\n');
   }
   return [
     '【服务端协查结果】',

@@ -2,7 +2,7 @@
 name: investigate-app-evidence
 description: Test App issue hypotheses (HarmonyOS / Android / iOS) against pasted logs, online log queries, and authorized project files. Use after initial location clues exist; do not use for code changes or runtime verification.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   stage: investigate
   modes: [chat]
 ---
@@ -24,6 +24,11 @@ the conversation or supplied artifacts. After the answer, narrow the candidate s
 the scope change; do not keep asking resolved questions or promote a user answer into causal proof.
 If no symptom entry is available, derive the question from the observed competing hypotheses.
 单次回复必须收尾时，把这些追问写进最终回答的「仍需补充」。
+
+接口业务失败（HTTP 200 但业务返回非成功码，或协查/日志指出请求参数为空、异常）时，不允许
+只停在「错误文案是服务端下发的」：已绑定源码就必须在源码中定位该接口在客户端的请求构造
+代码，说明失败参数/关键参数由谁赋值、来源于哪个页面/接口、什么条件下会为空或异常，并把
+「文件:行号」写进证据。源码中搜不到构造点或现有代码无法解释时，如实写明该缺口。
 
 Tool errors are evidence gaps, never negative search results or proof against a candidate.
 工具调用与失败有运行时硬上限：同一签名调用失败后禁止原样重试（上游明确标记 transient 时

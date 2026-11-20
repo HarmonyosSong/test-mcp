@@ -278,6 +278,11 @@ export class DiagnosisAgent {
     }
   }
 
+  /** 观测用 Mastra 实例：协查分析轮等附属模型调用挂同一个 exporter，trace 才会落盘。 */
+  get tracingMastra(): Mastra | undefined {
+    return this.mastra;
+  }
+
   async *stream(
     input: DiagnosisRunInput,
   ): AsyncGenerator<DiagnosisStreamEvent> {
