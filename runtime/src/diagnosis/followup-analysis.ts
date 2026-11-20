@@ -178,3 +178,127 @@ async function runSourceAnalysisRound(input: {
     await holder.close().catch(() => undefined);
   }
 }
+
+// ———— 知音楼综合答复轮：协查回执改发模板 v2 终稿 ————
+
+/**
+ * 知音楼渠道的第二轮不转发协查原文，而是把「初步判定 + 协查结论 + 客户端侧分析」
+ * 综合成模板 v2（【给支持老师】【问题原因】【补充信息】）终稿——支持老师两轮看到的
+ * 都是同一种排版，第二轮才是正式归属结论。无工具单轮，失败回退为系统拼装文案。
+ */
+
+const SYNTHESIS_MAX_CHARS = 2_000;
+const SYNTHESIS_TIMEOUT_MS = 90_000;
+
+const YACH_SYNTHESIS_INSTRUCTIONS = `你是客服支持场景的答复撰写助手。输入是一次故障排查的全部材料：用户问题原文、客户端侧初步判定、服务端协查结论，以及（可能有的）客户端侧源码补充分析。
+
+任务：综合成一条发给支持老师的最终答复，严格按模板输出，禁止模板外内容：
+
+判定：已定位|可能定位|证据不足|工具异常（四选一，综合全部材料给最终判定，不标"初步"）
+
+**【给支持老师】**<只写一句归属指引：已辨别来源端时写「该问题归属XX端，请同步XX研发同学跟进」；辨别不出时写「暂时无法排查到问题来源端，请补充学员ID/故障时间/截图后再查」>
+
+**【问题原因】**
+<分点陈述、每点一句话，按 现象 → 直接原因 → 影响范围 组织；关键参数名、接口路径、错误码、关键错误日志原文片段用 markdown 行内代码标出（如 \`orderInfo\`、\`code=2\`、\`"orderInfo为空"\`），便于支持老师转述；不堆砌文件路径、ev-ID、工具名等内部标识>
+
+**【补充信息】**
+学员ID：<有则填，无则省略该行>
+故障时间：<有则填，无则省略该行>
+其他备注：<动态补充：临时规避方式、给家长的口径、待核验项等；无则省略该行>
+
+纪律：
+- 综合判定以可观测证据为准：协查结论与初步判定冲突时按协查结论写，修正点在【问题原因】里一句带过；
+- 材料一致时直接融合为一份结论，不要写"初步判定说过……协查又说……"这类过程对照；
+- 不复述排查过程，不输出调用链/工具名/文件路径/ev-ID。`;
+
+/** 初步判定：会话里最后一条非协查回执的 assistant 正文。 */
+function preliminaryAnswer(conversation: ConversationRecord): string {
+  const assistant = [...conversation.messages].reverse().find(
+    (message) => message.role === 'assistant' && !message.content.startsWith('【服务端协查结果】'),
+  );
+  return assistant?.content ?? '';
+}
+
+export async function synthesizeYachFollowupReply(input: {
+  modelConfiguration: ModelConfiguration;
+  conversation: ConversationRecord;
+  outcome: CompassFollowupOutcome;
+  /** 客户端侧源码分析正文（纯服务端原因时为 null）。 */
+  analysis?: string | null;
+  mastra?: Mastra;
+  /** 测试可注入的模型轮实现；缺省走真实 Mastra Agent（无工具）。 */
+  runRound?: (prompt: string) => Promise<FollowupAnalysis | null>;
+}): Promise<FollowupAnalysis | null> {
+  const { conversation, outcome } = input;
+  if (outcome.state !== 'completed' || !outcome.text.trim()) return null;
+
+  const prompt = [
+    `用户问题原文：${lastUserText(conversation)}`,
+    '',
+    '客户端侧初步判定：',
+    preliminaryAnswer(conversation) || '（无）',
+    '',
+    '服务端协查结论：',
+    outcome.text,
+    ...(input.analysis?.trim() ? ['', '客户端侧源码补充分析：', input.analysis.trim()] : []),
+  ].join('\n');
+
+  const runRound = input.runRound ?? (async (promptText: string) => {
+    const model = await input.modelConfiguration.languageModel(input.conversation.model_override);
+    const agent = new Agent({
+      id: 'yach-followup-synthesis',
+      name: 'Yach Followup Synthesis',
+      instructions: YACH_SYNTHESIS_INSTRUCTIONS,
+      model,
+      ...(input.mastra ? { mastra: input.mastra } : {}),
+    });
+    const output = await agent.stream(promptText, {
+      abortSignal: AbortSignal.timeout(SYNTHESIS_TIMEOUT_MS),
+      maxSteps: 2,
+      tracingOptions: {
+        metadata: {
+          conversation_id: input.conversation.id,
+          conversation_created_at: input.conversation.created_at ?? null,
+          message_id: null,
+          purpose: 'yach_followup_synthesis',
+        },
+      },
+    });
+    const usagePromise = output.usage.catch(() => null);
+    let text = '';
+    for await (const chunk of output.fullStream) {
+      if (chunk.type === 'text-delta') text += chunk.payload.text;
+    }
+    const usage = await usagePromise;
+    if (!text.trim()) return null;
+    return { text, inputTokens: usage?.inputTokens ?? null, outputTokens: usage?.outputTokens ?? null };
+  });
+
+  try {
+    const result = await runRound(prompt);
+    const cleaned = result?.text.trim() ?? '';
+    // 综合稿必须带判定锚点，否则不是合法模板 v2，回退为系统拼装文案。
+    if (!cleaned || !/^\s*判定\s*[:：]/.test(cleaned)) {
+      console.warn('[followup-analysis] 综合答复缺判定锚点或无产出，回退拼装文案', {
+        conversationId: conversation.id,
+        preview: cleaned.slice(0, 120),
+      });
+      return null;
+    }
+    console.warn('[followup-analysis] 知音楼综合答复完成', {
+      conversationId: conversation.id,
+      chars: cleaned.length,
+    });
+    return {
+      text: cleaned.length > SYNTHESIS_MAX_CHARS ? `${cleaned.slice(0, SYNTHESIS_MAX_CHARS)}…` : cleaned,
+      inputTokens: result?.inputTokens ?? null,
+      outputTokens: result?.outputTokens ?? null,
+    };
+  } catch (error) {
+    console.warn('[followup-analysis] 综合答复轮失败，回退拼装文案', {
+      conversationId: conversation.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}

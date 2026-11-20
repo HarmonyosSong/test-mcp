@@ -28,7 +28,7 @@ import type { ProductStore } from '../product/store.js';
 import { redactRecord, redactRecordInPlace, redactSensitiveText } from '../security/redaction.js';
 import { appendDiagnosisOutcome, archiveDiagnosisCase } from '../observability/cases.js';
 import { DiagnosisAgent, type DiagnosisStreamEvent } from './agent.js';
-import { analyzeFollowupWithSource } from './followup-analysis.js';
+import { analyzeFollowupWithSource, synthesizeYachFollowupReply } from './followup-analysis.js';
 import { createStreamRedactor } from '../security/stream-redaction.js';
 import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js';
 
@@ -145,6 +145,12 @@ function scheduleCompassFollowupSettle(input: {
     conversation: ConversationRecord;
     outcome: CompassFollowupOutcome;
   }) => Promise<{ text: string; inputTokens: number | null; outputTokens: number | null } | null>;
+  /** 知音楼渠道：把初步判定+协查结论+客户端分析综合成模板 v2 终稿；null 回退拼装文案。 */
+  synthesizeYachReply?: (info: {
+    conversation: ConversationRecord;
+    outcome: CompassFollowupOutcome;
+    analysis: string | null;
+  }) => Promise<{ text: string; inputTokens: number | null; outputTokens: number | null } | null>;
 }): void {
   const handle = input.followupState.handle;
   if (!handle) return;
@@ -186,17 +192,29 @@ function scheduleCompassFollowupSettle(input: {
     const analysis = input.analyzeFollowup
       ? await input.analyzeFollowup({ conversation, outcome }).catch(() => null)
       : null;
+    // 知音楼渠道：第二轮改发模板 v2 综合终稿（初步判定+协查结论+分析），失败回退拼装文案。
+    const synthesis = conversation.channel === 'yach_im' && outcome.state === 'completed' && input.synthesizeYachReply
+      ? await input.synthesizeYachReply({ conversation, outcome, analysis: analysis?.text ?? null }).catch(() => null)
+      : null;
+    const sumTokens = (
+      a: number | null | undefined,
+      b: number | null | undefined,
+    ): number | null => (a == null && b == null ? null : (a ?? 0) + (b ?? 0));
     const message: ChatMessage = {
       id: `msg-${randomUUID().replaceAll('-', '').slice(0, 10)}`,
       role: 'assistant',
-      content: composeFollowupMessage(outcome, analysis?.text),
+      content: synthesis?.text ?? composeFollowupMessage(outcome, analysis?.text),
       steps: [],
       status: 'completed',
       error: null,
       report: null,
-      input_tokens: analysis?.inputTokens ?? null,
-      output_tokens: analysis?.outputTokens ?? null,
-      tool_usage: { compass_followup: 1, ...(analysis ? { followup_analysis: 1 } : {}) },
+      input_tokens: sumTokens(analysis?.inputTokens, synthesis?.inputTokens),
+      output_tokens: sumTokens(analysis?.outputTokens, synthesis?.outputTokens),
+      tool_usage: {
+        compass_followup: 1,
+        ...(analysis ? { followup_analysis: 1 } : {}),
+        ...(synthesis ? { followup_synthesis: 1 } : {}),
+      },
       created_at: new Date().toISOString(),
     };
     conversation.messages.push(message);
@@ -514,6 +532,14 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
         capabilities: input.capabilities,
         conversation: latest,
         outcome,
+        mastra: input.diagnosisAgent.tracingMastra,
+      }),
+    synthesizeYachReply: ({ conversation: latest, outcome, analysis }) =>
+      synthesizeYachFollowupReply({
+        modelConfiguration: input.modelConfiguration,
+        conversation: latest,
+        outcome,
+        analysis,
         mastra: input.diagnosisAgent.tracingMastra,
       }),
   });
