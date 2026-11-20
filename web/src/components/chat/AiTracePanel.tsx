@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, RefreshCw, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileJson, FileText, RefreshCw, X } from 'lucide-react';
 
 import { api } from '../../api';
 import { formatDate } from '../../format';
 import type { AiTraceDetail, AiTraceSummary, AiTraceStep } from '../../types';
+import { downloadText, formatUsage, tracesToMarkdown } from './aiTraceExport';
 
 function TraceBlock({ title, text }: { title: string; text?: string | null }) {
   if (!text) return null;
@@ -13,17 +14,6 @@ function TraceBlock({ title, text }: { title: string; text?: string | null }) {
       <pre className="ai-trace-pre">{text}</pre>
     </div>
   );
-}
-
-/** 步骤 token 用量：输入（新内容 / 缓存命中）与输出，体现本步工具决策+上步工具结果的成本。 */
-function formatUsage(usage?: AiTraceStep['usage']): string | null {
-  if (!usage || usage.inputTokens == null) return null;
-  const cached = usage.inputDetails?.cacheRead ?? 0;
-  const fresh = usage.inputDetails?.text;
-  const input = `输入 ${usage.inputTokens.toLocaleString()}`;
-  const freshPart = fresh != null ? `（新 ${fresh.toLocaleString()}${cached ? `，缓存 ${cached.toLocaleString()}` : ''}）` : '';
-  const output = usage.outputTokens != null ? ` / 输出 ${usage.outputTokens.toLocaleString()}` : '';
-  return `${input}${freshPart}${output} tok`;
 }
 
 function StepView({ step }: { step: AiTraceStep }) {
@@ -103,6 +93,7 @@ export function AiTraceDialog({
   const [traces, setTraces] = useState<AiTraceSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openTraceId, setOpenTraceId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const load = () => {
     setError(null);
@@ -110,6 +101,29 @@ export function AiTraceDialog({
       .listAiTraces(conversationId)
       .then(setTraces)
       .catch((err: Error) => setError(err.message));
+  };
+
+  /** 一键导出全部轮次（拉齐每轮详情后整包下载），用于线下/线上问题排查。 */
+  const exportAll = async (format: 'json' | 'md') => {
+    if (!traces?.length || exporting) return;
+    setExporting(true);
+    setError(null);
+    try {
+      const details = await Promise.all(
+        traces.map((trace) => api.getAiTrace(conversationId, trace.trace_id)),
+      );
+      const entries = traces.map((summary, index) => ({ summary, detail: details[index] }));
+      const stamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19);
+      if (format === 'json') {
+        downloadText(`ai-traces-${conversationId}-${stamp}.json`, JSON.stringify(entries, null, 2), 'application/json');
+      } else {
+        downloadText(`ai-traces-${conversationId}-${stamp}.md`, tracesToMarkdown(conversationId, entries), 'text/markdown');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '导出失败');
+    } finally {
+      setExporting(false);
+    }
   };
 
   useEffect(load, [conversationId]);
@@ -142,6 +156,26 @@ export function AiTraceDialog({
             <h2 id="ai-trace-title">AI 输入 / 输出</h2>
           </div>
           <div className="ai-trace-header-actions">
+            <button
+              type="button"
+              className="icon-button light"
+              onClick={() => void exportAll('md')}
+              disabled={exporting || !traces?.length}
+              title="一键导出全部轮次为文本（便于分享排查）"
+              aria-label="导出 Markdown"
+            >
+              <FileText size={16} />
+            </button>
+            <button
+              type="button"
+              className="icon-button light"
+              onClick={() => void exportAll('json')}
+              disabled={exporting || !traces?.length}
+              title="一键导出全部轮次为 JSON（原始数据）"
+              aria-label="导出 JSON"
+            >
+              <FileJson size={16} />
+            </button>
             <button
               type="button"
               className="icon-button light"
