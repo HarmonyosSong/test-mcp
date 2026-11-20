@@ -17,11 +17,11 @@ and materializes snapshots under `.data/code-index/workspaces/`. It records fail
 instead of falling back to a nearby version.
 
 ```bash
-cd runtime
-node_modules/.bin/tsx ../code-index/prepare-sources.ts
-cd ..
-python3 code-index/generate.py
+make code-index-build   # = tsx code-index/prepare-sources.ts && python3 code-index/generate.py
 ```
+
+首次部署直接 `make bootstrap`，把运行时快照预热（warm-runtime-cache）、
+代码索引生成、知识库校验一次跑完；幂等，版本登记表或 sources.json 更新后重跑即可。
 
 `generate.py` scans only the prepared snapshots and writes `index.jsonl` plus
 `coverage.json`. A module entry is a real lexical source mapping: repository, commit,

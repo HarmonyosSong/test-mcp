@@ -1,4 +1,4 @@
-.PHONY: setup check-node dev-api dev-server dev-web dev-mcp dev-log-mcp stop-log-mcp bootstrap-sources test test-runtime test-mcp knowledge-validate lint build build-runtime build-web start live-eval knowledge-querylog knowledge-cases
+.PHONY: setup check-node dev-api dev-server dev-web dev-mcp dev-log-mcp stop-log-mcp bootstrap-sources code-index-build bootstrap test test-runtime test-mcp knowledge-validate lint build build-runtime build-web start live-eval knowledge-querylog knowledge-cases
 
 setup: check-node
 	uv sync --project mcp_server --index-url https://pypi.org/simple
@@ -11,6 +11,18 @@ setup: check-node
 # 大仓库建议 HARMONY_AGENT_GITLAB_TIMEOUT_MS=300000 make bootstrap-sources
 bootstrap-sources: check-node
 	npx tsx code-index/warm-runtime-cache.ts
+
+# 代码索引导航：先按 sources.json 物化索引专用快照（.data/code-index/workspaces），
+# 再扫描生成 index.jsonl + coverage.json。运行时 search_code_index 读这份产物。
+code-index-build: check-node
+	npx tsx code-index/prepare-sources.ts
+	python3 code-index/generate.py
+
+# 首次部署一键初始化：运行时快照预热 → 代码索引生成 → 知识库校验。
+# 幂等，版本登记表/sources.json 更新后整条重跑即可。
+# 大仓库建议 HARMONY_AGENT_GITLAB_TIMEOUT_MS=300000 make bootstrap
+bootstrap: bootstrap-sources code-index-build knowledge-validate
+	@echo "bootstrap: 源码快照、代码索引、知识库校验全部就绪"
 
 
 check-node:
