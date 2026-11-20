@@ -393,16 +393,20 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
       });
     }
     if (options.slotRegistry && options.compassAvailable) {
-      roundTools.consult_compass = createConsultCompassTool({
-        conversation,
-        messageId: assistantMessage.id,
-        runId,
-        registry: options.slotRegistry,
-        capabilityContext,
-        saveConversation,
-        content,
-        maxCalls: budget.maxRemoteCalls,
-      });
+      // 知音楼渠道强制「先行结论 + 后台协查」：不挂同步 consult_compass，
+      // 模型只能走 request_compass_followup，避免支持老师干等远端数分钟。
+      if (conversation.channel !== 'yach_im') {
+        roundTools.consult_compass = createConsultCompassTool({
+          conversation,
+          messageId: assistantMessage.id,
+          runId,
+          registry: options.slotRegistry,
+          capabilityContext,
+          saveConversation,
+          content,
+          maxCalls: budget.maxRemoteCalls,
+        });
+      }
       roundTools.request_compass_followup = createRequestCompassFollowupTool({
         conversation,
         messageId: assistantMessage.id,

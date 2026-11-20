@@ -192,6 +192,7 @@ function promptFor(
   const codeNavigationAvailable = availableTools.has("search_code_symbols");
   const codeCatalogAvailable = availableTools.has("search_code_index");
   const consultAvailable = availableTools.has("consult_compass");
+  const compassFollowupAvailable = availableTools.has("request_compass_followup");
   const prepareSourceAvailable = availableTools.has("prepare_source");
   const userRefs = registry
     .registerUserTexts()
@@ -214,11 +215,12 @@ ${prepareSourceAvailable ? `
 - 模型不得自行决定仓库、分支、commit 或 URL。prepare_source 返回缺口说明时，先查询关联日志或向用户追问最少信息（如学而思/学家云、手机/HD、版本号），再重试。
 - 跨端实现对比：怀疑移植/实现差异（同一业务只在某一端异常、字段或枚举语义对不上）时，prepare_source 传与事故端不同的 platform 绑定对照端快照（同版本优先，未登记自动回落并标注），此后源码工具传 target="compare" 查阅对照端；对比引用 ev-ID 时必须标注所属平台与版本。事故端可以是任意端，对照端也可以是任意其他端。
 - Runtime 会将可解析的 iOS 组件挂载到 components/<组件名>；source_limitations 中标注「声明版本/对照」的组件只能解释条件行为，不能认定为现场实际打包版本。
-` : ""}${consultAvailable ? `
-服务端协查（两种模式，按场景二选一）：
-- request_compass_followup（故障协查默认）：本地已有初步归因、还需服务端结论补强时使用。发起后立即返回、不阻塞本轮——你应随即用「初步判定」收尾（正文标注初步、【补充信息】写明"服务端协查进行中，结果稍后本会话内同步"）；协查结果由系统后台等待并以新消息推送。
+` : ""}${compassFollowupAvailable ? `
+服务端协查（异步跟进${consultAvailable ? "，另有同步模式" : ""}）：
+- request_compass_followup（故障协查默认）：本地已有初步归因、还需服务端结论补强时使用。发起后立即返回、不阻塞本轮——你应随即用「初步判定」收尾（正文标注初步、【补充信息】写明"服务端协查进行中，结果稍后本会话内同步"）；协查结果由系统后台等待并以新消息推送。本地毫无头绪时同样用它：初步判定如实写缺口，不让提问者干等。
+- 本地证据已闭环（源码/日志足以直接支撑结论）时不要发起协查：协查用于补强服务端侧缺口，不给本地已确认的结论"背书"。${consultAvailable ? `
 - consult_compass（同步等待）：仅当协查结论就是答案本身、本地给不出任何初步结论时才同步等待（如纯服务端规则/实现查询）。把问题委派给 Compass（服务端研发 Agent，覆盖服务端/前端/H5 代码知识与服务端日志）；question 写清要查什么、已知学员与时间窗、本地已确认事实。
-- 同步协查完成态结论与本地观测同级：登记为正式观测（ev-ID），可支撑正向判定；回答中像引用其他观测一样直接引用，无需单独声明来源或标注"外部/未验证"。失败、超时或预算耗尽返回的是缺口而非证据，如实说明即可。
+- 同步协查完成态结论与本地观测同级：登记为正式观测（ev-ID），可支撑正向判定；回答中像引用其他观测一样直接引用，无需单独声明来源或标注"外部/未验证"。失败、超时或预算耗尽返回的是缺口而非证据，如实说明即可。` : ""}
 ` : ""}${codeNavigationAvailable ? `
 代码导航工具约束：
 - search_code_symbols、get_code_outline 和 trace_code_path 只提供定位线索，不是源码观察，不得引用为证据；导航命中后必须用 read_project_file 核实对应文件内容。

@@ -1,11 +1,11 @@
 ---
 name: escalate-compass
-description: 本地证据指向服务端、或本地知识与源码不足以回答规则/实现查询时，把问题委派给服务端研发 Agent（Compass）。故障协查默认走 request_compass_followup 后台跟进（先行结论、结果稍后推送）；consult_compass 同步等待仅用于结论即答案本身的场景。
+description: 本地证据指向服务端、或本地知识与源码不足以回答规则/实现查询时，把问题委派给服务端研发 Agent（Compass）。故障协查默认走 request_compass_followup 后台跟进（先行结论、结果稍后推送）；consult_compass 同步等待仅 web 渠道可用，用于结论即答案本身的场景。
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   stage: investigate
   modes: [chat]
-  required_tools: [consult_compass]
+  required_tools: [request_compass_followup]
 ---
 
 # Escalate Compass
@@ -18,9 +18,10 @@ Compass 是服务端研发 Agent（覆盖服务端/前端/H5 代码知识与服�
 | 模式 | 适用 | 行为 |
 |---|---|---|
 | `request_compass_followup`（**故障协查默认**） | 本地已有初步归因（哪怕只是"偏服务端"），还需服务端结论补强 | 发起后立即返回，你随即收尾本轮；结果由系统后台等待并推送 |
-| `consult_compass`（同步等待） | 协查结论就是答案本身、本地给不出任何初步结论（如纯服务端规则/实现查询） | 阻塞等待远端完成（可能数分钟），结论登记为正式观测 |
+| `consult_compass`（同步等待，**仅 web 渠道**） | 协查结论就是答案本身、本地给不出任何初步结论（如纯服务端规则/实现查询） | 阻塞等待远端完成（可能数分钟），结论登记为正式观测 |
 
 故障排查**默认用 followup**：支持老师等待期间先拿到初步归因，比干等完整协查更有价值。
+知音楼（yach_im）渠道只有 `request_compass_followup`——本地毫无头绪也用它，初步判定如实写缺口即可。
 一轮内不要对同一问题既 followup 又同步 consult。
 
 ## 何时委派
@@ -28,6 +29,8 @@ Compass 是服务端研发 Agent（覆盖服务端/前端/H5 代码知识与服�
 - 本地观测（日志/源码）或命中的知识线索明确指向服务端行为，本地无法取证。
 - 用户问的是前端/H5/服务端的实现逻辑，而本地客户端源码与知识库都覆盖不到。
 - 本地已经做了力所能及的取证——先本地、后协查。
+- **本地证据已闭环（源码/日志足以直接支撑结论）时不要委派**：协查是用来补强缺口的服务端证据的，不是用来给本地已确认的结论"背书"的；多一次协查只会延迟答复、浪费预算。
+- 知音楼（yach_im）渠道没有 `consult_compass` 工具：无论是否"本地给不出初步结论"，一律走 `request_compass_followup`，先用本地已确认事实收尾初步判定（哪怕只能写"初步指向服务端，本地无法进一步取证"），协查结论由系统推送综合终稿。
 
 ## 怎么写 question
 

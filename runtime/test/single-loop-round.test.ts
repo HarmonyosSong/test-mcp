@@ -418,8 +418,16 @@ test('外部协查预算耗尽：工具如实返回缺口，模型基于已有�
     inputSchema: z.object({ question: z.string(), context: z.string().optional() }),
     execute: async () => ({ status: 'budget_exhausted', note: '本轮外部协查次数已用完' }),
   });
+  // 真实挂载中 consult_compass 与 request_compass_followup 总是同时存在（web 渠道），
+  // 提示词协查段以 followup 可用为锚；单挂 consult 的组合线上不存在。
+  const followup = createTool({
+    id: 'request_compass_followup',
+    description: 'Delegate with async follow-up.',
+    inputSchema: z.object({ question: z.string(), context: z.string().optional() }),
+    execute: async () => ({ status: 'pending' }),
+  });
   const events = await run(diagnosis, '请查询一下英语绘本阅读排行榜的接口', {
-    toolsets: { round: { consult_compass: consult } },
+    toolsets: { round: { consult_compass: consult, request_compass_followup: followup } },
   });
   const completed = events.at(-1);
   assert.equal(completed?.type, 'completed');
