@@ -1,7 +1,8 @@
 {
-  "generated_at": "2026-11-18T06:52:10Z",
+  "generated_at": "2026-11-23T07:19:37Z",
   "source_count": 18,
-  "entry_count": 96,
+  "entry_count": 356,
+  "binary_component_count": 8,
   "sources": [
     {
       "platform": "harmony",
@@ -37,6 +38,70 @@
         {
           "module_id": "payment",
           "matched_file_count": 460
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 295
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 53
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 38
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 162
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 70
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 37
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 13
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 14
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 85
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 133
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 96
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 82
+        },
+        {
+          "module_id": "short-video",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 8
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 1
         }
       ]
     },
@@ -74,6 +139,70 @@
         {
           "module_id": "payment",
           "matched_file_count": 446
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 290
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 52
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 29
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 155
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 69
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 37
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 12
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 14
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 84
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 127
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 74
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 81
+        },
+        {
+          "module_id": "short-video",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 8
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 1
         }
       ]
     },
@@ -111,6 +240,74 @@
         {
           "module_id": "payment",
           "matched_file_count": 1893
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 2544
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 696
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 156
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 340
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 378
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 25
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 10
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 340
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 88
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 594
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 137
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 482
+        },
+        {
+          "module_id": "short-video",
+          "matched_file_count": 172
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 482
+        },
+        {
+          "module_id": "customer-service",
+          "matched_file_count": 877
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 29
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 6
         }
       ]
     },
@@ -148,6 +345,74 @@
         {
           "module_id": "payment",
           "matched_file_count": 892
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 1258
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 349
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 62
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 167
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 189
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 13
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 5
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 170
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 44
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 296
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 68
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 241
+        },
+        {
+          "module_id": "short-video",
+          "matched_file_count": 86
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 241
+        },
+        {
+          "module_id": "customer-service",
+          "matched_file_count": 434
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 15
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 6
         }
       ]
     },
@@ -185,6 +450,70 @@
         {
           "module_id": "payment",
           "matched_file_count": 681
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 1004
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 121
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 97
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 234
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 135
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 52
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 12
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 28
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 51
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 192
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 170
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 171
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 8
+        },
+        {
+          "module_id": "customer-service",
+          "matched_file_count": 3
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 170
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 38
         }
       ]
     },
@@ -222,6 +551,70 @@
         {
           "module_id": "payment",
           "matched_file_count": 681
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 1004
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 121
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 97
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 234
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 135
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 52
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 12
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 28
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 51
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 192
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 170
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 171
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 8
+        },
+        {
+          "module_id": "customer-service",
+          "matched_file_count": 3
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 170
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 38
         }
       ]
     },
@@ -259,6 +652,70 @@
         {
           "module_id": "payment",
           "matched_file_count": 460
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 295
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 53
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 38
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 162
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 70
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 37
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 13
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 14
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 85
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 133
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 96
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 82
+        },
+        {
+          "module_id": "short-video",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 8
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 1
         }
       ]
     },
@@ -296,6 +753,70 @@
         {
           "module_id": "payment",
           "matched_file_count": 446
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 290
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 52
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 29
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 155
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 69
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 37
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 12
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 14
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 84
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 127
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 74
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 81
+        },
+        {
+          "module_id": "short-video",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 8
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 1
         }
       ]
     },
@@ -333,6 +854,74 @@
         {
           "module_id": "payment",
           "matched_file_count": 956
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 1273
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 348
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 78
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 172
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 189
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 13
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 5
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 170
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 45
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 305
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 70
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 241
+        },
+        {
+          "module_id": "short-video",
+          "matched_file_count": 86
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 241
+        },
+        {
+          "module_id": "customer-service",
+          "matched_file_count": 441
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 18
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 4
         }
       ]
     },
@@ -370,6 +959,74 @@
         {
           "module_id": "payment",
           "matched_file_count": 897
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 1258
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 349
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 62
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 169
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 189
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 13
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 5
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 170
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 45
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 300
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 68
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 241
+        },
+        {
+          "module_id": "short-video",
+          "matched_file_count": 86
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 241
+        },
+        {
+          "module_id": "customer-service",
+          "matched_file_count": 434
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 18
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 4
         }
       ]
     },
@@ -407,6 +1064,70 @@
         {
           "module_id": "payment",
           "matched_file_count": 203
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 186
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 25
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 15
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 231
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 9
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 38
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 2
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 20
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 23
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 127
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 169
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 41
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 8
+        },
+        {
+          "module_id": "customer-service",
+          "matched_file_count": 2
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 173
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 38
         }
       ]
     },
@@ -444,6 +1165,70 @@
         {
           "module_id": "payment",
           "matched_file_count": 203
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 186
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 25
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 15
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 231
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 9
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 38
+        },
+        {
+          "module_id": "exchange-course",
+          "matched_file_count": 2
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 20
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 23
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 127
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 169
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 41
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 8
+        },
+        {
+          "module_id": "customer-service",
+          "matched_file_count": 2
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 173
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 38
         }
       ]
     },
@@ -481,6 +1266,62 @@
         {
           "module_id": "payment",
           "matched_file_count": 47
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 116
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 39
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 2
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 53
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 3
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 7
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 28
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 178
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 10
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 1
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 4
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 13
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 6
         }
       ]
     },
@@ -518,6 +1359,62 @@
         {
           "module_id": "payment",
           "matched_file_count": 48
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 116
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 39
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 2
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 53
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 3
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 11
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 7
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 28
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 178
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 10
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 1
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 4
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 13
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 6
         }
       ]
     },
@@ -555,6 +1452,62 @@
         {
           "module_id": "payment",
           "matched_file_count": 143
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 349
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 117
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 6
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 159
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 9
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 34
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 21
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 84
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 535
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 33
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 3
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 12
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 40
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 22
         }
       ]
     },
@@ -592,6 +1545,62 @@
         {
           "module_id": "payment",
           "matched_file_count": 192
+        },
+        {
+          "module_id": "course-select",
+          "matched_file_count": 464
+        },
+        {
+          "module_id": "course-adjust",
+          "matched_file_count": 156
+        },
+        {
+          "module_id": "evaluation",
+          "matched_file_count": 8
+        },
+        {
+          "module_id": "student",
+          "matched_file_count": 212
+        },
+        {
+          "module_id": "service-center",
+          "matched_file_count": 12
+        },
+        {
+          "module_id": "settings",
+          "matched_file_count": 45
+        },
+        {
+          "module_id": "message",
+          "matched_file_count": 28
+        },
+        {
+          "module_id": "study-tab",
+          "matched_file_count": 112
+        },
+        {
+          "module_id": "class-learn",
+          "matched_file_count": 713
+        },
+        {
+          "module_id": "media-player",
+          "matched_file_count": 43
+        },
+        {
+          "module_id": "coupon",
+          "matched_file_count": 4
+        },
+        {
+          "module_id": "live",
+          "matched_file_count": 16
+        },
+        {
+          "module_id": "paper",
+          "matched_file_count": 51
+        },
+        {
+          "module_id": "game-task",
+          "matched_file_count": 28
         }
       ]
     },

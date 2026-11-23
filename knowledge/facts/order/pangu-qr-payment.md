@@ -4,14 +4,13 @@ domains: [payment, order]
 kind: platform-fact
 applies_to: [harmony]
 authority: internal-sop
-updated_at: 2026-09-23
+updated_at: 2026-11-23
 description: 盘古顾问下单会生成支付二维码，但微信会按主体封禁二维码、风控也不允许截图扫码进收银台，所以改走订单确认页 H5
 aliases:
   - 扫码付不了
   - 微信扫码打不开
   - 顾问发的二维码付不了
   - 二维码被微信封了
-  - 扫码支付失败
 ---
 
 # 盘古扫码支付（二维码为什么老出问题）

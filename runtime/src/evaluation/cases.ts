@@ -43,7 +43,12 @@ async function knowledgeSearch(config: ReturnType<typeof loadRuntimeConfig>, que
         args: ['run', '--project', resolve(config.projectRoot, 'mcp_server'), 'harmony-knowledge-mcp'],
         cwd: config.projectRoot,
         stderr: 'pipe',
-        env: { HARMONY_AGENT_KNOWLEDGE_ROOT: resolve(config.projectRoot, config.knowledgeRoot) },
+        env: {
+          HARMONY_AGENT_KNOWLEDGE_ROOT: resolve(config.projectRoot, config.knowledgeRoot),
+          // 与 capabilities/mcp.ts 保持一致：查询遥测写入配置指定路径，
+          // 缺省时知识服务会回落到生产 .data/knowledge-queries.jsonl，测试也会污染生产日志。
+          HARMONY_AGENT_KNOWLEDGE_QUERY_LOG: resolve(config.projectRoot, config.knowledgeQueryLog),
+        },
       },
     },
   });

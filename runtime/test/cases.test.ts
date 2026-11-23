@@ -46,7 +46,7 @@ test('Mastra case proposals preserve auto authority and only apply after full kn
   const directory = await mkdtemp(join(tmpdir(), 'mastra-cases-proposal-'));
   const projectRoot = loadRuntimeConfig().projectRoot;
   const knowledgeRoot = join(directory, 'knowledge');
-  const config = { ...loadRuntimeConfig(), projectRoot, knowledgeRoot };
+  const config = { ...loadRuntimeConfig(), projectRoot, knowledgeRoot, knowledgeQueryLog: join(directory, 'knowledge-queries.jsonl') };
   try {
     await cp(join(projectRoot, 'knowledge'), knowledgeRoot, { recursive: true });
     const path = join(directory, 'case.json');

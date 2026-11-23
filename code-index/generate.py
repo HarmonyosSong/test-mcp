@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -166,7 +167,7 @@ def pointers(root: Path, platform: str, paths: list[tuple[Path, list[str]]]) -> 
             "symbol": symbol,
             "role": role_of(platform, path.stem),
             "line_start": line_start,
-            "line_end": min(len(lines), line_start + 80),
+            "line_end": max(line_start, min(len(lines), line_start + 80)),
             "key_symbols": key_symbols(text, path.stem),
             "terms": sorted(set(terms))[:12],
         })
@@ -179,6 +180,7 @@ def main() -> None:
     parser.add_argument("--rules", type=Path, default=Path("code-index/modules.json"))
     parser.add_argument("--output", type=Path, default=Path("code-index/index.jsonl"))
     parser.add_argument("--coverage", type=Path, default=Path("code-index/coverage.json"))
+    parser.add_argument("--binary-index", type=Path, default=Path("code-index/binary-index.jsonl"))
     args = parser.parse_args()
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     rules = read_rules(args.rules)
@@ -235,9 +237,28 @@ def main() -> None:
             "limitations": failure.get("limitations", []),
             "modules": [],
         })
+    # 二进制证据记录（由 binary_evidence.py 预生成并随仓库入库）：追加进同一份索引，
+    # 与源码模块记录共存；缺席时跳过，不视为错误。
+    # 陈旧校验：manifest（binary-components.json）比产物新时说明组件清单改过
+    # 但没重跑 binary_evidence.py，产物可信度存疑——告警不阻断。
+    binary_records: list[dict[str, Any]] = []
+    if args.binary_index.exists():
+        manifest_path = args.binary_index.with_name("binary-components.json")
+        if manifest_path.exists() and manifest_path.stat().st_mtime > args.binary_index.stat().st_mtime:
+            print(
+                "WARN: binary-index.jsonl 比 binary-components.json 旧，"
+                "组件清单更新后未重跑 binary_evidence.py，二进制证据可能陈旧",
+                file=sys.stderr,
+            )
+        binary_records = [
+            json.loads(line)
+            for line in args.binary_index.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        records.extend(binary_records)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n" for row in records), encoding="utf-8")
-    args.coverage.write_text(json.dumps({"generated_at": generated, "source_count": len(coverage), "entry_count": len(records), "sources": coverage}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    args.coverage.write_text(json.dumps({"generated_at": generated, "source_count": len(coverage), "entry_count": len(records), "binary_component_count": len(binary_records), "sources": coverage}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"entries": len(records), "sources": len(coverage), "ready": sum(item["status"] == "ready" for item in coverage)}, ensure_ascii=False))
 
 

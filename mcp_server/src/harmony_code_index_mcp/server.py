@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 CODE_INDEX_FILE_ENV = "HARMONY_AGENT_CODE_INDEX_FILE"
 CODE_INDEX_SCOPE_FILE_ENV = "HARMONY_AGENT_CODE_INDEX_SCOPE_FILE"
@@ -50,6 +50,10 @@ class IndexPath(BaseModel):
 
 
 class IndexEntry(BaseModel):
+    # 放行二进制证据等扩展字段（evidence_level / pod_version / stats 等），
+    # 否则加载时会被静默丢弃，agent 无法区分证据等级。
+    model_config = ConfigDict(extra="allow")
+
     schema_version: int = Field(default=1, ge=1)
     entry_id: str = Field(min_length=1)
     record_type: str = Field(default="module", min_length=1)
@@ -145,10 +149,30 @@ def _scope_key(form_factor: str | None) -> str:
     return "default"
 
 
-def _allowed_versions(scope: dict[str, list[str]], form_factor: str | None) -> set[str]:
+def _allowed_version_list(scope: dict[str, list[str]], form_factor: str | None) -> list[str]:
+    """窗口版本的有序列表（scope 文件按新到旧排列）。
+
+    form_factor 缺省时与 _allowed_versions 一样取 default ∪ hd：
+    保持 default 顺序，追加 hd 独有版本。
+    """
     if form_factor is None:
-        return set(scope.get("default", [])) | set(scope.get("hd", []))
-    return set(scope.get(_scope_key(form_factor), scope["default"]))
+        merged = list(scope.get("default", []))
+        merged.extend(v for v in scope.get("hd", []) if v not in merged)
+        return merged
+    return scope.get(_scope_key(form_factor), scope["default"])
+
+
+def _allowed_versions(scope: dict[str, list[str]], form_factor: str | None) -> set[str]:
+    return set(_allowed_version_list(scope, form_factor))
+
+
+def _norm_text(value: str) -> str:
+    """查询与索引文本归一化：去标点/空白，仅保留字母数字与中文。
+
+    用户报障原话常带标点（「提交失败，请检查网络」），索引文案亦然；
+    归一化后子串匹配才对自然语言查询鲁棒。只增不减命中，不改变既有打分语义。
+    """
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", value.casefold())
 
 
 def _identity_terms(entry: IndexEntry) -> list[str]:
@@ -163,14 +187,19 @@ def _score_entry(entry: IndexEntry, query: str, terms: list[str]) -> int:
     """
     haystack = entry.searchable_text()
     identity = " ".join(_identity_terms(entry)).casefold()
+    norm_haystack = _norm_text(haystack)
+    norm_identity = _norm_text(identity)
     score = 0
     if query and query in haystack:
         score += 5
+    elif query and (norm_query := _norm_text(query)) and norm_query in norm_haystack:
+        score += 5
     for term in terms:
-        if term in identity:
+        norm_term = _norm_text(term)
+        if term in identity or (norm_term and norm_term in norm_identity):
             score += 3
             continue
-        if term in haystack:
+        if term in haystack or (norm_term and norm_term in norm_haystack):
             score += 1
             continue
         # 中文复合查询词没有空格分词（如「跨报成功记录」）：当条目标题/别名
@@ -185,14 +214,24 @@ def _score_entry(entry: IndexEntry, query: str, terms: list[str]) -> int:
     return score
 
 
-def _public(entry: IndexEntry, *, score: int | None = None) -> dict[str, Any]:
+def _public(
+    entry: IndexEntry, *, score: int | None = None, versions: list[str] | None = None
+) -> dict[str, Any]:
     value = entry.model_dump(mode="json")
     value["navigation_only"] = True
-    value["evidence_boundary"] = (
-        "索引只提供定位线索；必须用 read_project_file 读取同一 commit 的源码后才能作为证据。"
-    )
+    if getattr(entry, "evidence_level", "source") == "binary":
+        value["evidence_boundary"] = (
+            "二进制证据：接口、符号与用户文案级定位，无方法体实现；"
+            "头文件路径可直接读取，深入实现逻辑需申请对应仓库源码权限。"
+        )
+    else:
+        value["evidence_boundary"] = (
+            "索引只提供定位线索；必须用 read_project_file 读取同一 commit 的源码后才能作为证据。"
+        )
     if score is not None:
         value["score"] = score
+    if versions is not None:
+        value["versions"] = versions
     return value
 
 
@@ -242,6 +281,7 @@ def create_code_index_server(
         if not query.strip():
             return {"status": "invalid_query", "results": [], "navigation_only": True}
         allowed = _allowed_versions(scope, form_factor)
+        ordered_allowed = _allowed_version_list(scope, form_factor)
         folded_query = query.casefold()
         terms = [part for part in folded_query.split() if part]
 
@@ -277,15 +317,38 @@ def create_code_index_server(
         if not candidates and version:
             candidates = collect(enforce_version=False)
             version_fallback = bool(candidates)
-        candidates.sort(key=lambda item: (-item[0], item[1].entry_id))
+        def _version_rank(entry: IndexEntry) -> int:
+            # 同分时代表条目必须是窗口内较新的版本：entry_id 是哈希截断，
+            # 按它排序等于随机选版本，会把 agent 引导到旧快照取证。
+            try:
+                return ordered_allowed.index(entry.version)
+            except ValueError:
+                return len(ordered_allowed)
+
+        candidates.sort(key=lambda item: (-item[0], _version_rank(item[1]), item[1].entry_id))
+        # 同一模块跨版本重复命中时只保留分数最高的版本作代表，其余版本并入 versions，
+        # 否则 top-N 会被同一条目的多版本副本占满，挤掉其它模块。
+        merged: list[tuple[int, IndexEntry, list[str]]] = []
+        seen_modules: dict[tuple[str, str, str, str], int] = {}
+        for score, entry in candidates:
+            key = (entry.module_id, entry.platform, entry.product_line, entry.form_factor)
+            existing = seen_modules.get(key)
+            if existing is not None:
+                merged[existing][2].append(entry.version)
+                continue
+            seen_modules[key] = len(merged)
+            merged.append((score, entry, [entry.version]))
         bounded_limit = max(1, min(limit, 50))
         return {
-            "status": "ok" if candidates else "no_match",
+            "status": "ok" if merged else "no_match",
             "query": query,
             "allowed_versions": sorted(allowed),
             "version_fallback": version_fallback,
-            "results": [_public(entry, score=score) for score, entry in candidates[:bounded_limit]],
-            "truncated": len(candidates) > bounded_limit,
+            "results": [
+                _public(entry, score=score, versions=versions)
+                for score, entry, versions in merged[:bounded_limit]
+            ],
+            "truncated": len(merged) > bounded_limit,
             "navigation_only": True,
         }
 

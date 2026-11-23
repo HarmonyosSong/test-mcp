@@ -1,0 +1,272 @@
+[
+ {
+  "form": "json",
+  "q": "q1-count-2field",
+  "run": 3,
+  "ok": true,
+  "answer": "17",
+  "prompt_tokens": 65165,
+  "reasoning_tokens": 5077
+ },
+ {
+  "form": "json",
+  "q": "q2-lookup-trace",
+  "run": 1,
+  "ok": true,
+  "answer": "2fc24aae8ed82c038f6ab3c1dd4ca27d",
+  "prompt_tokens": 65167,
+  "reasoning_tokens": 74
+ },
+ {
+  "form": "json",
+  "q": "q1-count-2field",
+  "run": 2,
+  "ok": true,
+  "answer": "17",
+  "prompt_tokens": 65165,
+  "reasoning_tokens": 5069
+ },
+ {
+  "form": "json",
+  "q": "q2-lookup-trace",
+  "run": 2,
+  "ok": true,
+  "answer": "2fc24aae8ed82c038f6ab3c1dd4ca27d",
+  "prompt_tokens": 65167,
+  "reasoning_tokens": 118
+ },
+ {
+  "form": "json",
+  "q": "q1-count-2field",
+  "run": 1,
+  "ok": true,
+  "answer": "17",
+  "prompt_tokens": 65165,
+  "reasoning_tokens": 5231
+ },
+ {
+  "form": "json",
+  "q": "q2-lookup-trace",
+  "run": 3,
+  "ok": true,
+  "answer": "2fc24aae8ed82c038f6ab3c1dd4ca27d",
+  "prompt_tokens": 65167,
+  "reasoning_tokens": 116
+ },
+ {
+  "form": "json",
+  "q": "q3-level-dist",
+  "run": 2,
+  "ok": true,
+  "answer": "ERROR=49 WARN=53 INFO=46",
+  "prompt_tokens": 65175,
+  "reasoning_tokens": 3143
+ },
+ {
+  "form": "json",
+  "q": "q3-level-dist",
+  "run": 1,
+  "ok": true,
+  "answer": "ERROR=49 WARN=53 INFO=46",
+  "prompt_tokens": 65175,
+  "reasoning_tokens": 3823
+ },
+ {
+  "form": "json",
+  "q": "q3-level-dist",
+  "run": 3,
+  "ok": true,
+  "answer": "ERROR=49 WARN=53 INFO=46",
+  "prompt_tokens": 65175,
+  "reasoning_tokens": 4268
+ },
+ {
+  "form": "json",
+  "q": "q4-earliest-ts",
+  "run": 1,
+  "ok": true,
+  "answer": "2026-11-19 10:00:16.649",
+  "prompt_tokens": 65162,
+  "reasoning_tokens": 997
+ },
+ {
+  "form": "json",
+  "q": "q5-group-count",
+  "run": 1,
+  "ok": true,
+  "answer": "5",
+  "prompt_tokens": 65161,
+  "reasoning_tokens": 54
+ },
+ {
+  "form": "json",
+  "q": "q5-group-count",
+  "run": 2,
+  "ok": true,
+  "answer": "5",
+  "prompt_tokens": 65161,
+  "reasoning_tokens": 69
+ },
+ {
+  "form": "json",
+  "q": "q5-group-count",
+  "run": 3,
+  "ok": true,
+  "answer": "5",
+  "prompt_tokens": 65161,
+  "reasoning_tokens": 50
+ },
+ {
+  "form": "json",
+  "q": "q4-earliest-ts",
+  "run": 2,
+  "ok": true,
+  "answer": "2026-11-19 10:00:16.649",
+  "prompt_tokens": 65162,
+  "reasoning_tokens": 2549
+ },
+ {
+  "form": "json",
+  "q": "q4-earliest-ts",
+  "run": 3,
+  "ok": true,
+  "answer": "2026-11-19 10:00:16.649",
+  "prompt_tokens": 65162,
+  "reasoning_tokens": 2401
+ },
+ {
+  "form": "md-v3",
+  "q": "q1-count-2field",
+  "run": 1,
+  "ok": true,
+  "answer": "17",
+  "prompt_tokens": 40131,
+  "reasoning_tokens": 2802
+ },
+ {
+  "form": "md-v3",
+  "q": "q2-lookup-trace",
+  "run": 1,
+  "ok": true,
+  "answer": "2fc24aae8ed82c038f6ab3c1dd4ca27d",
+  "prompt_tokens": 40133,
+  "reasoning_tokens": 73
+ },
+ {
+  "form": "md-v3",
+  "q": "q2-lookup-trace",
+  "run": 2,
+  "ok": true,
+  "answer": "2fc24aae8ed82c038f6ab3c1dd4ca27d",
+  "prompt_tokens": 40133,
+  "reasoning_tokens": 90
+ },
+ {
+  "form": "md-v3",
+  "q": "q2-lookup-trace",
+  "run": 3,
+  "ok": true,
+  "answer": "2fc24aae8ed82c038f6ab3c1dd4ca27d",
+  "prompt_tokens": 40133,
+  "reasoning_tokens": 129
+ },
+ {
+  "form": "md-v3",
+  "q": "q1-count-2field",
+  "run": 3,
+  "ok": true,
+  "answer": "17",
+  "prompt_tokens": 40131,
+  "reasoning_tokens": 2389
+ },
+ {
+  "form": "md-v3",
+  "q": "q3-level-dist",
+  "run": 1,
+  "ok": true,
+  "answer": "ERROR=49 WARN=53 INFO=46",
+  "prompt_tokens": 40141,
+  "reasoning_tokens": 4071
+ },
+ {
+  "form": "md-v3",
+  "q": "q1-count-2field",
+  "run": 2,
+  "ok": true,
+  "answer": "17",
+  "prompt_tokens": 40131,
+  "reasoning_tokens": 5658
+ },
+ {
+  "form": "md-v3",
+  "q": "q3-level-dist",
+  "run": 2,
+  "ok": true,
+  "answer": "ERROR=49 WARN=53 INFO=46",
+  "prompt_tokens": 40141,
+  "reasoning_tokens": 3914
+ },
+ {
+  "form": "md-v3",
+  "q": "q4-earliest-ts",
+  "run": 2,
+  "ok": true,
+  "answer": "2026-11-19 10:00:16.649",
+  "prompt_tokens": 40128,
+  "reasoning_tokens": 235
+ },
+ {
+  "form": "md-v3",
+  "q": "q4-earliest-ts",
+  "run": 1,
+  "ok": true,
+  "answer": "2026-11-19 10:00:16.649",
+  "prompt_tokens": 40128,
+  "reasoning_tokens": 1513
+ },
+ {
+  "form": "md-v3",
+  "q": "q5-group-count",
+  "run": 1,
+  "ok": true,
+  "answer": "5",
+  "prompt_tokens": 40127,
+  "reasoning_tokens": 56
+ },
+ {
+  "form": "md-v3",
+  "q": "q3-level-dist",
+  "run": 3,
+  "ok": true,
+  "answer": "ERROR=49 WARN=53 INFO=46",
+  "prompt_tokens": 40141,
+  "reasoning_tokens": 1950
+ },
+ {
+  "form": "md-v3",
+  "q": "q5-group-count",
+  "run": 2,
+  "ok": true,
+  "answer": "5",
+  "prompt_tokens": 40127,
+  "reasoning_tokens": 47
+ },
+ {
+  "form": "md-v3",
+  "q": "q5-group-count",
+  "run": 3,
+  "ok": true,
+  "answer": "5",
+  "prompt_tokens": 40127,
+  "reasoning_tokens": 54
+ },
+ {
+  "form": "md-v3",
+  "q": "q4-earliest-ts",
+  "run": 3,
+  "ok": true,
+  "answer": "2026-11-19 10:00:16.649",
+  "prompt_tokens": 40128,
+  "reasoning_tokens": 1222
+ }
+]

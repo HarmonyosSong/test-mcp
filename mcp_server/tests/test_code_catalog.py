@@ -108,6 +108,47 @@ def test_invalid_jsonl_is_rejected(tmp_path: Path) -> None:
         create_code_index_server(index, tmp_path / "missing-scope.json")
 
 
+@pytest.mark.asyncio
+async def test_search_merges_same_module_across_versions(tmp_path: Path) -> None:
+    """同一模块多版本命中时只保留一个代表条目，版本并入 versions 字段。"""
+    index = tmp_path / "index.jsonl"
+    index.write_text(
+        "\n".join(
+            [
+                '{"entry_id":"mod-a-71060","title":"跨报","module_id":"cross-report","aliases":["跨报"],"platform":"harmony","product_line":"xueersi","form_factor":"universal","version":"7.106.0","repository_id":"harmony/xesapp","resolved_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","paths":[{"path":"A.ets"}]}',
+                '{"entry_id":"mod-a-71050","title":"跨报","module_id":"cross-report","aliases":["跨报"],"platform":"harmony","product_line":"xueersi","form_factor":"universal","version":"7.105.0","repository_id":"harmony/xesapp","resolved_commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","paths":[{"path":"A.ets"}]}',
+                '{"entry_id":"mod-b-71060","title":"磨耳朵","module_id":"grinding-ear","aliases":["磨耳朵"],"platform":"harmony","product_line":"xueersi","form_factor":"universal","version":"7.106.0","repository_id":"harmony/xesapp","resolved_commit":"cccccccccccccccccccccccccccccccccccccccc","paths":[{"path":"B.ets"}]}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    scope = tmp_path / "scope.json"
+    scope.write_text('{"default":["7.106.0","7.105.0"]}', encoding="utf-8")
+    async with Client(create_code_index_server(index, scope)) as client:
+        result = await client.call_tool("search_code_index", {"query": "跨报 磨耳朵"})
+    data = result.structured_content
+    assert data["status"] == "ok"
+    ids = [row["entry_id"] for row in data["results"]]
+    assert len(ids) == len(set(ids)) == 2
+    cross = next(row for row in data["results"] if row["module_id"] == "cross-report")
+    assert sorted(cross["versions"]) == ["7.105.0", "7.106.0"]
+    # 同分时代表条目必须是最新版本，而不是 entry_id 字典序靠前者
+    assert cross["entry_id"] == "mod-a-71060"
+    assert cross["version"] == "7.106.0"
+
+
+@pytest.mark.asyncio
+async def test_symbol_only_query_returns_no_match(tmp_path: Path) -> None:
+    """回归：😭/？？？ 类查询归一化为空串，不得因 '' in haystack 恒真而全部命中。"""
+    index, scope = write_fixture(tmp_path)
+    async with Client(create_code_index_server(index, scope)) as client:
+        for query in ("😭😭😭", "？？？", "…"):
+            result = await client.call_tool("search_code_index", {"query": query})
+            assert result.structured_content["status"] == "no_match", query
+            assert result.structured_content["results"] == [], query
+
+
 def test_jsonl_rejects_unsafe_paths_and_non_commit_ids(tmp_path: Path) -> None:
     index = tmp_path / "unsafe.jsonl"
     index.write_text(

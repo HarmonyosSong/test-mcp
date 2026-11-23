@@ -1,5 +1,6 @@
 import { CODE_INDEX_MCP_TOOL_NAMES } from '../model/metadata.js';
 import { CodeLocatorRegistry } from './locator-guidance.js';
+import { projectLogResult } from './log-projection.js';
 import type { ObservationRegistry } from './observations.js';
 
 /**
@@ -352,7 +353,9 @@ export class RoundGuard {
       this.noteNoProgress(noProgress);
       this.resultSignatures.add(resultFingerprint(name, observedResult));
       if (REUSABLE_TOOLS.has(name)) this.cache.set(signature, observed);
-      return this.maybeNudge(observed);
+      // 日志结果只在呈现给模型的这一跳投影成 Markdown；
+      // 注册/缓存/指纹都基于原始 JSON，保真与行为不变。
+      return this.maybeNudge(this.present(server, observed));
     } catch (error) {
       this.stats.failures += 1;
       this.failedSignatures.set(signature, !retryingTransient && transientFailure(error));
@@ -372,5 +375,11 @@ export class RoundGuard {
       return { ...result, round_guard_reminder: NO_PROGRESS_REMINDER };
     }
     return { result, round_guard_reminder: NO_PROGRESS_REMINDER };
+  }
+
+  /** 日志工具（log 命名空间）的结果在送模型前做 Markdown 投影；其余原样。 */
+  private present(server: string, result: unknown): unknown {
+    if (server !== 'log') return result;
+    return projectLogResult(result);
   }
 }

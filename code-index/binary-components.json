@@ -1,0 +1,14 @@
+{
+  "comment": "二进制证据组件清单：无源码权限（或源码版本不可考）的 iOS 组件，以发布产物（framework 包）为证据源。pod_version 与 Podfile 发布分支声明一致；spec_repo 提供 podspec.json -> COS 不可变 artifact 的解析。",
+  "spec_repo": "https://git.100tal.com/peiyou_xueersiapp_XesAppModuleiOS/XesAppRepo.git",
+  "components": [
+    {"name": "CloudLearning_Online", "pod_version": "5.18.5", "repository_id": "peiyou_online_app/CloudLearning_Online", "aliases": ["在线课堂", "课堂", "在线课"], "scope": {"platform": "ios", "product_line": "xueersi", "form_factor": "phone", "version": "7.106.0"}},
+    {"name": "CloudLearning_Online_BaseLib", "pod_version": "5.20.71", "repository_id": "peiyou_online_app/CloudLearning_Online_BaseLib", "aliases": ["课堂基础库"], "scope": {"platform": "ios", "product_line": "xueersi", "form_factor": "phone", "version": "7.106.0"}},
+    {"name": "CloudLearning_Online_LivePlayer", "pod_version": "5.19.39", "repository_id": "peiyou_online_app/CloudLearning_Online_LivePlayer", "aliases": ["直播播放器", "直播"], "scope": {"platform": "ios", "product_line": "xueersi", "form_factor": "phone", "version": "7.106.0"}},
+    {"name": "Xes_Online", "pod_version": "5.24.11", "repository_id": "peiyou_online_app/Xes_Online", "aliases": ["在线", "在线课"], "scope": {"platform": "ios", "product_line": "xueersi", "form_factor": "phone", "version": "7.106.0"}},
+    {"name": "CloudLearning_English", "pod_version": "2.1.35", "repository_id": "peiyou_xueersiapp_cloudlearning_iOS/CloudLearning_English", "aliases": ["英语", "学科英语"], "scope": {"platform": "ios", "product_line": "xueersi", "form_factor": "phone", "version": "7.106.0"}},
+    {"name": "CloudLearning_CourseLearn", "pod_version": "2.1.42", "repository_id": "peiyou_xueersiapp_cloudlearning_iOS/CloudLearning_CourseLearn", "aliases": ["课程学习", "课中学习"], "scope": {"platform": "ios", "product_line": "xueersi", "form_factor": "phone", "version": "7.106.0"}},
+    {"name": "CloudLearning_BaseLib", "pod_version": "5.8.45", "repository_id": "peiyou_xueersiapp_cloudlearning_iOS/CloudLearning_BaseLib", "aliases": ["云学习基础库"], "scope": {"platform": "ios", "product_line": "xueersi", "form_factor": "phone", "version": "7.106.0"}},
+    {"name": "CloudLearning_StudyMerge", "pod_version": "5.0.12", "repository_id": "peiyou_xueersiapp_cloudlearning_iOS/CloudLearning_StudyMerge", "aliases": ["学习合并", "学习"], "scope": {"platform": "ios", "product_line": "xueersi", "form_factor": "phone", "version": "7.106.0"}}
+  ]
+}
