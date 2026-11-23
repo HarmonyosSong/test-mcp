@@ -162,9 +162,21 @@ export interface DiagnosisRunInput {
   messageId?: string;
 }
 
+/** 历史回放默认字符预算：128K 窗口模型下约 15-24K token，为系统提示词与工具结果留足空间。 */
+const DEFAULT_HISTORY_BUDGET_CHARS = 24_000;
+
+/** 裁剪发生时插入的首条说明（user 角色，保证历史仍以 user 开头）。 */
+function omittedHistoryNotice(omitted: number): { role: "user"; content: string } {
+  return {
+    role: "user",
+    content: `（系统说明：为控制上下文体积，更早的 ${omitted} 条对话历史已省略；如需其中事实，向用户追问。）`,
+  };
+}
+
 function historyFor(
   messages: ChatMessage[],
   content: string,
+  budgetChars: number,
 ): Array<{ role: "user" | "assistant"; content: string }> {
   const history = messages
     .filter(
@@ -174,7 +186,19 @@ function historyFor(
   if (history.at(-1)?.role !== "user" || history.at(-1)?.content !== content) {
     history.push({ role: "user", content });
   }
-  return history;
+  // 从最新往最旧累加，预算内保留完整消息；超预算丢弃最早的部分。
+  // 最新一条（当前提问）不受预算限制，永远保留。
+  let used = 0;
+  let keepFrom = history.length;
+  for (let index = history.length - 1; index >= 0; index--) {
+    const cost = history[index]!.content.length;
+    if (index !== history.length - 1 && used + cost > budgetChars) break;
+    used += cost;
+    keepFrom = index;
+  }
+  const kept = history.slice(keepFrom);
+  const omitted = history.length - kept.length;
+  return omitted > 0 ? [omittedHistoryNotice(omitted), ...kept] : kept;
 }
 
 function promptFor(
@@ -283,6 +307,7 @@ export class DiagnosisAgent {
     private readonly skills: SkillRegistry,
     private readonly mastra?: Mastra,
     private readonly maxToolFailures = MAX_TOOL_FAILURES,
+    private readonly historyBudgetChars = DEFAULT_HISTORY_BUDGET_CHARS,
   ) {
     if (!Number.isInteger(maxToolFailures) || maxToolFailures < 1 || maxToolFailures > MAX_TOOL_FAILURES) {
       throw new Error(`maxToolFailures must be between 1 and ${MAX_TOOL_FAILURES}`);
@@ -381,6 +406,7 @@ export class DiagnosisAgent {
     const transcript: Array<{ role: "user" | "assistant"; content: string }> = historyFor(
       input.conversation.messages,
       input.content,
+      this.historyBudgetChars,
     );
     let history = [...transcript];
     let wasAborted = false;

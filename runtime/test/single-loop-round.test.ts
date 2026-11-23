@@ -108,14 +108,14 @@ function modelFor(turns: Turn[]) {
   return { model, consumed: () => index, prompts };
 }
 
-async function setup(turns: Turn[], maxToolFailures?: number) {
+async function setup(turns: Turn[], maxToolFailures?: number, historyBudgetChars?: number) {
   const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
   const skills = new SkillRegistry(resolve(projectRoot, 'skills'));
   await skills.load();
   const configuration = new ModelConfiguration({ filePath: '/tmp/unused-mastra-test-model.json', env: {} });
   const scripted = modelFor(turns);
   Object.defineProperty(configuration, 'languageModel', { value: async () => scripted.model });
-  const diagnosis = new DiagnosisAgent(configuration, skills, new Mastra({ logger: false }), maxToolFailures);
+  const diagnosis = new DiagnosisAgent(configuration, skills, new Mastra({ logger: false }), maxToolFailures, historyBudgetChars);
   return { diagnosis, scripted };
 }
 
@@ -643,4 +643,50 @@ test('代码导航约束写入提示：导航只是线索，失败回退文本�
   assert.match(prompt, /不得引用为证据/);
   assert.match(prompt, /read_project_file 核实对应文件内容/);
   assert.match(prompt, /回退到 search_project_text/);
+});
+
+test('历史回放按字符预算裁剪：丢弃最早轮次并插入省略说明，当前提问永远保留', async () => {
+  const longAnswer = '答'.repeat(10_000);
+  const messages = Array.from({ length: 6 }, (_, index) => [
+    { role: 'user', content: `第${index}轮问题`, status: 'completed' },
+    { role: 'assistant', content: longAnswer, status: 'completed' },
+  ]).flat() as unknown as DiagnosisRunInput['conversation']['messages'];
+  const { diagnosis, scripted } = await setup(
+    [{ text: anchored('located', '本轮结论。') }],
+    undefined,
+    24_000,
+  );
+  const events = await run(diagnosis, '当前问题', {
+    conversation: { messages },
+  });
+  assert.equal(events.at(-1)?.type, 'completed');
+  const prompt = JSON.stringify(scripted.prompts[0]);
+  assert.match(prompt, /已省略/, '裁剪后必须插入省略说明');
+  // 裁剪作用于消息历史；系统提示词「可引用的用户输入」清单（40 字符 preview）不受影响，
+  // 断言用消息形态（"text":"..."）区分，避免误匹配 ev-user 清单。
+  const asMessage = (text: string) => `"text":"${text}"`;
+  assert.ok(prompt.includes(asMessage('当前问题')), '当前提问必须保留');
+  assert.ok(!prompt.includes(asMessage('第0轮问题')), '最早轮次应从消息历史丢弃');
+  assert.ok(!prompt.includes(asMessage('第2轮问题')), '预算外的中间轮次应从消息历史丢弃');
+  assert.ok(prompt.includes(asMessage('第5轮问题')), '最新一轮历史必须保留');
+});
+
+test('历史总量在预算内时不裁剪、无省略说明', async () => {
+  const messages = [
+    { role: 'user', content: '第一轮问题', status: 'completed' },
+    { role: 'assistant', content: '第一轮回答', status: 'completed' },
+  ] as unknown as DiagnosisRunInput['conversation']['messages'];
+  const { diagnosis, scripted } = await setup(
+    [{ text: anchored('located', '本轮结论。') }],
+    undefined,
+    24_000,
+  );
+  const events = await run(diagnosis, '第二轮问题', {
+    conversation: { messages },
+  });
+  assert.equal(events.at(-1)?.type, 'completed');
+  const prompt = JSON.stringify(scripted.prompts[0]);
+  assert.match(prompt, /第一轮问题/);
+  assert.match(prompt, /第一轮回答/);
+  assert.doesNotMatch(prompt, /已省略/, '预算内不得插入省略说明');
 });

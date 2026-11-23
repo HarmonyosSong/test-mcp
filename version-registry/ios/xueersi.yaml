@@ -10,3 +10,39 @@
           role: shell
           ref: XesApp_v7.106.0_1_20261105
           expected_commit: 8d29ad670edb4d01c459e4fde4e03901d85f3ba5
+- version: 7.105.0
+  form_factor: universal
+  builds:
+    - build: "1"
+      tag: XesApp_v7.105.0_1_20260923
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_XesApp/xesApp_iOS
+          role: shell
+          ref: XesApp_v7.105.0_1_20260923
+          expected_commit: a44953fb1c391c9b738a4726bcda4e8468cfc8d1
+- version: 5.106.0
+  form_factor: pad
+  builds:
+    - build: "1"
+      tag: XesAppHD_v5.106.0_1_20261105
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_cloudlearning_iOS/CloudLearning_Main_iOS
+          role: shell
+          ref: XesAppHD_v5.106.0_1_20261105
+          expected_commit: 3e4b8ebccfb430981e92a8aead85c047973487b0
+- version: 5.105.0
+  form_factor: pad
+  builds:
+    - build: "1"
+      tag: XesAppHD_v5.105.0_1_20260922
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_cloudlearning_iOS/CloudLearning_Main_iOS
+          role: shell
+          ref: XesAppHD_v5.105.0_1_20260922
+          expected_commit: cd411159d62cf8c48ec3418ddfb9d5c86bff9547

@@ -95,6 +95,8 @@ export const runtimeConfigSchema = z.object({
   maxConcurrentRuns: z.coerce.number().int().min(1).max(100).default(4),
   investigationMaxSeconds: z.coerce.number().int().min(10).max(3_600).default(900),
   investigationMaxRemoteCalls: z.coerce.number().int().min(0).max(10).default(4),
+  /** 历史回放字符预算：超出后从最早的消息开始丢弃（最新一条永远保留）。 */
+  historyBudgetChars: z.coerce.number().int().min(2_000).max(200_000).default(24_000),
   runMode: z.enum(['local', 'server']).default('server'),
   publicBaseUrl: z.string().default(''),
   appPrefix: z.string().default('/xesapp-agent'),
@@ -193,6 +195,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     maxConcurrentRuns: env.HARMONY_AGENT_MAX_CONCURRENT_RUNS,
     investigationMaxSeconds: env.HARMONY_AGENT_INVESTIGATION_MAX_SECONDS,
     investigationMaxRemoteCalls: env.HARMONY_AGENT_INVESTIGATION_MAX_REMOTE_CALLS,
+    historyBudgetChars: env.HARMONY_AGENT_HISTORY_BUDGET_CHARS,
     runMode: env.HARMONY_AGENT_RUN_MODE || undefined,
     publicBaseUrl: env.HARMONY_AGENT_PUBLIC_BASE_URL,
     appPrefix: env.HARMONY_AGENT_APP_PREFIX,

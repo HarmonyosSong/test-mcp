@@ -10,6 +10,30 @@
           role: shell
           ref: V7.106.5-55373-TEST
           expected_commit: 5349a5eba887af2979f01ff07398fcf6a82b3a94
+- version: 7.106.0
+  form_factor: phone
+  builds:
+    - build: "55347"
+      tag: V7.106.0-55347-CUSTOM
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_XesApp/xesApp_Android
+          role: shell
+          ref: V7.106.0-55347-CUSTOM
+          expected_commit: 1e0c12c6a86ed9b5375dbc133a15cb1a97bdcdb7
+- version: 7.105.0
+  form_factor: phone
+  builds:
+    - build: "56071"
+      tag: V7.105.0-56071-CUSTOM
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_XesApp/xesApp_Android
+          role: shell
+          ref: V7.105.0-56071-CUSTOM
+          expected_commit: bd45e02a2b32c19c1a3f7d5ea43506cf6b9728e9
 - version: 5.106.5
   form_factor: pad
   builds:
@@ -22,3 +46,15 @@
           role: shell
           ref: V5.106.5-2225-TEST
           expected_commit: 94886e03406a595632d595fbea88494f2c07fc56
+- version: 5.105.0
+  form_factor: pad
+  builds:
+    - build: "2608"
+      tag: V5.105.0-2608-CUSTOM
+      source: tag-scan
+      verified: true
+      repos:
+        - repository_id: peiyou_xueersiapp_XesApp/xesApp_Pad_Android
+          role: shell
+          ref: V5.105.0-2608-CUSTOM
+          expected_commit: 1dca7be0552d53847473e157df84dd8ca928a3e4

@@ -1,4 +1,4 @@
-.PHONY: setup check-node dev-api dev-server dev-web dev-mcp dev-log-mcp stop-log-mcp bootstrap-sources code-index-build bootstrap test test-runtime test-mcp knowledge-validate lint build build-runtime build-web start live-eval knowledge-querylog knowledge-cases
+.PHONY: setup check-node dev-api dev-server dev-web dev-mcp dev-log-mcp stop-log-mcp bootstrap-sources code-index-build registry-backfill bootstrap test test-runtime test-mcp knowledge-validate lint build build-runtime build-web start live-eval knowledge-querylog knowledge-cases
 
 setup: check-node
 	uv sync --project mcp_server --index-url https://pypi.org/simple
@@ -11,6 +11,11 @@ setup: check-node
 # 大仓库建议 HARMONY_AGENT_GITLAB_TIMEOUT_MS=300000 make bootstrap-sources
 bootstrap-sources: check-node
 	npx tsx code-index/warm-runtime-cache.ts
+
+# 版本登记表回填：按 sources.json 窗口版本查 GitLab 发布 tag，
+# 把缺失的（平台/产品线/形态/版本）补写进 version-registry/。先跑 --dry-run 看计划。
+registry-backfill: check-node
+	npx tsx code-index/backfill-registry.ts
 
 # 代码索引导航：先按 sources.json 物化索引专用快照（.data/code-index/workspaces），
 # 再扫描生成 index.jsonl + coverage.json。运行时 search_code_index 读这份产物。
