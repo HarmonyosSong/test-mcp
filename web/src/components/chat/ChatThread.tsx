@@ -16,7 +16,7 @@ import type {
   ChatMessage,
   ModelStatus,
 } from '../../types';
-import { AiTraceDialog } from './AiTracePanel';
+import { PenguinHarnessPanel } from './AiTracePanel';
 import { PixelOrb } from '../PixelOrb';
 import { ChatComposer } from './ChatComposer';
 import { MarkdownContent } from './MarkdownContent';
@@ -291,48 +291,45 @@ export function ChatThread({
 
   return (
     <section className="chat-thread" aria-label={`会话 ${conversation.title}`}>
-      <header className="chat-thread-header">
-        <h2>{conversation.title}</h2>
-        {conversation.repository_name && (
-          <span className="chat-thread-source">
-            {conversation.repository_name} @ {conversation.requested_ref}
-          </span>
-        )}
-        <button
-          type="button"
-          className={`chat-trace-toggle pixel-orb-toggle${showTrace ? ' active' : ''}${progress ? ' thinking' : ''}`}
-          onClick={() => setShowTrace((value) => !value)}
-          title="查看 AI 输入 / 输出调试信息"
-          aria-pressed={showTrace}
-        >
-          <PixelOrb active={!!progress} size={20} />
-          <span>AI 调试</span>
-        </button>
-      </header>
+      <div className="chat-thread-main">
+        <header className="chat-thread-header">
+          <h2>{conversation.title}</h2>
+          {conversation.repository_name && (
+            <span className="chat-thread-source">
+              {conversation.repository_name} @ {conversation.requested_ref}
+            </span>
+          )}
+          <button
+            type="button"
+            className={`chat-trace-toggle pixel-orb-toggle${showTrace ? ' active' : ''}${progress ? ' thinking' : ''}`}
+            onClick={() => setShowTrace((value) => !value)}
+            title="打开 PenguinHarness · AI 轨迹观测"
+            aria-pressed={showTrace}
+          >
+            <PixelOrb active={!!progress} size={20} />
+            <span>AI 调试</span>
+          </button>
+        </header>
 
-      {showTrace && (
-        <AiTraceDialog conversationId={conversation.id} onClose={() => setShowTrace(false)} />
-      )}
-
-      {progress && (
-        <div className="investigation-progress investigation-progress-active" role="status">
-          <LoaderCircle className="spin" size={15} aria-hidden="true" />
-          <span>{progress.text}</span>
-        </div>
-      )}
-
-      <div className="chat-messages scroll-region">
-        {conversation.messages.length === 0 ? (
-          <div className="chat-empty-thread">
-            <MessageSquare size={26} strokeWidth={1.6} />
-            <p>描述你遇到的培优问题，助手会按需检索知识、检查代码并自动协查。</p>
+        {progress && (
+          <div className="investigation-progress investigation-progress-active" role="status">
+            <LoaderCircle className="spin" size={15} aria-hidden="true" />
+            <span>{progress.text}</span>
           </div>
-        ) : (
-          conversation.messages.map((message, index) =>
-            message.role === 'user' ? (
-              <UserMessage key={message.id} message={message} />
-            ) : (
-              <AssistantMessage
+        )}
+
+        <div className="chat-messages scroll-region">
+          {conversation.messages.length === 0 ? (
+            <div className="chat-empty-thread">
+              <MessageSquare size={26} strokeWidth={1.6} />
+              <p>描述你遇到的培优问题，助手会按需检索知识、检查代码并自动协查。</p>
+            </div>
+          ) : (
+            conversation.messages.map((message, index) =>
+              message.role === 'user' ? (
+                <UserMessage key={message.id} message={message} />
+              ) : (
+                <AssistantMessage
                 key={message.id}
                 message={message}
                 live={sending && index === conversation.messages.length - 1}
@@ -359,6 +356,15 @@ export function ChatThread({
         onSend={onSend}
         onStop={onStop}
       />
+      </div>
+
+      {showTrace && (
+        <PenguinHarnessPanel
+          conversationId={conversation.id}
+          contextWindow={contextUsage?.window}
+          onClose={() => setShowTrace(false)}
+        />
+      )}
     </section>
   );
 }

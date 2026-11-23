@@ -91,6 +91,7 @@ test('writes step-oriented flow JSON and drops processor/mapping/chunk noise', a
       type: SpanType.MODEL_STEP,
       output: {
         text: '我先查一下知识库。',
+        reasoningText: '用户问接口排行，先确认知识库有没有该接口说明，再决定是否查日志。',
         toolCalls: [{ toolName: 'lookup_issue' }],
       },
       attributes: {
@@ -153,6 +154,7 @@ test('writes step-oriented flow JSON and drops processor/mapping/chunk noise', a
       started_at: string | null;
       ended_at: string | null;
       model_text?: string;
+      thinking_text?: string;
       finish_reason?: string;
       tools: Array<{
         name: string;
@@ -173,6 +175,11 @@ test('writes step-oriented flow JSON and drops processor/mapping/chunk noise', a
   assert.equal(body.spans, undefined);
   assert.equal(body.started_at, '1970-01-01T00:00:00.000Z');
   assert.equal(body.steps[0]?.model_text, '我先查一下知识库。');
+  assert.equal(
+    body.steps[0]?.thinking_text,
+    '用户问接口排行，先确认知识库有没有该接口说明，再决定是否查日志。',
+  );
+  assert.equal(body.steps[1]?.thinking_text, undefined);
   assert.equal(body.steps[0]?.finish_reason, 'tool-calls');
   assert.equal(body.steps[0]?.started_at, '1970-01-01T00:00:00.000Z');
   assert.equal(body.steps[0]?.ended_at, '1970-01-01T00:00:00.050Z');

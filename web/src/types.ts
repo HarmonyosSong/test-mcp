@@ -184,6 +184,9 @@ export interface AiTraceTool {
   name: string;
   kind: 'tool' | 'mcp_tool';
   duration_ms: number | null;
+  /** schema v2 起落盘的执行窗口（ISO 时间串）；旧 trace 可能缺失。 */
+  started_at?: string | null;
+  ended_at?: string | null;
   success: boolean | null;
   input_preview?: string;
   output_preview?: string;
@@ -200,7 +203,12 @@ export interface AiTraceStepUsage {
 export interface AiTraceStep {
   step_index: number;
   duration_ms: number | null;
+  /** schema v2 起落盘的模型调用窗口（ISO 时间串）；旧 trace 可能缺失。 */
+  started_at?: string | null;
+  ended_at?: string | null;
   model_text?: string;
+  /** 推理（thinking）文本：模型产出 reasoning 时才有；非推理模型缺省。 */
+  thinking_text?: string;
   finish_reason?: string;
   time_to_first_token_ms?: number | null;
   usage?: AiTraceStepUsage;
@@ -213,6 +221,8 @@ export interface AiTraceDetail {
   message_id: string | null;
   trace_id: string;
   captured_at: string;
+  /** schema v2 起落盘的本轮开始时间（ISO 时间串）；旧 trace 可能缺失。 */
+  started_at?: string | null;
   model: string | null;
   user_input?: string;
   final_answer?: string;

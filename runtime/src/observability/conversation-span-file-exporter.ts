@@ -71,6 +71,8 @@ type FlowStep = {
   started_at: string | null;
   ended_at: string | null;
   model_text?: string;
+  /** 推理（thinking）文本：模型产出 reasoning 时落盘，非推理模型缺省。 */
+  thinking_text?: string;
   finish_reason?: string;
   usage?: unknown;
   time_to_first_token_ms?: number | null;
@@ -341,6 +343,39 @@ function extractModelText(output: unknown, limit: number): string | undefined {
   return undefined;
 }
 
+/**
+ * 推理（thinking）文本：AI SDK step 输出里的 reasoningText 优先，
+ * 缺时把 reasoning 明细（{ payload: { text } } 或 { text }）顺序拼接。
+ * 非推理模型没有这些字段，返回 undefined（面板里就不渲染思考行）。
+ */
+function extractThinkingText(output: unknown, limit: number): string | undefined {
+  if (!output) return undefined;
+  let source: unknown;
+  if (typeof output === 'string') {
+    source = tryParseJson(output);
+  } else if (typeof output === 'object') {
+    source = output;
+  }
+  if (!source || typeof source !== 'object') return undefined;
+  const record = source as Record<string, unknown>;
+  if (typeof record.reasoningText === 'string' && record.reasoningText.trim()) {
+    return preview(record.reasoningText, limit);
+  }
+  if (Array.isArray(record.reasoning)) {
+    const text = record.reasoning
+      .map((part) => {
+        if (!part || typeof part !== 'object') return '';
+        const detail = part as { payload?: { text?: unknown }; text?: unknown };
+        const value = detail.payload?.text ?? detail.text;
+        return typeof value === 'string' ? value : '';
+      })
+      .join('')
+      .trim();
+    if (text) return preview(text, limit);
+  }
+  return undefined;
+}
+
 function toolDisplayName(span: RawSpan): string {
   const fromAttrs = span.attributes?.toolName ?? span.attributes?.name;
   if (typeof fromAttrs === 'string' && fromAttrs.trim()) return fromAttrs.trim();
@@ -449,6 +484,7 @@ function buildFlow(spans: RawSpan[], contentLimit: number): {
       started_at: step.started_at,
       ended_at: step.ended_at,
       model_text: extractModelText(step.output, contentLimit),
+      thinking_text: extractThinkingText(step.output, contentLimit),
       finish_reason: finishReason,
       usage: parseUsage(step.attributes) ?? parseUsage(inference?.attributes),
       time_to_first_token_ms: Number.isFinite(ttft) ? ttft : null,

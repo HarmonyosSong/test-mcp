@@ -36,6 +36,7 @@ function stepBlock(step: AiTraceStep): string[] {
   const usage = formatUsage(step.usage);
   if (usage) meta.push(usage);
   if (meta.length) head.push(`> ${meta.join(' · ')}`);
+  if (step.thinking_text) head.push('', '思考：', '```', step.thinking_text, '```');
   if (step.model_text) head.push('', '模型输出：', '```', step.model_text, '```');
   for (const tool of step.tools) head.push('', ...toolBlock(tool));
   return head;
