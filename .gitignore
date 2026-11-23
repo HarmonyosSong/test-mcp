@@ -25,3 +25,5 @@ log-mcp/config/*.local.json
 log-mcp/config/*.local.env
 
 Dockerfile
+# IDE 个人配置
+.vscode/
