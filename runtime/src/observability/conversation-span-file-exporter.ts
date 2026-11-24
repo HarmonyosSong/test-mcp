@@ -5,6 +5,33 @@ import type { TracingEvent } from '@mastra/core/observability';
 import { SpanType } from '@mastra/core/observability';
 import { BaseExporter } from '@mastra/observability';
 
+/**
+ * 思考（reasoning）侧通道。
+ * Mastra 1.81 的 DurableAgent 关闭 MODEL_STEP span 时 output 只保留
+ * { text, toolCalls }，reasoning 内容在 span 层被丢弃（usage 里仍有
+ * reasoning token 计数）。fullStream 的 reasoning-delta chunk 是完整的，
+ * 由 DiagnosisAgent 按步骤累积后写入本注册表；exporter 在 trace 落盘时
+ * 按会话 FIFO 对齐合并进 steps[].thinking_text。
+ * 注册表按会话封顶，无 exporter 的环境（测试）不会无限增长。
+ */
+const THINKING_QUEUE_CAP = 8;
+const thinkingByConversation = new Map<string, string[][]>();
+
+export function recordRoundThinking(conversationId: string, steps: string[]): void {
+  const queue = thinkingByConversation.get(conversationId) ?? [];
+  queue.push(steps);
+  if (queue.length > THINKING_QUEUE_CAP) queue.shift();
+  thinkingByConversation.set(conversationId, queue);
+}
+
+function takeRoundThinking(conversationId: string): string[] | undefined {
+  const queue = thinkingByConversation.get(conversationId);
+  if (!queue || queue.length === 0) return undefined;
+  const entry = queue.shift();
+  if (queue.length === 0) thinkingByConversation.delete(conversationId);
+  return entry;
+}
+
 /** 0 = keep full text (recommended for local debugging). */
 const DEFAULT_CONTENT_LIMIT = 0;
 /** Hard ceiling even when "unlimited", to avoid pathological multi‑MB tool dumps. */
@@ -607,6 +634,13 @@ export class ConversationSpanFileExporter extends BaseExporter {
 
     const agentRun = buffer.spans.find((item) => item.type === SpanType.AGENT_RUN);
     const flow = buildFlow(buffer.spans, this.#contentLimit);
+    // 合并思考侧通道：span 层没有 reasoning，用流内捕获的按步骤思考补齐。
+    const thinking = takeRoundThinking(buffer.conversationId);
+    if (thinking) {
+      flow.steps.forEach((step, index) => {
+        if (!step.thinking_text && thinking[index]) step.thinking_text = thinking[index];
+      });
+    }
     const toolCount = flow.steps.reduce((sum, step) => sum + step.tools.length, 0) + flow.orphan_tools.length;
 
     const payload = {

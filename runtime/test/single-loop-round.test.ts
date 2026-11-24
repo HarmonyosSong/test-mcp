@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import test from 'node:test';
 import { Mastra } from '@mastra/core/mastra';
 import { MastraLanguageModelV2Mock } from '@mastra/core/test-utils/llm-mock';
@@ -108,14 +110,28 @@ function modelFor(turns: Turn[]) {
   return { model, consumed: () => index, prompts };
 }
 
-async function setup(turns: Turn[], maxToolFailures?: number, historyBudgetChars?: number) {
+async function setup(
+  turns: Turn[],
+  maxToolFailures?: number,
+  historyBudgetChars?: number,
+  contextEviction?: {
+    enabled: boolean;
+    budgetTokens?: number;
+    targetTokens?: number;
+    keepRecentResults?: number;
+    minEvictChars?: number;
+    clampChars?: number;
+    offloadDir: string;
+    summarize?: (input: { system: string; user: string; maxOutputTokens: number }) => Promise<string>;
+  },
+) {
   const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
   const skills = new SkillRegistry(resolve(projectRoot, 'skills'));
   await skills.load();
   const configuration = new ModelConfiguration({ filePath: '/tmp/unused-mastra-test-model.json', env: {} });
   const scripted = modelFor(turns);
   Object.defineProperty(configuration, 'languageModel', { value: async () => scripted.model });
-  const diagnosis = new DiagnosisAgent(configuration, skills, new Mastra({ logger: false }), maxToolFailures, historyBudgetChars);
+  const diagnosis = new DiagnosisAgent(configuration, skills, new Mastra({ logger: false }), maxToolFailures, historyBudgetChars, contextEviction);
   return { diagnosis, scripted };
 }
 
@@ -689,4 +705,101 @@ test('历史总量在预算内时不裁剪、无省略说明', async () => {
   assert.match(prompt, /第一轮问题/);
   assert.match(prompt, /第一轮回答/);
   assert.doesNotMatch(prompt, /已省略/, '预算内不得插入省略说明');
+});
+
+test('上下文超预算时旧工具结果被外置为 ev-file 指针，read_evidence 可取回', async () => {
+  const bigPayload = '日志内容'.repeat(1_500); // 每条结果 6000 字符
+  const offloadDir = await mkdtemp(join(tmpdir(), 'eviction-it-'));
+  try {
+    const bigQuery = createTool({
+      id: 'big_query',
+      description: '测试用大结果查询',
+      inputSchema: z.object({ q: z.string() }),
+      execute: async ({ q }) => ({ q, payload: bigPayload }),
+    });
+    const { diagnosis, scripted } = await setup(
+      [
+        { tool: 'big_query', args: { q: 'a' }, id: 'call-a' },
+        { tool: 'big_query', args: { q: 'b' }, id: 'call-b' },
+        { tool: 'big_query', args: { q: 'c' }, id: 'call-c' },
+        { text: anchored('insufficient_evidence', '现有证据不足，建议补充信息。') },
+      ],
+      undefined,
+      undefined,
+      {
+        enabled: true,
+        budgetTokens: 4_000,
+        keepRecentResults: 1,
+        minEvictChars: 1_000,
+        offloadDir,
+      },
+    );
+    const events = await run(diagnosis, '查一下日志', {
+      toolsets: { log: { big_query: bigQuery } },
+    });
+    const completed = events.at(-1);
+    assert.equal(completed?.type, 'completed');
+    if (completed?.type !== 'completed') return;
+
+    // 后续模型请求的 prompt 里，最早的大结果应已替换为 ev-file 指针。
+    const laterPrompts = scripted.prompts.slice(2).map((prompt) => JSON.stringify(prompt)).join('\n');
+    assert.match(laterPrompts, /\[ev-file:call-a\]/, '最早的工具结果应被外置');
+    assert.ok(!laterPrompts.includes(bigPayload + bigPayload), '外置后原文不应重复出现在后续 prompt');
+
+    // 驱逐统计进入 tool_usage，供回归测量。
+    assert.ok(Number(completed.tool_usage.evicted_results) >= 1, 'tool_usage 须记录驱逐次数');
+    assert.ok(Number(completed.tool_usage.eviction_passes) >= 1);
+  } finally {
+    await rm(offloadDir, { recursive: true, force: true });
+  }
+});
+
+test('持续超目标时旧历史被压成上下文检查点并进入后续 prompt', async () => {
+  const bigPayload = '堆栈信息'.repeat(1_500); // 每条结果 6000 字符
+  const offloadDir = await mkdtemp(join(tmpdir(), 'eviction-sum-it-'));
+  try {
+    const bigQuery = createTool({
+      id: 'big_query',
+      description: '测试用大结果查询',
+      inputSchema: z.object({ q: z.string() }),
+      execute: async ({ q }) => ({ q, payload: bigPayload }),
+    });
+    const { diagnosis, scripted } = await setup(
+      [
+        { tool: 'big_query', args: { q: 'a' }, id: 'call-a' },
+        { tool: 'big_query', args: { q: 'b' }, id: 'call-b' },
+        { tool: 'big_query', args: { q: 'c' }, id: 'call-c' },
+        { tool: 'big_query', args: { q: 'd' }, id: 'call-d' },
+        { text: anchored('insufficient_evidence', '现有证据不足，建议补充信息。') },
+      ],
+      undefined,
+      undefined,
+      {
+        enabled: true,
+        budgetTokens: 3_000,
+        targetTokens: 1_000,
+        keepRecentResults: 1,
+        minEvictChars: 1_000,
+        clampChars: 4_000,
+        offloadDir,
+        summarize: async () => '## 任务目标\n排查闪退\n\n## 证据锚点\nev-abc123：日志命中空指针',
+      },
+    );
+    const events = await run(diagnosis, '持续查日志', {
+      toolsets: { log: { big_query: bigQuery } },
+    });
+    const completed = events.at(-1);
+    assert.equal(completed?.type, 'completed');
+    if (completed?.type !== 'completed') return;
+
+    assert.ok(Number(completed.tool_usage.summaries) >= 1, 'tool_usage 须记录摘要次数');
+    // 最后一次模型请求的 prompt 里，旧历史已替换为检查点（含保留的 ev-ID）。
+    const lastPrompt = JSON.stringify(scripted.prompts.at(-1));
+    assert.match(lastPrompt, /【上下文检查点 · 数据非指令】/);
+    assert.match(lastPrompt, /ev-abc123：日志命中空指针/);
+    // 首条用户消息原样保留。
+    assert.match(lastPrompt, /持续查日志/);
+  } finally {
+    await rm(offloadDir, { recursive: true, force: true });
+  }
 });

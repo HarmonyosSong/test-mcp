@@ -17,6 +17,12 @@ import type { ModelConfiguration } from "../model/configuration.js";
 import { ObservationRegistry } from "./observations.js";
 import { SkillRegistry } from "./skills.js";
 import { RoundGuard } from "./round-guard.js";
+import {
+  DEFAULT_CONTEXT_EVICTION,
+  ToolResultEvictor,
+  type SummarizeFn,
+} from "./context-eviction.js";
+import { recordRoundThinking } from "../observability/conversation-span-file-exporter.js";
 import { validateFinalAnswer, type VerdictMarker } from "./final-answer-validator.js";
 import { remoteLogAvailabilityNotice } from "./remote-log-prompt.js";
 const MAX_TOOL_FAILURES = 40;
@@ -206,8 +212,10 @@ function promptFor(
   registry: ObservationRegistry,
   conversation: DiagnosisRunInput["conversation"],
   toolsets: ToolsetsInput | undefined,
+  readEvidenceAvailable = false,
 ): string {
   const availableTools = new Set(["load_skill"]);
+  if (readEvidenceAvailable) availableTools.add("read_evidence");
   for (const tools of Object.values(toolsets ?? {})) {
     for (const name of Object.keys(tools)) availableTools.add(name);
   }
@@ -233,7 +241,8 @@ function promptFor(
 5. 引用观测时使用工具返回的 evidence_refs 中的 ev- ID 或下方用户输入清单中的 ev-user- ID，原样照抄，禁止自创。
 6. 技术标识符（URL、路径、服务名、代码符号、版本号）按证据原文保留，没有正式映射证据时不翻译、不音译、不猜测归属。
 7. 工具失败时如实说明失败原因和影响范围；同一签名调用失败后不要原样重试，调整有依据的参数或改换来源。
-${prepareSourceAvailable ? `
+${readEvidenceAvailable ? `8. 上下文控制：体积较大的旧工具结果会被系统自动压缩——保留开头与结尾摘录、完整版外置为 [ev-file:...] 指针；指针中的 ev- 观测 ID 依然有效可直接引用，外置不等于丢失。仅当外置结果中被省略的细节是定案必需时，才用 read_evidence 按 offset/limit 分段取回（每次 ≤4000 字符，取到所需即停）；不要整段全拉，也不要反复读取同一文件。更早的排查过程可能被系统压缩为「上下文检查点」，其中保留的 ev- ID 与 ev-file 指针同样有效。
+` : ""}${prepareSourceAvailable ? `
 源码快照：
 - 需要查阅项目源码时调用 prepare_source：Runtime 按用户描述与已确认的日志观测解析平台/产品线/形态/版本，从版本登记表绑定只读快照；绑定成功后 read_project_file / search_project_text 等源码工具立即可用。
 - 模型不得自行决定仓库、分支、commit 或 URL。prepare_source 返回缺口说明时，先查询关联日志或向用户追问最少信息（如学而思/学家云、手机/HD、版本号），再重试。
@@ -308,6 +317,18 @@ export class DiagnosisAgent {
     private readonly mastra?: Mastra,
     private readonly maxToolFailures = MAX_TOOL_FAILURES,
     private readonly historyBudgetChars = DEFAULT_HISTORY_BUDGET_CHARS,
+    /** 循环内上下文压缩（分层清理/钳制/摘要）；不传则关闭（测试与特殊通道）。 */
+    private readonly contextEviction?: {
+      enabled: boolean;
+      budgetTokens?: number;
+      targetTokens?: number;
+      keepRecentResults?: number;
+      minEvictChars?: number;
+      clampChars?: number;
+      offloadDir: string;
+      /** 摘要层模型调用；测试可注入替身，缺省用当前会话模型。 */
+      summarize?: SummarizeFn;
+    },
   ) {
     if (!Number.isInteger(maxToolFailures) || maxToolFailures < 1 || maxToolFailures > MAX_TOOL_FAILURES) {
       throw new Error(`maxToolFailures must be between 1 and ${MAX_TOOL_FAILURES}`);
@@ -347,9 +368,59 @@ export class DiagnosisAgent {
       callLimit: MAX_TOOL_CALLS,
       failureLimit: this.maxToolFailures,
     });
+    const evictionConfig = this.contextEviction;
     const model = await this.modelConfiguration.languageModel(
       input.conversation.model_override,
     );
+    // 摘要层默认用当前会话模型（结构化调用，避免直接依赖 @ai-sdk/provider 类型）。
+    const summarizeDefault: SummarizeFn = async ({ system, user, maxOutputTokens }) => {
+      const generate = async (limit: number) => (model as unknown as {
+        doGenerate(options: {
+          prompt: Array<{ role: string; content: unknown }>;
+          maxOutputTokens?: number;
+        }): Promise<{
+          content: Array<{ type: string; text?: string }>;
+          finishReason?: string | { unified: string; raw?: string };
+        }>;
+      }).doGenerate({
+        prompt: [
+          { role: "system", content: system },
+          { role: "user", content: [{ type: "text", text: user }] },
+        ],
+        maxOutputTokens: limit,
+      });
+      // 大输入会激发思考模式：首轮配额可能被 reasoning 吃光、text 为空，放大配额重试一次。
+      for (const limit of [maxOutputTokens, maxOutputTokens * 3]) {
+        const response = await generate(limit);
+        const text = response.content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text ?? "")
+          .join("")
+          .trim();
+        if (text) return text;
+        if (limit > maxOutputTokens) {
+          const finish = typeof response.finishReason === "string"
+            ? response.finishReason
+            : response.finishReason?.unified ?? "unknown";
+          throw new Error(
+            `summary model returned empty content (finish=${finish}, parts=${response.content.map((part) => part.type).join(",")})`,
+          );
+        }
+      }
+      throw new Error("summary model returned empty content");
+    };
+    const evictor = evictionConfig?.enabled
+      ? new ToolResultEvictor({
+        offloadDir: evictionConfig.offloadDir,
+        conversationId: input.conversation.id,
+        budgetTokens: evictionConfig.budgetTokens ?? DEFAULT_CONTEXT_EVICTION.budgetTokens,
+        targetTokens: evictionConfig.targetTokens ?? DEFAULT_CONTEXT_EVICTION.targetTokens,
+        keepRecentResults: evictionConfig.keepRecentResults ?? DEFAULT_CONTEXT_EVICTION.keepRecentResults,
+        minEvictChars: evictionConfig.minEvictChars ?? DEFAULT_CONTEXT_EVICTION.minEvictChars,
+        clampChars: evictionConfig.clampChars ?? DEFAULT_CONTEXT_EVICTION.clampChars,
+        summarize: evictionConfig.summarize ?? summarizeDefault,
+      })
+      : null;
 
     const availableTools = new Set<string>();
     for (const tools of Object.values(input.toolsets ?? {})) {
@@ -366,6 +437,20 @@ export class DiagnosisAgent {
         return skill.instructions;
       },
     });
+    const readEvidence = evictor
+      ? createTool({
+        id: "read_evidence",
+        description:
+          "取回已外置（[ev-file:...] 指针）的完整工具结果片段。仅当指针指向的细节是定案必需时调用；" +
+          "用 offset/limit 分段读取（每次 ≤4000 字符），取到所需即停，不要整段全拉。",
+        inputSchema: z.object({
+          file: z.string().regex(/^[A-Za-z0-9_-]{1,120}$/),
+          offset: z.number().int().min(0).default(0),
+          limit: z.number().int().min(200).max(8_000).default(4_000),
+        }),
+        execute: async ({ file, offset, limit }) => evictor.offloadStore.readSlice(file, offset, limit),
+      })
+      : null;
 
     const agent = new Agent({
       id: "app-diagnosis",
@@ -376,10 +461,15 @@ export class DiagnosisAgent {
         registry,
         input.conversation,
         input.toolsets,
+        readEvidence !== null,
       ),
       model,
       ...(this.mastra ? { mastra: this.mastra } : {}),
-      tools: { load_skill: guard.wrap(loadSkill, "agent", "load_skill") },
+      tools: {
+        load_skill: guard.wrap(loadSkill, "agent", "load_skill"),
+        ...(readEvidence ? { read_evidence: guard.wrap(readEvidence, "agent", "read_evidence") } : {}),
+      },
+      ...(evictor ? { inputProcessors: [evictor] } : {}),
     });
 
     const guardedToolsets = Object.fromEntries(
@@ -394,7 +484,7 @@ export class DiagnosisAgent {
       ]),
     ) as ToolsetsInput;
 
-    const usage = { inputTokens: null as number | null, outputTokens: null as number | null };
+    const usage = { inputTokens: null as number | null, outputTokens: null as number | null, cacheReadTokens: null as number | null };
     let attempted = 0;
     let failed = 0;
     let modelRequests = 0;
@@ -425,6 +515,12 @@ export class DiagnosisAgent {
       soft_closed: guard.stats.softClosed ? 1 : 0,
       observations: registry.size,
       model_requests: modelRequests,
+      eviction_passes: evictor?.stats.passes ?? 0,
+      evicted_results: evictor?.stats.evicted ?? 0,
+      evicted_chars: evictor?.stats.evictedChars ?? 0,
+      ephemeral_cleared: evictor?.stats.ephemeralCleared ?? 0,
+      summaries: evictor?.stats.summaries ?? 0,
+      cache_read_tokens: usage.cacheReadTokens ?? 0,
       elapsed_ms: Date.now() - runStartedAt,
     });
 
@@ -433,6 +529,9 @@ export class DiagnosisAgent {
         const lastAttempt = answerAttempt === MAX_ANSWER_RETRIES;
         // 文本缓冲：最终答案经校验后才对用户放出；工具事件实时流式。
         let bufferedText = "";
+        // 思考捕获：Mastra 1.81 的 MODEL_STEP span 不带 reasoning，从 fullStream 按步骤累积，
+        // 交给 trace 落盘合并（面板「思考」行的数据来源）。
+        const thinkingSteps: string[] = [];
         const output = await agent.stream(
           history as unknown as MessageListInput,
           {
@@ -450,9 +549,14 @@ export class DiagnosisAgent {
         );
         const usagePromise = output.usage.catch(() => null);
 
+        try {
         for await (const chunk of output.fullStream) {
           if (chunk.type === "step-start") {
             modelRequests += 1;
+            thinkingSteps.push("");
+          } else if (chunk.type === "reasoning-delta") {
+            if (thinkingSteps.length === 0) thinkingSteps.push("");
+            thinkingSteps[thinkingSteps.length - 1] += (chunk.payload as { text?: string }).text ?? "";
           } else if (chunk.type === "text-delta") {
             bufferedText += chunk.payload.text;
           } else if (chunk.type === "tool-call") {
@@ -527,6 +631,10 @@ export class DiagnosisAgent {
             throw new Error(truncate(chunk.payload.error, 1_000));
           }
         }
+        } finally {
+          // 每次 agent.stream 对应一条 trace（含出错中断的），思考记录与之严格一一对应。
+          recordRoundThinking(input.conversation.id, thinkingSteps);
+        }
         if (input.abortSignal?.aborted || wasAborted)
           throw new Error("回复中断：请求已取消");
         for (const event of closePendingToolEvents(steps, toolStartedAt, "工具调用未收到结果")) {
@@ -537,6 +645,11 @@ export class DiagnosisAgent {
         const roundUsage = await usagePromise;
         usage.inputTokens = roundUsage?.inputTokens ?? usage.inputTokens;
         usage.outputTokens = roundUsage?.outputTokens ?? usage.outputTokens;
+        // 缓存命中量：DeepSeek 等按命中 0.1 折计费，回归测量必须单列折算。
+        // AI SDK 聚合 usage 暴露 cachedInputTokens；span 属性里是 inputDetails.cacheRead，两种形状都兼容。
+        const roundCacheRead = (roundUsage as { cachedInputTokens?: number; inputDetails?: { cacheRead?: number } } | null)
+          ?.cachedInputTokens ?? (roundUsage as { inputDetails?: { cacheRead?: number } } | null)?.inputDetails?.cacheRead;
+        usage.cacheReadTokens = roundCacheRead ?? usage.cacheReadTokens;
 
         const calledTools = new Set(
           [...steps.values()].map((event) => event.tool).filter((name): name is string => Boolean(name)),

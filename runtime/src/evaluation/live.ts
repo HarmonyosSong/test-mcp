@@ -26,7 +26,7 @@ export interface LiveDatasetCase extends LiveCase {
   id: string;
 }
 
-const COST_FIELDS = ['input_tokens', 'output_tokens', 'model_requests', 'attempted', 'accepted', 'reused', 'result_chars', 'elapsed_ms'] as const;
+const COST_FIELDS = ['input_tokens', 'output_tokens', 'cache_read_tokens', 'model_requests', 'attempted', 'accepted', 'reused', 'eviction_passes', 'evicted_results', 'evicted_chars', 'ephemeral_cleared', 'summaries', 'result_chars', 'elapsed_ms'] as const;
 
 export function parseDataset(raw: string): LiveDatasetCase[] {
   const cases: LiveDatasetCase[] = [];
@@ -235,12 +235,20 @@ export async function runLive(datasetPath: string, outputPath: string, timeoutSe
         row.elapsed_ms = Date.now() - started;
         row.input_tokens = message.input_tokens;
         row.output_tokens = message.output_tokens;
+        row.cache_read_tokens = typeof message.tool_usage.cache_read_tokens === 'number'
+          ? message.tool_usage.cache_read_tokens
+          : null;
         row.model_requests = typeof message.tool_usage.model_requests === 'number'
           ? message.tool_usage.model_requests
           : null;
         row.attempted = message.tool_usage.attempted ?? null;
         row.accepted = message.tool_usage.accepted ?? null;
         row.reused = message.tool_usage.reused ?? null;
+        row.eviction_passes = message.tool_usage.eviction_passes ?? null;
+        row.evicted_results = message.tool_usage.evicted_results ?? null;
+        row.evicted_chars = message.tool_usage.evicted_chars ?? null;
+        row.ephemeral_cleared = message.tool_usage.ephemeral_cleared ?? null;
+        row.summaries = message.tool_usage.summaries ?? null;
         row.result_chars = null;
         row.error = message.error;
         row.input = prompt;

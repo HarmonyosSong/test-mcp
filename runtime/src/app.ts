@@ -105,7 +105,18 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       // 历史观测目录（仅日期）启动时统一升级为 年月日_时分秒_会话ID。
       await migrateLegacyObservabilityDirs(config.mastraObservabilityDir).catch(() => 0);
     }
-    const diagnosisAgent = new DiagnosisAgent(modelConfiguration, skills, mastra, undefined, config.historyBudgetChars);
+    const diagnosisAgent = new DiagnosisAgent(
+      modelConfiguration,
+      skills,
+      mastra,
+      undefined,
+      config.historyBudgetChars,
+      {
+        enabled: config.contextEvictionEnabled,
+        budgetTokens: config.contextEvictionBudgetTokens,
+        offloadDir: resolve(config.dataDir, 'evidence-offload'),
+      },
+    );
     const admission = new InMemoryRunAdmission(config.maxConcurrentRuns);
     const slotRegistry = new InMemoryAgentSlotRegistry();
     if (isCompassA2AConfigured(config.a2aToken)) {

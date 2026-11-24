@@ -97,6 +97,9 @@ export const runtimeConfigSchema = z.object({
   investigationMaxRemoteCalls: z.coerce.number().int().min(0).max(10).default(4),
   /** 历史回放字符预算：超出后从最早的消息开始丢弃（最新一条永远保留）。 */
   historyBudgetChars: z.coerce.number().int().min(2_000).max(200_000).default(24_000),
+  /** 循环内上下文压缩：估算上下文超过该 token 数时触发清理/钳制/摘要。 */
+  contextEvictionEnabled: booleanFromEnvDefaultTrue,
+  contextEvictionBudgetTokens: z.coerce.number().int().min(16_000).max(400_000).default(70_000),
   runMode: z.enum(['local', 'server']).default('server'),
   publicBaseUrl: z.string().default(''),
   appPrefix: z.string().default('/xesapp-agent'),
@@ -196,6 +199,8 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     investigationMaxSeconds: env.HARMONY_AGENT_INVESTIGATION_MAX_SECONDS,
     investigationMaxRemoteCalls: env.HARMONY_AGENT_INVESTIGATION_MAX_REMOTE_CALLS,
     historyBudgetChars: env.HARMONY_AGENT_HISTORY_BUDGET_CHARS,
+    contextEvictionEnabled: env.HARMONY_AGENT_CONTEXT_EVICTION_ENABLED,
+    contextEvictionBudgetTokens: env.HARMONY_AGENT_CONTEXT_EVICTION_BUDGET_TOKENS,
     runMode: env.HARMONY_AGENT_RUN_MODE || undefined,
     publicBaseUrl: env.HARMONY_AGENT_PUBLIC_BASE_URL,
     appPrefix: env.HARMONY_AGENT_APP_PREFIX,
@@ -282,6 +287,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     a2aToken: config.a2aToken.trim(),
     a2aDebugEnabled: Boolean(config.a2aDebugEnabled),
     mastraObservabilityConsole: Boolean(config.mastraObservabilityConsole),
+    contextEvictionEnabled: Boolean(config.contextEvictionEnabled),
     yachEnabled: Boolean(config.yachEnabled),
     yachAppKey: config.yachAppKey.trim(),
     yachAppSecret: config.yachAppSecret.trim(),
