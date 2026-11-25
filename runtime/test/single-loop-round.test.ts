@@ -124,6 +124,7 @@ async function setup(
     offloadDir: string;
     summarize?: (input: { system: string; user: string; maxOutputTokens: number }) => Promise<string>;
   },
+  codeIndexWindowSummary?: string,
 ) {
   const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
   const skills = new SkillRegistry(resolve(projectRoot, 'skills'));
@@ -131,7 +132,7 @@ async function setup(
   const configuration = new ModelConfiguration({ filePath: '/tmp/unused-mastra-test-model.json', env: {} });
   const scripted = modelFor(turns);
   Object.defineProperty(configuration, 'languageModel', { value: async () => scripted.model });
-  const diagnosis = new DiagnosisAgent(configuration, skills, new Mastra({ logger: false }), maxToolFailures, historyBudgetChars, contextEviction);
+  const diagnosis = new DiagnosisAgent(configuration, skills, new Mastra({ logger: false }), maxToolFailures, historyBudgetChars, contextEviction, codeIndexWindowSummary);
   return { diagnosis, scripted };
 }
 
@@ -802,4 +803,63 @@ test('持续超目标时旧历史被压成上下文检查点并进入后续 prom
   } finally {
     await rm(offloadDir, { recursive: true, force: true });
   }
+});
+
+test('系统指令：合并后的源码/协查规则与动态版本窗口，无过期硬编码', async () => {
+  const { diagnosis, scripted } = await setup(
+    [{ text: anchored('insufficient_evidence', '（脚本化收尾）') }],
+    undefined,
+    undefined,
+    undefined,
+    '默认窗口覆盖 9.9.9/8.8.8，HD 窗口另含 7.7.7',
+  );
+  const prepareSource = createTool({
+    id: 'prepare_source',
+    description: 'Bind source.',
+    inputSchema: z.object({}),
+    execute: async () => ({ status: 'unresolved' }),
+  });
+  const searchIndex = createTool({
+    id: 'search_code_index',
+    description: 'Search code catalog.',
+    inputSchema: z.object({}),
+    execute: async () => ({ status: 'no_match' }),
+  });
+  const followup = createTool({
+    id: 'request_compass_followup',
+    description: 'Async compass followup.',
+    inputSchema: z.object({}),
+    execute: async () => ({ status: 'started' }),
+  });
+  await run(diagnosis, '支付失败', {
+    toolsets: { round: { prepare_source: prepareSource, search_code_index: searchIndex, request_compass_followup: followup } },
+  });
+  const systemPrompt = JSON.stringify(scripted.prompts[0]);
+
+  // 合并后的规则在；被裁掉的动员尾巴与撞车表述不在。
+  assert.match(systemPrompt, /先源码后协查/);
+  assert.match(systemPrompt, /显式指定首绑端/);
+  assert.match(systemPrompt, /故障排查本地毫无头绪/);
+  assert.match(systemPrompt, /产品线未指明时按默认学而思处理/);
+  assert.doesNotMatch(systemPrompt, /留成未解之谜/);
+  assert.doesNotMatch(systemPrompt, /不让提问者干等/);
+  assert.doesNotMatch(systemPrompt, /重试多少次都一样/);
+
+  // 版本窗口来自注入的动态描述，不再是 prompt 里的硬编码版本号。
+  assert.match(systemPrompt, /9\.9\.9\/8\.8\.8/);
+  assert.doesNotMatch(systemPrompt, /手机端 7\.106\.0\/7\.105\.0 与学家云/);
+});
+
+test('系统指令：未注入窗口描述时回退通用表述', async () => {
+  const { diagnosis, scripted } = await setup([{ text: anchored('insufficient_evidence', '（脚本化收尾）') }]);
+  const searchIndex = createTool({
+    id: 'search_code_index',
+    description: 'Search code catalog.',
+    inputSchema: z.object({}),
+    execute: async () => ({ status: 'no_match' }),
+  });
+  await run(diagnosis, '支付失败', { toolsets: { round: { search_code_index: searchIndex } } });
+  const systemPrompt = JSON.stringify(scripted.prompts[0]);
+  assert.match(systemPrompt, /窗口版本由索引服务端按版本登记表动态维护/);
+  assert.doesNotMatch(systemPrompt, /手机端 7\.106\.0/);
 });

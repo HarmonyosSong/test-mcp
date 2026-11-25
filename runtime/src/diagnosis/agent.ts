@@ -213,6 +213,8 @@ function promptFor(
   conversation: DiagnosisRunInput["conversation"],
   toolsets: ToolsetsInput | undefined,
   readEvidenceAvailable = false,
+  /** 代码索引版本窗口描述（从 version-scope.json 动态生成）；缺省用通用表述。 */
+  codeIndexWindowSummary?: string | null,
 ): string {
   const availableTools = new Set(["load_skill"]);
   if (readEvidenceAvailable) availableTools.add("read_evidence");
@@ -244,13 +246,15 @@ function promptFor(
 ${readEvidenceAvailable ? `8. 上下文控制：体积较大的旧工具结果会被系统自动压缩——保留开头与结尾摘录、完整版外置为 [ev-file:...] 指针；指针中的 ev- 观测 ID 依然有效可直接引用，外置不等于丢失。仅当外置结果中被省略的细节是定案必需时，才用 read_evidence 按 offset/limit 分段取回（每次 ≤4000 字符，取到所需即停）；不要整段全拉，也不要反复读取同一文件。更早的排查过程可能被系统压缩为「上下文检查点」，其中保留的 ev- ID 与 ev-file 指针同样有效。
 ` : ""}${prepareSourceAvailable ? `
 源码快照：
-- 需要查阅项目源码时调用 prepare_source：Runtime 按用户描述与已确认的日志观测解析平台/产品线/形态/版本，从版本登记表绑定只读快照；绑定成功后 read_project_file / search_project_text 等源码工具立即可用。
-- 模型不得自行决定仓库、分支、commit 或 URL。prepare_source 返回缺口说明时，先查询关联日志或向用户追问最少信息（如学而思/学家云、手机/HD、版本号），再重试。
+- 需要查阅项目源码时调用 prepare_source：按用户描述与已确认的日志观测从版本登记表绑定只读快照；绑定成功后 read_project_file / search_project_text 等源码工具立即可用。
+- 客户端实现问题先源码后协查：日志失败语义不明（HTTP 成功但业务失败、响应体为空或缺字段、错误码/失败分支含义不清），或索引/导航线索指向客户端实现时，先 prepare_source 绑定事故端，用 search_project_text 定位调用点、read_project_file 核实失败语义；解读后仍缺服务端事实时才发起服务端协查。
+- 绑定不得自行决定仓库、分支、commit 或 URL；返回缺口说明时，先查询关联日志或向用户追问最少信息（如手机/HD、版本号），带新信息再重试；产品线未指明时按默认学而思处理、无需追问（用户说明是学家云时带产品线重绑）。事故平台未确定的多端/无端查询（如「iOS 和安卓某接口入参怎么给」）：直接传 platform 显式指定首绑端（如 platform="ios"）绕过解析，需要第二端时再调一次传另一个 platform 绑对照端。
 - 跨端实现对比：怀疑移植/实现差异（同一业务只在某一端异常、字段或枚举语义对不上）时，prepare_source 传与事故端不同的 platform 绑定对照端快照（同版本优先，未登记自动回落并标注），此后源码工具传 target="compare" 查阅对照端；对比引用 ev-ID 时必须标注所属平台与版本。事故端可以是任意端，对照端也可以是任意其他端。
 - Runtime 会将可解析的 iOS 组件挂载到 components/<组件名>；source_limitations 中标注「声明版本/对照」的组件只能解释条件行为，不能认定为现场实际打包版本。
 ` : ""}${compassFollowupAvailable ? `
 服务端协查（异步跟进${consultAvailable ? "，另有同步模式" : ""}）：
-- request_compass_followup（故障协查默认）：本地已有初步归因、还需服务端结论补强时使用。发起后立即返回、不阻塞本轮——你应随即用「初步判定」收尾（正文标注初步、【补充信息】写明"服务端协查进行中，结果稍后本会话内同步"）；协查结果由系统后台等待并以新消息推送。本地毫无头绪时同样用它：初步判定如实写缺口，不让提问者干等。
+- request_compass_followup（故障协查默认）：本地已有初步归因、还需服务端结论补强时使用。发起后立即返回、不阻塞本轮——你应随即用「初步判定」收尾（正文标注初步、【补充信息】写明"服务端协查进行中，结果稍后本会话内同步"）；协查结果由系统后台等待并以新消息推送。故障排查本地毫无头绪时同样用它：初步判定如实写缺口。
+- 协查报文分两层：question 只写要服务端查什么与本地已确认事实（接口、学员、时间窗），不要手工罗列请求时间清单（计数易错，以凭据区为准）；key_evidence 从日志观测原文照抄对账键——失败请求逐条一行（traceId、__client_ip__、devid、原始 epoch+北京时间、httpCode、响应体大小、requestStatus），正常样本列 1-2 条对照。服务端按凭据逐条核对，凭据缺失或改写会导致对账失败。
 - 本地证据已闭环（源码/日志足以直接支撑结论）时不要发起协查：协查用于补强服务端侧缺口，不给本地已确认的结论"背书"。${consultAvailable ? `
 - consult_compass（同步等待）：仅当协查结论就是答案本身、本地给不出任何初步结论时才同步等待（如纯服务端规则/实现查询）。把问题委派给 Compass（服务端研发 Agent，覆盖服务端/前端/H5 代码知识与服务端日志）；question 写清要查什么、已知学员与时间窗、本地已确认事实。
 - 同步协查完成态结论与本地观测同级：登记为正式观测（ev-ID），可支撑正向判定；回答中像引用其他观测一样直接引用，无需单独声明来源或标注"外部/未验证"。失败、超时或预算耗尽返回的是缺口而非证据，如实说明即可。` : ""}
@@ -260,11 +264,10 @@ ${readEvidenceAvailable ? `8. 上下文控制：体积较大的旧工具结果�
 - 导航结果为空、失败或返回 unavailable 时回退到 search_project_text；导航失败不等于「无匹配」。
 ` : ""}${codeCatalogAvailable ? `
 代码索引工具：
-- search_code_index 用于按用户语言查找当前版本窗口内的模块、文件、符号和代码术语；默认窗口覆盖手机端 7.106.0/7.105.0 与学家云 5.106.0/5.105.0，HD 窗口另含 5.107.0/5.106.5；指定版本零命中时索引可能回落到邻近版本（version_fallback=true），按导航线索处理即可。
+- search_code_index 用于按用户语言查找当前版本窗口内的模块、文件、符号和代码术语；${codeIndexWindowSummary ?? "窗口版本由索引服务端按版本登记表动态维护"}；指定版本零命中时索引可能回落到邻近版本（version_fallback=true），按导航线索处理即可。
 - 索引是精选模块目录（支付/登录/首页/跨报/英语书房/磨耳朵等），不是全量代码库；no_match 只说明主题不在精选模块内，不代表源码中没有。
-- 索引结果只是导航线索，不能直接作为证据；命中后根据返回的 platform、version、repository_id、resolved_commit 调用 prepare_source，再用 read_project_file 核实同一快照。
+- 索引命中只是定位线索：按其返回的 platform、version、repository_id、resolved_commit 调 prepare_source 绑定同一快照，read_project_file 核实后才可引用；no_match 且问题指向客户端实现时用 search_project_text 全文搜索兜底（中英文术语都试，如「日历」搭配 Calendar/EventKit、「支付」搭配 Pay）。
 - 用户只问产品规则时不必调用代码索引；用户问实现、代码位置或模块归属时优先调用代码索引。
-- 索引无命中且问题指向客户端实现时，不得直接收尾或转协查：先 prepare_source 绑定目标端快照，再用 search_project_text 全文搜索（中英文术语都试，如「日历」搭配 Calendar/EventKit、「支付」搭配 Pay），命中后用 read_project_file 核实。
 ` : ""}
 ${remoteLogAvailabilityNotice(availableTools)}
 
@@ -329,6 +332,8 @@ export class DiagnosisAgent {
       /** 摘要层模型调用；测试可注入替身，缺省用当前会话模型。 */
       summarize?: SummarizeFn;
     },
+    /** 代码索引版本窗口描述（从 version-scope.json 生成）；缺省 prompt 用通用表述。 */
+    private readonly codeIndexWindowSummary?: string | null,
   ) {
     if (!Number.isInteger(maxToolFailures) || maxToolFailures < 1 || maxToolFailures > MAX_TOOL_FAILURES) {
       throw new Error(`maxToolFailures must be between 1 and ${MAX_TOOL_FAILURES}`);
@@ -462,6 +467,7 @@ export class DiagnosisAgent {
         input.conversation,
         input.toolsets,
         readEvidence !== null,
+        this.codeIndexWindowSummary,
       ),
       model,
       ...(this.mastra ? { mastra: this.mastra } : {}),

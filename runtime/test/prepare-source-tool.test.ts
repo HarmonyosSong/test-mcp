@@ -220,8 +220,107 @@ test('对照端绑定：显式不同 platform 写 compare_source，事故 scope 
   assert.ok(Array.isArray(compare.source_limitations));
 });
 
-test('对照端与事故平台相同：走事故端流程（不触发对照绑定）', async () => {
-  const conversation = makeIncidentConversation();
+test('显式平台绑定：事故平台未定时直接绑为事故端，绕过文本解析', async () => {
+  const log: string[] = [];
+  // 多平台文本：裸调必然歧义失败（见「平台歧义」用例），显式 platform 是唯一推进路径。
+  const conversation = makeConversation('ios 安卓现在userinfo的接口 talModifiTime 字段入参是怎么给的');
+  const holder = new LazySourceHolder(fakeProvider(log), conversation.id);
+  const bindInputs: Record<string, unknown>[] = [];
+  const tool = createPrepareSourceTool({
+    conversation,
+    holder,
+    content: 'ios 安卓现在userinfo的接口 talModifiTime 字段入参是怎么给的',
+    bind: async (input) => {
+      bindInputs.push(input as unknown as Record<string, unknown>);
+      if (input.platform === 'android') {
+        return {
+          workspace_path: '/snapshots/android-latest',
+          repository_id: 'repo-android',
+          repository_name: 'xesapp-android',
+          requested_ref: 'xueersi_v7.106.0_20261101',
+          resolved_commit: 'androidcommit',
+          platform: 'android',
+          product_line: 'xueersi',
+          form_factor: null,
+          version: '7.106.0',
+          build: null,
+          source_repositories: [{
+            repository_id: 'repo-android',
+            repository_name: 'xesapp-android',
+            requested_ref: 'xueersi_v7.106.0_20261101',
+            resolved_commit: 'androidcommit',
+            role: 'shell',
+            mount_path: '',
+          }],
+          source_completeness: 'partial',
+          source_limitations: [],
+        };
+      }
+      return {
+        workspace_path: '/snapshots/ios-latest',
+        platform: 'ios',
+        product_line: 'xueersi',
+        version: '7.106.0',
+        source_repositories: [{
+          repository_id: 'repo-ios',
+          repository_name: 'xesapp-ios',
+          requested_ref: 'xueersi_v7.106.0_1000_20261101',
+          resolved_commit: 'ioscommit',
+          role: 'shell',
+          mount_path: '',
+        }],
+        source_completeness: 'partial',
+        source_limitations: ['未登记指定版本时回落最近已登记版本。'],
+      };
+    },
+  });
+  const result = await executeTool(tool, { platform: 'ios' });
+  assert.equal(result.status, 'bound');
+  assert.equal(result.explicit, true);
+  // 显式参数直达 bind：不经过文本解析，版本保持会话原值（空），产品线按默认学而思兜底。
+  assert.equal(bindInputs[0]!.platform, 'ios');
+  assert.equal(bindInputs[0]!.productLine, 'xueersi');
+  assert.equal(bindInputs[0]!.version, null);
+  // 事故端 scope 被写入：该端自此成为事故端，登记表解析出的产品线一并落库。
+  assert.equal(conversation.platform, 'ios');
+  assert.equal(conversation.product_line, 'xueersi');
+  assert.equal(conversation.workspace_path, '/snapshots/ios-latest');
+  assert.equal(conversation.version, '7.106.0');
+  assert.equal(holder.bound(), true);
+
+  // 链式：再传另一个 platform，自动走对照端分支（版本缺省沿用事故版本号）。
+  const second = await executeTool(tool, { platform: 'android' });
+  assert.equal(second.status, 'bound_compare');
+  assert.equal(bindInputs[1]!.platform, 'android');
+  assert.equal(bindInputs[1]!.productLine, 'xueersi');
+  assert.equal(bindInputs[1]!.version, '7.106.0');
+  assert.equal(conversation.compare_source?.platform, 'android');
+  assert.equal(holder.bound('compare'), true);
+  // 事故端（ios）一字不动。
+  assert.equal(conversation.platform, 'ios');
+  assert.equal(conversation.workspace_path, '/snapshots/ios-latest');
+  assert.deepEqual(log, ['bind:/snapshots/ios-latest', 'bind:/snapshots/android-latest']);
+});
+
+test('显式平台绑定物化失败：返回缺口文本而不抛错（工具合同）', async () => {
+  const conversation = makeConversation('ios 安卓现在userinfo的接口字段入参是怎么给的');
+  const holder = new LazySourceHolder(fakeProvider([]), conversation.id);
+  const tool = createPrepareSourceTool({
+    conversation,
+    holder,
+    content: 'ios 安卓现在userinfo的接口字段入参是怎么给的',
+    bind: async () => {
+      throw new Error('registry unreachable');
+    },
+  });
+  const result = await executeTool(tool, { platform: 'ios' });
+  assert.equal(result.status, 'unresolved');
+  assert.match(String(result.limitation), /绑定失败/);
+  assert.equal(conversation.platform, null);
+  assert.equal(holder.bound(), false);
+});
+
+test('对照端与事故平台相同：走事故端流程（不触发对照绑定）', async () => {  const conversation = makeIncidentConversation();
   const holder = new LazySourceHolder(fakeProvider([]), conversation.id);
   const tool = createPrepareSourceTool({
     conversation,

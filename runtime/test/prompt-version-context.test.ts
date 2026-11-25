@@ -112,3 +112,46 @@ test('先记录提示词里的部分上下文，等待 LogCenter 补齐端后再
     build: null,
   });
 });
+
+test('产品线未指明时默认学而思，显式提到学家云（含历史消息）不被默认值覆盖', () => {
+  // 全文不提 App：按默认学而思解析，登记表不再因「命中多个产品线」失败。
+  assert.deepEqual(resolvePromptSourceContext('Android 支付失败', {
+    platform: null,
+    product_line: null,
+    form_factor: null,
+    version: null,
+    build: null,
+  }), {
+    platform: 'android',
+    productLine: 'xueersi',
+    formFactor: null,
+    version: null,
+    build: null,
+  });
+  // 历史消息提到学家云：检测值优先于默认值（历史版本号一并沿用）。
+  assert.deepEqual(resolvePromptSourceContext('Android 支付失败', {
+    platform: null,
+    product_line: null,
+    form_factor: null,
+    version: null,
+    build: null,
+    promptHistory: ['学家云 5.106.0 的作业列表'],
+  }), {
+    platform: 'android',
+    productLine: 'xuejiayun',
+    formFactor: null,
+    version: '5.106.0',
+    build: null,
+  });
+  // 本会话已确定学家云：沿用会话值。
+  assert.equal(
+    resolvePromptSourceContext('Android 支付失败', {
+      platform: null,
+      product_line: 'xuejiayun',
+      form_factor: null,
+      version: null,
+      build: null,
+    })?.productLine,
+    'xuejiayun',
+  );
+});

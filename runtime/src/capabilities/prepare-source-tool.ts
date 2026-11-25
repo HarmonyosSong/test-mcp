@@ -5,6 +5,7 @@ import { createTool } from '@mastra/core/tools';
 import type { ConversationRecord } from '../domain/schemas.js';
 import type { RunDiagnosisRoundOptions } from '../diagnosis/run-round.js';
 import { prepareConversationSource } from './prepare-source.js';
+import { clearIncompleteSourceBinding } from './source-binding.js';
 import type { LazySourceHolder } from './lazy-source.js';
 
 /**
@@ -38,14 +39,18 @@ export function createPrepareSourceTool(options: {
       '返回缺口说明时表示上下文不足：先查询关联日志或向用户追问，再重试。' +
       '跨端实现对比：显式传 platform（必须与事故平台不同）可绑定对照端快照，' +
       '同版本优先、未登记则回落最近已登记版本并标注；此后源码工具传 target="compare" 查阅对照端。' +
-      '事故端可以是任意端，对照端同理。',
+      '事故端可以是任意端，对照端同理。' +
+      '事故平台未确定时（无端信息查询、多端规则对比）：显式传 platform 直接把该端绑为事故端，' +
+      '版本缺省回落最近已登记版本；此后再传另一 platform 即走对照端分支。',
     inputSchema: z.object({
       hint: z.string().optional().describe('可选的补充说明（如用户刚确认的版本号），并入解析输入'),
       platform: z.enum(['harmony', 'android', 'ios']).optional().describe(
-        '显式指定平台；与事故平台不同时绑定为对照端快照（事故端 scope 不变），用于跨端实现对比；相同或缺省时走事故端解析流程',
+        '显式指定平台；事故平台已确定且与之不同时绑定为对照端快照（事故端 scope 不变），用于跨端实现对比；' +
+          '事故平台未确定时直接把该端绑为事故端（无端信息查询、多端对比的首端），绕过文本解析；' +
+          '与事故平台相同或缺省时走事故端解析流程',
       ),
       version: z.string().optional().describe(
-        '配合 platform 使用指定对照端版本；缺省时优先事故版本号，未登记则按对照平台规则回落',
+        '配合 platform 使用指定对照端/显式端版本；缺省时优先事故版本号，未登记则按目标平台规则回落',
       ),
     }),
     execute: async (args) => {
@@ -61,6 +66,13 @@ export function createPrepareSourceTool(options: {
       const incidentPlatform = conversation.platform;
       if (args.platform && incidentPlatform && args.platform !== incidentPlatform) {
         return bindCompareSlot(args.platform, args.version);
+      }
+
+      // 显式指定分支：事故平台未定时，platform 参数作为直接绑定目标（无端信息查询、
+      // 多端规则对比的首绑端）——文本里有多个平台时文本解析必然歧义失败，这条路是
+      // 模型唯一能主动推进的绑定方式。绑上后该端即事故端，再传另一 platform 自动走对照端。
+      if (args.platform && !incidentPlatform) {
+        return bindExplicitSlot(args.platform, args.version);
       }
 
       const extractInput = args.hint ? `${content}\n${args.hint}` : content;
@@ -97,6 +109,72 @@ export function createPrepareSourceTool(options: {
       };
     },
   });
+
+  /**
+   * 显式平台绑定：事故平台未定时，把模型指定的平台直接绑为事故端。
+   * 跳过文本解析（多平台文本必然歧义）；产品线/形态沿用会话已有值（可为空，
+   * 由版本登记表按缺省规则解析），版本缺省取会话值再回落最近已登记版本。
+   */
+  async function bindExplicitSlot(
+    platform: 'harmony' | 'android' | 'ios',
+    requestedVersion?: string,
+  ): Promise<Record<string, unknown>> {
+    const { conversation, bind, holder, abortSignal } = options;
+    if (!bind) {
+      return { status: 'unavailable', limitation: '源码快照服务未配置，无法绑定源码。' };
+    }
+    const version = requestedVersion?.trim() || conversation.version || null;
+    try {
+      const source = await bind({
+        platform,
+        // 与解析器同一规则：产品线未指明默认学而思（老会话可能尚无 product_line）。
+        productLine: conversation.product_line ?? 'xueersi',
+        formFactor: conversation.form_factor,
+        version,
+        build: null,
+        signal: abortSignal,
+      });
+      if (!source.workspace_path) {
+        return {
+          status: 'unresolved',
+          platform,
+          version,
+          limitation: `${platform} ${version ?? '最近已登记版本'} 未解析出可用快照；可换版本重试，或继续无源码分析。`,
+        };
+      }
+      // 与 prepareConversationSource 成功路径同构：先写 scope，再并入绑定结果。
+      clearIncompleteSourceBinding(conversation);
+      Object.assign(conversation, { platform, version });
+      Object.assign(conversation, source);
+      await holder.bind(conversation.workspace_path!);
+      return {
+        status: 'bound',
+        explicit: true,
+        platform: conversation.platform ?? null,
+        product_line: conversation.product_line ?? null,
+        form_factor: conversation.form_factor ?? null,
+        version: conversation.version ?? null,
+        build: conversation.build ?? null,
+        repositories: (conversation.source_repositories ?? []).map((repository) => ({
+          repository_id: repository.repository_id,
+          resolved_commit: repository.resolved_commit,
+          mount_path: repository.mount_path,
+        })),
+        source_completeness: conversation.source_completeness ?? null,
+        source_limitations: conversation.source_limitations,
+        usage: '已按显式指定的平台绑定事故端快照（未经文本解析）；需要对比第二端时再调 prepare_source 传另一个 platform 绑定对照端。',
+      };
+    } catch (error) {
+      abortSignal?.throwIfAborted();
+      const message = error instanceof Error ? error.message : '未知错误';
+      return {
+        status: 'unresolved',
+        platform,
+        version,
+        limitation: `${platform} 快照绑定失败：${message}。可换版本/平台重试，或继续无源码分析。`,
+      };
+    }
+  }
 
   /** 绑定对照端快照：只写 conversation.compare_source，事故 scope 一字不动。 */
   async function bindCompareSlot(
