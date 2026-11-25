@@ -13,6 +13,9 @@ Build a small set of competing root-cause candidates and test each against acces
 Prefer direct relationships such as a stack frame to source context, a resource reference to its
 declaration, or a permission failure to the matching configuration entry.
 
+要查线上日志（cloud_search / search_both_logs 等）时，先 load_skill("query-platform-logs")：
+查询窗口、关键词与"没查到"的解读纪律都在那个技能里，本技能不含日志查询纪律。
+
 For every retained candidate, record evidence source, path or log position, a concise excerpt, and
 what the evidence supports. Record a hypothesis as ruled out only when contrary evidence was actually
 observed. Absence from a partial search is not disproof.
