@@ -6,6 +6,7 @@ import { LazySourceHolder, createLazySourceToolset } from '../capabilities/lazy-
 import type { CompassFollowupOutcome } from '../capabilities/consult-tool.js';
 import type { ConversationRecord } from '../domain/schemas.js';
 import type { ModelConfiguration } from '../model/configuration.js';
+import { recordRoundThinking } from '../observability/conversation-span-file-exporter.js';
 
 /**
  * 协查回执后的客户端侧交叉分析（方案 A 的下半场）。
@@ -145,6 +146,16 @@ export async function analyzeFollowupWithSource(input: {
   }
 }
 
+/** 流内思考捕获：reasoning-delta 按 step-start 分桶累积（与主诊断轮同一模式）。 */
+function accumulateThinking(steps: string[], chunk: { type: string; payload?: unknown }): void {
+  if (chunk.type === 'step-start') {
+    steps.push('');
+  } else if (chunk.type === 'reasoning-delta') {
+    if (steps.length === 0) steps.push('');
+    steps[steps.length - 1] += ((chunk.payload as { text?: string } | undefined)?.text ?? '');
+  }
+}
+
 /** 真实模型轮：临时绑定会话已挂载的源码快照，小步数、硬超时。 */
 async function runSourceAnalysisRound(input: {
   modelConfiguration: ModelConfiguration;
@@ -183,8 +194,17 @@ async function runSourceAnalysisRound(input: {
     });
     const usagePromise = output.usage.catch(() => null);
     let text = '';
-    for await (const chunk of output.fullStream) {
-      if (chunk.type === 'text-delta') text += chunk.payload.text;
+    const thinkingSteps: string[] = [];
+    try {
+      for await (const chunk of output.fullStream) {
+        accumulateThinking(thinkingSteps, chunk);
+        if (chunk.type === 'text-delta') text += chunk.payload.text;
+      }
+    } finally {
+      // 思考侧通道与 trace 封盘按会话 FIFO 对齐：本轮 span 已起步就记录一次
+      // （哪怕全空），否则后续轮的思考会被本轮 trace 错位抢走。仅在挂了
+      // mastra（会产生 trace）时记录。
+      if (input.mastra) recordRoundThinking(input.conversation.id, thinkingSteps);
     }
     const usage = await usagePromise;
     if (!text.trim()) return null;
@@ -294,8 +314,15 @@ export async function synthesizeYachFollowupReply(input: {
     });
     const usagePromise = output.usage.catch(() => null);
     let text = '';
-    for await (const chunk of output.fullStream) {
-      if (chunk.type === 'text-delta') text += chunk.payload.text;
+    const thinkingSteps: string[] = [];
+    try {
+      for await (const chunk of output.fullStream) {
+        accumulateThinking(thinkingSteps, chunk);
+        if (chunk.type === 'text-delta') text += chunk.payload.text;
+      }
+    } finally {
+      // 与分析轮同理：span 已起步就记录一次思考，保持 FIFO 对齐。
+      if (input.mastra) recordRoundThinking(input.conversation.id, thinkingSteps);
     }
     const usage = await usagePromise;
     if (!text.trim()) return null;
