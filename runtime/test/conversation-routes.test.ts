@@ -1161,3 +1161,53 @@ test('ai-traces 接口读取落盘 trace 并拒绝路径穿越', async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('ai-traces 列表合并时间线事件（最新在前），事件详情可单独拉取', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ai-traces-events-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  const observabilityDir = join(directory, 'observability');
+  const { conversationObservabilityDirName } = await import('../src/observability/conversation-span-file-exporter.js');
+  try {
+    const conversation = await store.createConversation({ title: '时间线会话' });
+    const dir = join(observabilityDir, 'conversations', conversationObservabilityDirName(conversation.id));
+    await mkdir(join(dir, 'traces'), { recursive: true });
+    await writeFile(
+      join(dir, 'manifest.jsonl'),
+      `${JSON.stringify({ ts: '2026-11-24T10:08:19Z', trace_id: 'trace-main', message_id: 'm1', file: 'traces/t1.json', summary: { steps: 9, tool_calls: 13 } })}\n`,
+    );
+    await writeFile(join(dir, 'traces', 't1.json'), JSON.stringify({ trace_id: 'trace-main', user_input: '问题' }));
+    const event = {
+      event_id: 'evt-settled01',
+      kind: 'compass_followup_settled',
+      at: '2026-11-24T10:09:12Z',
+      title: '服务端协查回执（完成）',
+      detail: '下单时少传了一个字段',
+      data: { task_id: 'task-1', wait_ms: 37_000 },
+    };
+    await writeFile(join(dir, 'events.jsonl'), `${JSON.stringify(event)}\n`);
+
+    const routes = createConversationRoutes(store, undefined, undefined, undefined, { observabilityDir });
+    const list = await routes.request(`/conversations/${conversation.id}/ai-traces`);
+    assert.equal(list.status, 200);
+    const entries = await list.json() as Array<Record<string, unknown>>;
+    assert.equal(entries.length, 2);
+    // 事件比 trace 晚，排最前；且不带 file 字段。
+    assert.equal(entries[0]!.trace_id, 'evt-settled01');
+    assert.equal(entries[0]!.entry_type, 'event');
+    assert.equal(entries[0]!.event_kind, 'compass_followup_settled');
+    assert.equal(entries[0]!.title, '服务端协查回执（完成）');
+    assert.equal(entries[1]!.trace_id, 'trace-main');
+    assert.equal(entries[1]!.entry_type, 'trace');
+
+    const detail = await routes.request(`/conversations/${conversation.id}/ai-traces/evt-settled01`);
+    assert.equal(detail.status, 200);
+    const payload = await detail.json() as Record<string, unknown>;
+    assert.equal(payload.entry_type, 'event');
+    assert.equal(payload.kind, 'compass_followup_settled');
+    assert.equal(payload.detail, '下单时少传了一个字段');
+    assert.deepEqual(payload.data, { task_id: 'task-1', wait_ms: 37_000 });
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

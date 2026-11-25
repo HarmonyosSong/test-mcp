@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { appendFile, chmod, mkdir, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -30,6 +31,77 @@ function takeRoundThinking(conversationId: string): string[] | undefined {
   const entry = queue.shift();
   if (queue.length === 0) thinkingByConversation.delete(conversationId);
   return entry;
+}
+
+// ———— 会话时间线事件侧通道 ————
+//
+// 观测面不能只覆盖模型轮：协查发起/回执、兜底绑定、分析轮跳过这类确定性编排
+// 不产生 span，主轮 trace 封盘后就成了盲区。这里提供一条与 trace 并行的
+// 事件通道——调用方给事实，本模块负责落到会话观测目录的 events.jsonl，
+// 调试面板把 trace 与事件按时间合并渲染成会话时间线。
+
+/** 一条会话时间线事件（events.jsonl 的一行）。 */
+export interface ConversationTimelineEvent {
+  event_id: string;
+  /** 事件种类：compass_followup_sent / compass_followup_settled / followup_source_bound / … */
+  kind: string;
+  /** 事件发生的真实时刻（ISO）；落盘顺序不代表发生顺序，面板按它排序。 */
+  at: string;
+  /** 面板一行标题。 */
+  title: string;
+  /** 长文本详情（协查结论全文、分析正文等）。 */
+  detail?: string;
+  /** 结构化补充（task_id、wait_ms、跳过原因等）。 */
+  data?: Record<string, unknown>;
+}
+
+let eventSinkRootDir: string | null = null;
+
+/** 注册事件落盘根目录（observability 根）；由 Mastra 观测装配处调用，进程内一次。 */
+export function registerConversationEventSink(rootDir: string): void {
+  eventSinkRootDir = rootDir;
+}
+
+/**
+ * 追加一条会话时间线事件。best-effort：未注册 sink（测试环境）或落盘失败都不抛错，
+ * 绝不影响业务流程。目录解析与 trace 同一套规则：已有会话目录复用，没有才按会话创建时刻新建。
+ */
+export async function recordConversationEvent(
+  conversationId: string,
+  conversationCreatedAt: string | null | undefined,
+  input: {
+    kind: string;
+    title: string;
+    detail?: string;
+    data?: Record<string, unknown>;
+    /** 事件的实际发生时刻；缺省为调用时刻。 */
+    at?: string;
+  },
+): Promise<void> {
+  if (!eventSinkRootDir) return;
+  try {
+    const conversationsRoot = join(eventSinkRootDir, 'conversations');
+    const conversationDir = await resolveConversationObservabilityDir(
+      conversationsRoot,
+      conversationId,
+      conversationCreatedAt ? new Date(conversationCreatedAt) : new Date(),
+    );
+    await mkdir(conversationDir, { recursive: true, mode: 0o700 });
+    await chmod(conversationDir, 0o700).catch(() => undefined);
+    const event: ConversationTimelineEvent = {
+      event_id: `evt-${randomUUID().replaceAll('-', '').slice(0, 10)}`,
+      kind: input.kind,
+      at: input.at ?? new Date().toISOString(),
+      title: input.title,
+      ...(input.detail !== undefined ? { detail: input.detail } : {}),
+      ...(input.data !== undefined ? { data: input.data } : {}),
+    };
+    const eventsPath = join(conversationDir, 'events.jsonl');
+    await appendFile(eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', mode: 0o600 });
+    await chmod(eventsPath, 0o600).catch(() => undefined);
+  } catch {
+    // 观测事件落盘失败不拖累业务流程。
+  }
 }
 
 /** 0 = keep full text (recommended for local debugging). */

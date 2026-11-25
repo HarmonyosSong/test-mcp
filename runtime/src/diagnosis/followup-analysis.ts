@@ -73,9 +73,22 @@ export async function analyzeFollowupWithSource(input: {
   mastra?: Mastra;
   /** 测试可注入的模型轮实现；缺省走真实 Mastra Agent。 */
   runRound?: (prompt: string) => Promise<FollowupAnalysis | null>;
+  /** 跳过/失败原因回调：观测面板据此把"无声的 null"变成可见的跳过事件。 */
+  onSkip?: (reason: string) => void;
 }): Promise<FollowupAnalysis | null> {
   const { conversation, outcome } = input;
-  if (outcome.state !== 'completed' || !outcome.text.trim()) return null;
+  if (outcome.state !== 'completed' || !outcome.text.trim()) {
+    input.onSkip?.('协查未完成或无结论文本');
+    return null;
+  }
+  // 源码快照是分析轮的米：主轮没绑、settle 兜底也没绑上时如实记录，不再混进"无产出"。
+  if (!conversation.workspace_path) {
+    console.warn('[followup-analysis] 会话未绑定源码快照，跳过客户端侧分析', {
+      conversationId: conversation.id,
+    });
+    input.onSkip?.('会话未绑定源码快照');
+    return null;
+  }
 
   const userQuestion = lastUserText(conversation);
   const prompt = [
@@ -96,7 +109,8 @@ export async function analyzeFollowupWithSource(input: {
   try {
     const result = await runRound(prompt);
     if (!result) {
-      console.warn('[followup-analysis] 分析轮无产出（未绑源码/超时/空输出），按纯转发处理');
+      console.warn('[followup-analysis] 分析轮无产出（超时/空输出），按纯转发处理');
+      input.onSkip?.('分析轮无产出（超时或空输出）');
       return null;
     }
     const cleaned = stripVerdictLines(result.text);
@@ -105,6 +119,7 @@ export async function analyzeFollowupWithSource(input: {
         conversationId: conversation.id,
         preview: cleaned.slice(0, 120),
       });
+      input.onSkip?.('模型判定纯服务端原因');
       return null;
     }
     console.warn('[followup-analysis] 客户端侧分析完成', {
@@ -122,6 +137,7 @@ export async function analyzeFollowupWithSource(input: {
       conversationId: conversation.id,
       error: error instanceof Error ? error.message : String(error),
     });
+    input.onSkip?.(`分析轮异常：${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }
@@ -232,9 +248,14 @@ export async function synthesizeYachFollowupReply(input: {
   mastra?: Mastra;
   /** 测试可注入的模型轮实现；缺省走真实 Mastra Agent（无工具）。 */
   runRound?: (prompt: string) => Promise<FollowupAnalysis | null>;
+  /** 跳过/失败原因回调：观测面板据此把回退拼装文案的原因变成可见事件。 */
+  onSkip?: (reason: string) => void;
 }): Promise<FollowupAnalysis | null> {
   const { conversation, outcome } = input;
-  if (outcome.state !== 'completed' || !outcome.text.trim()) return null;
+  if (outcome.state !== 'completed' || !outcome.text.trim()) {
+    input.onSkip?.('协查未完成或无结论文本');
+    return null;
+  }
 
   const prompt = [
     `用户问题原文：${lastUserText(conversation)}`,
@@ -287,6 +308,7 @@ export async function synthesizeYachFollowupReply(input: {
         conversationId: conversation.id,
         preview: cleaned.slice(0, 120),
       });
+      input.onSkip?.('综合轮无产出或缺判定锚点');
       return null;
     }
     console.warn('[followup-analysis] 知音楼综合答复完成', {
@@ -303,6 +325,7 @@ export async function synthesizeYachFollowupReply(input: {
       conversationId: conversation.id,
       error: error instanceof Error ? error.message : String(error),
     });
+    input.onSkip?.(`综合轮异常：${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }
