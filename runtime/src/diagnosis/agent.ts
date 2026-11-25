@@ -424,6 +424,8 @@ export class DiagnosisAgent {
         minEvictChars: evictionConfig.minEvictChars ?? DEFAULT_CONTEXT_EVICTION.minEvictChars,
         clampChars: evictionConfig.clampChars ?? DEFAULT_CONTEXT_EVICTION.clampChars,
         summarize: evictionConfig.summarize ?? summarizeDefault,
+        // 当前提问逐字保护：多题会话里它是「正在回答的问题」，不能被压进检查点。
+        currentQuestion: input.content,
       })
       : null;
 
