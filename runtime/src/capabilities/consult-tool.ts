@@ -289,7 +289,8 @@ export function createRequestCompassFollowupTool(options: {
       '发起服务端/全栈协查（Compass）但不等待结果：本地已有初步归因、需要服务端结论补强时使用。' +
       '调用后立即返回，你应随即用初步判定收尾本轮（最终答复必须标注「初步」并说明协查结果稍后同步）；' +
       '协查结果由系统在后台等待并以新消息推送。question 只写要服务端查什么与已确认事实；' +
-      'key_evidence 逐条携带客户端原始对账凭据（traceId/client_ip/精确时间/响应大小等），服务端按凭据逐条核对。',
+      'key_evidence 逐条携带每条请求特有的对账键（北京时间、接口路径、httpCode、业务判定等），服务端按凭据逐条核对；' +
+      'uid/client_ip/devid 等身份字段写在 question 里一次即可，不要逐条重复。',
     inputSchema: z.object({
       question: z.string().min(1).describe('具体的协查问题（含本地已确认的关键事实与缺口；不要手工罗列请求时间清单，计数以凭据区为准）'),
       key_evidence: z
@@ -297,9 +298,10 @@ export function createRequestCompassFollowupTool(options: {
         .min(1)
         .max(8)
         .describe(
-          '客户端原始对账凭据，每条一行（≤200 字）：失败请求逐条列 traceId、__client_ip__、devid、' +
-            '精确到秒的时间（原始 epoch + 北京时间）、httpCode、响应体大小、requestStatus；正常样本列 1-2 条对照。' +
-            '从日志观测原文照抄关键字段，不要改写、不要汇总',
+          '每条请求特有的对账凭据，逐条一行（≤120 字为宜）：北京时间（秒级）+ 接口路径 + httpCode + 客户端业务判定，' +
+            '失败请求逐条列出，正常样本列 1-2 条对照。身份字段（uid/client_ip/devid）已在 question 里写过，不要逐条重复；' +
+            '客户端 traceId（network_apm_*）服务端日志查不到，如需保留放行尾并标注「客户端侧」。' +
+            '关键字段从日志观测原文照抄，不要改写、不要汇总',
         ),
     }),
     execute: async (args) => {
