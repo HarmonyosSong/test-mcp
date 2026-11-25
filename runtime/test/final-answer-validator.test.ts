@@ -119,3 +119,30 @@ UID：5570040
   const unavailable = `判定：信息查询\n\n【学员信息】\nUID：5570040\n\n【最近登录设备（近7天）】\n- 设备侧暂不可查`;
   assert.equal(validateFinalAnswer(unavailable, registry, { calledTools: ['lookup_learner'] }).ok, true);
 });
+
+test('声称已发起协查但本轮未调协查工具 → 打回；真调过 → 放行', () => {
+  const registry = new ObservationRegistry();
+  // 线上事故复刻（conv-c85c14a684）：把「发起协查」当叙述写进最终答复，实际从未调用。
+  const claim = '判定：可能定位（初步）\n已把这批失败请求的原始对账凭据提交服务端协查，协查结果稍后会在本会话内同步。';
+  const noCall = validateFinalAnswer(claim, registry, { calledTools: ['cloud_search'] });
+  assert.equal(noCall.ok, false);
+  if (!noCall.ok) assert.match(noCall.feedback, /并未调用 request_compass_followup/);
+
+  // 「协查进行中」式表述同样拦截。
+  const ongoing = '判定：可能定位（初步）\n服务端协查进行中，结果稍后同步。';
+  assert.equal(validateFinalAnswer(ongoing, registry, { calledTools: ['cloud_search'] }).ok, false);
+
+  // 真调过后台协查工具：放行（两种协查工具都算）。
+  assert.equal(
+    validateFinalAnswer(claim, registry, { calledTools: ['request_compass_followup'] }).ok,
+    true,
+  );
+  assert.equal(
+    validateFinalAnswer(ongoing, registry, { calledTools: ['consult_compass'] }).ok,
+    true,
+  );
+
+  // 不误伤：说明「未协查」或建议「可再次发起协查」不是声称在途。
+  const noClaim = '判定：可能定位\n本地证据缺口如上，未发起协查；如需服务端结论，可再次提问重新发起协查。';
+  assert.equal(validateFinalAnswer(noClaim, registry, { calledTools: ['cloud_search'] }).ok, true);
+});

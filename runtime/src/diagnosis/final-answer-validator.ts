@@ -3,11 +3,12 @@ import type { ObservationRegistry } from './observations.js';
 /**
  * 最终答案校验器：去编排化后替代 submit_diagnosis_report 硬契约。
  *
- * 只校验四件机器可判的事，其余（结论质量、证据充分性）交给 skills 指引与评测：
+ * 只校验五件机器可判的事，其余（结论质量、证据充分性）交给 skills 指引与评测：
  * 1. 回答非空且不只是阶段说明；
  * 2. 无 DSML/工具协议文本泄露（代码块内豁免——讨论协议语法是合法内容）；
  * 3. 文中引用的 ev-ID 必须真实存在于观测注册表（防编造，存在性而非逐字摘录校验）；
- * 4. 含「判定：」锚点行（verdict 的文本载体，下游日志/知音楼/eval 从它解析）。
+ * 4. 含「判定：」锚点行（verdict 的文本载体，下游日志/知音楼/eval 从它解析）；
+ * 5. 声称「已发起/进行中」的服务端协查必须真的调用了协查工具（防「嘴上说协查」）。
  *
  * 校验失败返回 feedback，由调用方追加为纠错消息让模型重答（≤2 次）。
  */
@@ -34,6 +35,11 @@ const VERDICT_LINE = /判定\s*[:：]\s*(已定位|可能定位|证据不足|工
 /** 信息查询里「无设备 / 未登录」类空结论；须先调用过云日志工具才允许写。 */
 const EMPTY_DEVICE_CLAIM =
   /最近\s*7\s*天未登录|暂无.{0,24}(登录|设备)|无近\s*7\s*天.{0,12}(登录|设备)|未检索到.{0,24}(登录|设备)|无法给出近\s*7\s*天的设备/;
+/** 「协查已发起/进行中」类表述：命中而本轮未真调协查工具时拦截——防止把「发起协查」当叙述写。 */
+const FOLLOWUP_CLAIM =
+  /(?:已|一并|同时)[\s\S]{0,30}?(?:发起|提交)(?:了)?(?:后台)?(?:服务端)?协查|协查进行中|协查结果[\s\S]{0,12}(?:同步|推送|补充)/;
+/** 真正发起协查的两个工具：同步 consult_compass 与后台 request_compass_followup。 */
+const CONSULT_TOOL_NAMES = new Set(['request_compass_followup', 'consult_compass']);
 /** 客户端设备线索在云日志；只打日志中心 query 容易假阴性。 */
 const DEVICE_CLOUD_LOG_TOOLS = new Set(['search_both_logs', 'cloud_search']);
 /** 纯数字且 ≥11 位，按本项目约定视为学员编号/card，不是 uid。 */
@@ -105,12 +111,22 @@ export function validateFinalAnswer(
     };
   }
 
+  const called = context.calledTools
+    ? context.calledTools instanceof Set
+      ? context.calledTools
+      : new Set(context.calledTools)
+    : new Set<string>();
+
+  // 声称协查已发起/进行中，本轮却未调用协查工具：打回，要么真调，要么删表述。
+  if (FOLLOWUP_CLAIM.test(withoutCode) && ![...CONSULT_TOOL_NAMES].some((name) => called.has(name))) {
+    return {
+      ok: false,
+      feedback:
+        '回答声称已发起服务端协查（「已发起/提交协查」「协查进行中」「协查结果稍后同步」），但本轮并未调用 request_compass_followup 或 consult_compass。要么现在真正调用协查工具再收尾，要么删掉协查相关表述、如实写明本地证据缺口与「未协查」。禁止声称一个不存在的协查。',
+    };
+  }
+
   if (verdict === 'info_lookup' && EMPTY_DEVICE_CLAIM.test(withoutCode)) {
-    const called = context.calledTools
-      ? context.calledTools instanceof Set
-        ? context.calledTools
-        : new Set(context.calledTools)
-      : new Set<string>();
     const queriedCloudLogs = [...DEVICE_CLOUD_LOG_TOOLS].some((name) => called.has(name));
     if (!queriedCloudLogs) {
       return {
