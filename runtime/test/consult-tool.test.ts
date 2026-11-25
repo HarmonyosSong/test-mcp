@@ -211,14 +211,16 @@ test('后台协查：发起即返回 started，不落等待；重复发起被拒
     followupState,
   });
 
-  const started = await tool.execute!({ question: '请核查播放心跳接口' }, {} as never) as { status: string };
+  const started = await tool.execute!({ question: '请核查播放心跳接口', key_evidence: ['10:01:02 traceId=network_apm_1 ip=1.2.3.4 http=200 body=空 status=0'] }, {} as never) as { status: string };
   assert.equal(started.status, 'started');
   assert.ok(saveLog.length >= 1, '发送检查点已落库');
   assert.ok(followupState.handle, '已登记后台句柄');
   const consultation = conversation.consultations.at(-1)!;
   assert.equal(consultation.status, 'sent');
+  // 出站报文带凭据区，逐条编号。
+  assert.match(consultation.outbound_text, /对账凭据（客户端原始观测，逐条可核对）：\n1\. 10:01:02 traceId=network_apm_1/);
 
-  const again = await tool.execute!({ question: '重复问题' }, {} as never) as { status: string };
+  const again = await tool.execute!({ question: '重复问题', key_evidence: ['x'] }, {} as never) as { status: string };
   assert.equal(again.status, 'already_started');
 
   // 远端尚未返回时 promise 挂起；返回后产出 completed 结果与消息文案。
@@ -253,10 +255,46 @@ test('后台协查：远端失败时产出失败文案', async () => {
     saveConversation: async () => {},
     followupState,
   });
-  const started = await tool.execute!({ question: 'q' }, {} as never) as { status: string };
+  const started = await tool.execute!({ question: 'q', key_evidence: ['e'] }, {} as never) as { status: string };
   assert.equal(started.status, 'started');
   const outcome = await followupState.handle!.promise;
   assert.equal(outcome.state, 'failed');
   assert.match(outcome.error!, /A2A timeout/);
   assert.match(composeFollowupMessage(outcome), /协查超时或失败/);
+});
+
+test('后台协查：凭据区逐条限量（≤8 条、每条 ≤200 字），内容原样不改写', async () => {
+  const conversation = makeConversation(['q']);
+  const followupState: { handle: import('../src/capabilities/consult-tool.js').CompassFollowupHandle | null } = { handle: null };
+  const registry = makeSlotRegistry({ invokeResult: new Error('stop') });
+  const tool = createRequestCompassFollowupTool({
+    conversation,
+    messageId: 'msg-a',
+    runId: 'run-1',
+    registry,
+    capabilityContext: capabilityContext(),
+    content: 'q',
+    saveConversation: async () => {},
+    followupState,
+  });
+  const longLine = `traceId=${'x'.repeat(300)}`;
+  // schema 上限 max(8) 由校验层保证，execute 内的 slice 只是防御；这里恰好 8 条验证逐条编号与钳制。
+  const evidence = [
+    '10:01:02 traceId=network_apm_a ip=120.1.1.1 http=200 body=空 status=0',
+    longLine,
+    ...Array.from({ length: 6 }, (_, index) => `冗余${index}`),
+  ];
+  const started = await tool.execute!({ question: 'q', key_evidence: evidence }, {} as never) as { status: string };
+  assert.equal(started.status, 'started', 'execute 应走完发起流程（被拦则说明入参未过 schema 校验）');
+  const outbound = conversation.consultations.at(-1)!.outbound_text;
+  const section = outbound.split('对账凭据（客户端原始观测，逐条可核对）：\n')[1]!;
+  const lines = section.split('\n');
+  // 硬上限 8 条，逐条编号连续。
+  assert.equal(lines.length, 8);
+  lines.forEach((line, index) => assert.ok(line.startsWith(`${index + 1}. `)));
+  // 超长行按 200 字钳制并追加截断标记，内容前缀原样。
+  assert.match(lines[0]!, /^1\. 10:01:02 traceId=network_apm_a ip=120\.1\.1\.1/);
+  assert.ok(lines[1]!.length <= 3 + 200 + 5, `钳制后超长: ${lines[1]!.length}`);
+  assert.ok(lines[1]!.startsWith('2. traceId=xxx'));
+  assert.ok(lines[1]!.endsWith('…（截断）'));
 });

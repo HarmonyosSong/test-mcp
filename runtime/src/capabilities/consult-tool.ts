@@ -26,6 +26,9 @@ import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js'
 const OUTBOUND_USER_MESSAGE_MAX = 2_000;
 const OUTBOUND_USER_TOTAL_MAX = 8_000;
 const OUTBOUND_QUESTION_MAX = 1_000;
+/** 对账凭据：每条一行（原始对账键），服务端按它逐条核对，禁止模型手工汇总计数。 */
+const EVIDENCE_LINE_MAX = 200;
+const EVIDENCE_MAX_ITEMS = 8;
 
 function clipCodepoints(text: string, max: number): string {
   const chars = Array.from(text);
@@ -285,9 +288,19 @@ export function createRequestCompassFollowupTool(options: {
     description:
       '发起服务端/全栈协查（Compass）但不等待结果：本地已有初步归因、需要服务端结论补强时使用。' +
       '调用后立即返回，你应随即用初步判定收尾本轮（最终答复必须标注「初步」并说明协查结果稍后同步）；' +
-      '协查结果由系统在后台等待并以新消息推送。question 须写明具体协查问题与本地已确认事实。',
+      '协查结果由系统在后台等待并以新消息推送。question 只写要服务端查什么与已确认事实；' +
+      'key_evidence 逐条携带客户端原始对账凭据（traceId/client_ip/精确时间/响应大小等），服务端按凭据逐条核对。',
     inputSchema: z.object({
-      question: z.string().min(1).describe('具体的协查问题（含本地已确认的关键事实与缺口）'),
+      question: z.string().min(1).describe('具体的协查问题（含本地已确认的关键事实与缺口；不要手工罗列请求时间清单，计数以凭据区为准）'),
+      key_evidence: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(8)
+        .describe(
+          '客户端原始对账凭据，每条一行（≤200 字）：失败请求逐条列 traceId、__client_ip__、devid、' +
+            '精确到秒的时间（原始 epoch + 北京时间）、httpCode、响应体大小、requestStatus；正常样本列 1-2 条对照。' +
+            '从日志观测原文照抄关键字段，不要改写、不要汇总',
+        ),
     }),
     execute: async (args) => {
       capabilityContext.abortSignal?.throwIfAborted();
@@ -299,13 +312,18 @@ export function createRequestCompassFollowupTool(options: {
       }
 
       const brief = buildConsultationBrief(conversation, args.question, content);
+      // 对账凭据区：逐条原样（仅做长度钳制），服务端按它核对，不做任何汇总改写。
+      const evidenceLines = args.key_evidence
+        .slice(0, EVIDENCE_MAX_ITEMS)
+        .map((line, index) => `${index + 1}. ${clipCodepoints(line.trim(), EVIDENCE_LINE_MAX)}`);
+      const outboundText = `${brief}\n\n对账凭据（客户端原始观测，逐条可核对）：\n${evidenceLines.join('\n')}`;
       let consultation = approveExternalConsultation(
         createExternalConsultation({
           conversationId: conversation.id,
           messageId,
           runId,
           reason: `模型发起后台协查：${clipCodepoints(args.question, 120)}`,
-          outboundText: brief,
+          outboundText,
           redact: (text) => text,
         }),
         { conversationId: conversation.id, runId },
