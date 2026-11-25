@@ -14,6 +14,7 @@ import { isTopicSwitch } from './topic-switch.js';
 import { yachHistory, yachInbound, yachInboundSkipped, yachOutbound } from './log.js';
 import { InvalidYachEvent, parseYachEvent, peekWorkCode, type YachEvent } from './parse.js';
 import { YachProgressCard } from './progress.js';
+import { createSessionMappingStore, type SessionMappingStore } from './session-mapping-store.js';
 
 const DEDUPE_LIMIT = 4096;
 const DEDUPE_TTL_MS = 15 * 60 * 1000;
@@ -77,7 +78,8 @@ export class YachChannel {
   private readonly cli: YachCli;
   private readonly sessions = new Map<string, EmployeeSession>();
   private readonly seen = new Map<string, number>();
-  private readonly mapping = new Map<string, string>();
+  /** 群/私聊 → 会话 ID：落盘持久化，进程重启后同学员的追问仍能找回原会话。 */
+  private readonly mapping: SessionMappingStore;
   private loop: Promise<void> | null = null;
   private closed = false;
 
@@ -88,6 +90,7 @@ export class YachChannel {
       appKey: config.yachAppKey,
       appSecret: config.yachAppSecret,
     });
+    this.mapping = createSessionMappingStore(config.yachSessionMappingFile);
   }
 
   start(): void {
