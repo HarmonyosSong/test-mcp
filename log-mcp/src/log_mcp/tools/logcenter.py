@@ -18,6 +18,12 @@ from log_mcp.clients.redact import redact
 from log_mcp.clients.time_range import TIME_PARAM_DESCRIPTION, parse_time_range
 from log_mcp.config import normalize_env
 from log_mcp.errors import LogMcpToolError
+from log_mcp.tools.compact_util import (
+    apply_budget_to_log_rows,
+    scrub_currenthref,
+    slim_response_field,
+    summarize_ua,
+)
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 
@@ -50,7 +56,6 @@ _COMPACT_FIELDS = (
     "appid",
     "clientid",
     "pageid",
-    "ua",
     "referrer",
     "userid",
     "uvid",
@@ -62,8 +67,47 @@ _COMPACT_FIELDS = (
     "sessid",
 )
 
-# data 内体积过大且对排障价值低的子字段
-_DATA_DROP_KEYS = frozenset({"performanceResourceTiming"})
+# data 内体积过大且对排障价值低的子字段（response 正文另做 code/message 摘要）
+_DATA_DROP_KEYS = frozenset({"performanceResourceTiming", "rsd"})
+_DATA_KEEP_KEYS = frozenset(
+    {
+        "eventid",
+        "traceid",
+        "status",
+        "method",
+        "elapsedTime",
+        "resourceUrl",
+        "currenthref",
+        "type",
+        "effectiveType",
+        "pageviewsize",
+        "response",
+    }
+)
+_C_PP_KEEP_KEYS = frozenset(
+    {
+        "uid",
+        "clientIdentifier",
+        "talDeviceID",
+        "ver",
+        "vn",
+        "os",
+        "devid",
+        "dm",
+        "lt",
+    }
+)
+_C_JSBRIDGE_KEEP_KEYS = frozenset(
+    {
+        "eventid",
+        "eventname",
+        "desc",
+        "status",
+        "exception",
+        "clickid",
+        "customtraceid",
+    }
+)
 
 
 def _resolve_range(time: str | None) -> tuple[int, int]:
@@ -85,16 +129,64 @@ def _upstream_error(exc: Exception, *, service_id: int | None = None) -> LogMcpT
     return LogMcpToolError("internal", str(exc))
 
 
+def _compact_c_field(value: Any) -> Any:
+    """客户端 APM 的 c：只留 monitorLogType + pp 设备子集 + jsBridge 事件摘要。"""
+    if not isinstance(value, dict):
+        return value
+    out: dict[str, Any] = {}
+    if "monitorLogType" in value:
+        out["monitorLogType"] = value["monitorLogType"]
+    if "infoType" in value:
+        out["infoType"] = value["infoType"]
+    pp = value.get("pp")
+    if isinstance(pp, dict):
+        slim_pp = {k: pp[k] for k in _C_PP_KEEP_KEYS if k in pp}
+        if slim_pp:
+            out["pp"] = slim_pp
+    bridge = value.get("jsBridgeInfo")
+    if isinstance(bridge, dict):
+        slim_bridge = {k: bridge[k] for k in _C_JSBRIDGE_KEEP_KEYS if k in bridge}
+        if slim_bridge:
+            out["jsBridgeInfo"] = slim_bridge
+    return out
+
+
+def _compact_data_field(value: Any) -> Any:
+    """H5 data：子白名单；response 仅 code/message；currenthref 去 token。"""
+    if not isinstance(value, dict):
+        return value
+    out: dict[str, Any] = {}
+    for key, item in value.items():
+        if key in _DATA_DROP_KEYS:
+            continue
+        if key not in _DATA_KEEP_KEYS:
+            continue
+        if key == "response":
+            out[key] = slim_response_field(item)
+        elif key == "currenthref":
+            out[key] = scrub_currenthref(item)
+        else:
+            out[key] = item
+    return out
+
+
 def _compact_log(log: dict[str, Any]) -> dict[str, Any]:
     """精简字段白名单投影；保留排障必要字段，裁掉噪声与超大无用子树。"""
-    out = {k: log[k] for k in _COMPACT_FIELDS if k in log}
+    out = {k: log[k] for k in _COMPACT_FIELDS if k in log and k not in {"ua", "c", "data"}}
     if "sys" in log:
         out["sys"] = log["sys"]
     if isinstance(log.get("bus"), dict) and "eventid" in log["bus"]:
         out["bus"] = {"eventid": log["bus"]["eventid"]}
-    data = out.get("data")
-    if isinstance(data, dict) and _DATA_DROP_KEYS & data.keys():
-        out["data"] = {k: v for k, v in data.items() if k not in _DATA_DROP_KEYS}
+    if "c" in log:
+        out["c"] = _compact_c_field(log["c"])
+    if "data" in log:
+        out["data"] = _compact_data_field(log["data"])
+    ua_summary = summarize_ua(log.get("ua"), (log.get("data") or {}).get("rsd") if isinstance(log.get("data"), dict) else None)
+    if ua_summary:
+        out["ua_summary"] = ua_summary
+        for key, value in ua_summary.items():
+            if key not in out or out.get(key) in (None, ""):
+                out[key] = value
     return out
 
 
@@ -339,7 +431,8 @@ def register_logcenter_tools(
             raise _upstream_error(exc, service_id=serviceId) from exc
         logs = result["logs"]
         rows = logs if full else [_compact_log(log) for log in logs]
-        return {
+        rows, budget_meta = apply_budget_to_log_rows(rows)
+        payload = {
             "source": "logcenter",
             "service_id": serviceId,
             "time": time,
@@ -350,6 +443,8 @@ def register_logcenter_tools(
             "count": len(rows),
             "logs": redact(rows),
         }
+        payload.update(budget_meta)
+        return payload
 
     @server.tool(
         name="dsl_search",

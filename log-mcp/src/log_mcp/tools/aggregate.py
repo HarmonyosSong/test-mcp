@@ -24,6 +24,12 @@ from log_mcp.clients.time_range import TIME_PARAM_DESCRIPTION, parse_time_range
 from log_mcp.config import CloudLogDefaults, normalize_env
 from log_mcp.errors import LogMcpToolError
 from log_mcp.tools.cloudlog import _compact_cloud_log
+from log_mcp.tools.compact_util import (
+    LOGS_BUDGET_CHARS,
+    VALUE_MAX_CHARS,
+    clip_strings,
+    trim_grouped_logs_budget,
+)
 from log_mcp.tools.logcenter import _compact_log, _normalize_services
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
@@ -31,45 +37,13 @@ READ_ONLY = ToolAnnotations(read_only_hint=True)
 # 云日志侧并发上限（方案 3.5.5 ①）
 _CLOUD_CONCURRENCY = 8
 
-# —— 上下文体积护栏（2026-11-19）——
-# 聚合工具是"广撒网"：命中只为定位去哪个 service/topic 精查，单条字段值与总负载都必须有上限，
-# 否则一次 search_both_logs 可能把上百 KB 日志灌进模型上下文（实测单次 10 万 token）。
-_VALUE_MAX_CHARS = 600          # 单条日志任一字符串字段值的最大长度
-_LOGS_BUDGET_CHARS = 24_000     # 单侧（日志中心/云日志）返回日志的总字符预算
-
-
-def _clip_strings(value):
-    """递归截断超长字符串字段值；保留结构。"""
-    if isinstance(value, str):
-        return value if len(value) <= _VALUE_MAX_CHARS else value[: _VALUE_MAX_CHARS - 1] + "…"
-    if isinstance(value, dict):
-        return {k: _clip_strings(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_clip_strings(item) for item in value]
-    return value
-
-
-def _trim_logs_budget(results: list, budget: int = _LOGS_BUDGET_CHARS) -> int:
-    """按总字符预算收缩各分组的 logs 数组（优先保住排在前面的分组），
-    就地修改并返回被裁掉的日志条数。"""
-    import json as _json
-
-    remaining = budget
-    omitted = 0
-    for group in results:
-        logs = group.get("logs") or []
-        kept = []
-        for entry in logs:
-            size = len(_json.dumps(entry, ensure_ascii=False))
-            if kept and size > remaining:
-                omitted += 1
-                continue
-            kept.append(entry)
-            remaining -= size
-        if len(kept) != len(logs):
-            group["logs"] = kept
-            group["logs_omitted"] = len(logs) - len(kept)
-    return omitted
+# —— 上下文体积护栏 ——
+# 聚合工具是"广撒网"：命中只为定位去哪个 service/topic 精查。
+# 单字段/总量上限与精查路径共用 compact_util。
+_VALUE_MAX_CHARS = VALUE_MAX_CHARS
+_LOGS_BUDGET_CHARS = LOGS_BUDGET_CHARS
+_clip_strings = clip_strings
+_trim_logs_budget = trim_grouped_logs_budget
 
 
 def _resolve_range(time: str) -> tuple[int, int]:
@@ -431,11 +405,11 @@ async def _run_cloud_all_topics(
     account = defaults.account
     collection_filter = defaults.collection
     query = cloud.get("query") or "*"
-    per_topic_size = cloud.get("per_topic_size") or 20
+    per_topic_size = cloud.get("per_topic_size") or 10
     from_ = cloud.get("from") or 0
     reverse = bool(cloud.get("reverse", False))
-    # 与 cloud_search 默认一致：排查默认全字段（仍脱敏），避免精简白名单漏掉设备/业务字段。
-    full = bool(cloud.get("full", True))
+    # 与 cloud_search 默认一致：广撒网默认 compact；细节靠后续精查。
+    full = bool(cloud.get("full", False))
 
     try:
         topics_data = await client.topics(

@@ -203,6 +203,7 @@ def test_query_compact_keeps_apm_and_h5_fields(tmp_path) -> None:
     assert h5["pageid"] == "英语绘本馆"
     assert h5["data"]["eventid"] == "english-library-fe"
     assert "performanceResourceTiming" not in h5["data"]
+    assert "ua" not in h5  # 改为 ua_summary，不返回原文
     assert "__SOURCE__" not in h5
     assert "_id" not in h5
 

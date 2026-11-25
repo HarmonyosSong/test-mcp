@@ -19,16 +19,21 @@ from log_mcp.clients.redact import redact
 from log_mcp.clients.time_range import TIME_PARAM_DESCRIPTION, parse_time_range
 from log_mcp.config import CloudLogDefaults
 from log_mcp.errors import LogMcpToolError
+from log_mcp.tools.compact_util import (
+    apply_budget_to_log_rows,
+    scrub_currenthref,
+    summarize_ua,
+)
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
 
 # 云日志精简字段白名单（与日志中心各自维护；基于 prod-ios / prod-cloudlearn 真实样本）
 # 真正白名单：不再「非 __ 全放行」。冗余大字段（rsd）与内部 tag 不放行。
+# ua 原文不放行，改由 summarize_ua → ua_summary；__source__ 与 client_ip 重复故去掉。
 _CLOUD_COMPACT_FIELDS = (
     # 坐标 / 时间
     "__time__",
     "__TIMESTAMP__",
-    "__source__",
     "__topic__",
     "__tag__:__client_ip__",
     # 业务主字段（H5 / 埋点）
@@ -45,7 +50,6 @@ _CLOUD_COMPACT_FIELDS = (
     "clickid",
     "exception",
     "currenthref",
-    "ua",
     "env",
     "core",
     "gid",
@@ -111,8 +115,18 @@ def _upstream_error(exc: Exception, *, topic: str | None = None) -> LogMcpToolEr
 
 
 def _compact_cloud_log(log: dict[str, Any]) -> dict[str, Any]:
-    """云日志精简投影：只保留白名单字段。"""
-    return {k: log[k] for k in _CLOUD_COMPACT_FIELDS if k in log}
+    """云日志精简投影：白名单 + href 去 token + ua 摘要（不输出 ua/rsd 原文）。"""
+    out = {k: log[k] for k in _CLOUD_COMPACT_FIELDS if k in log}
+    if "currenthref" in out:
+        out["currenthref"] = scrub_currenthref(out["currenthref"])
+    ua_summary = summarize_ua(log.get("ua"), log.get("rsd"))
+    # 已有离散设备字段优先生效；摘要只补缺。
+    for key, value in ua_summary.items():
+        if key not in out or out.get(key) in (None, ""):
+            out[key] = value
+    if ua_summary:
+        out["ua_summary"] = ua_summary
+    return out
 
 
 def register_cloudlog_tools(
@@ -256,7 +270,8 @@ def register_cloudlog_tools(
         name="cloud_search",
         description=(
             "检索云日志内容。默认用关键词 query（如学员 uid、事件名），不要写 | select *；"
-            "默认 full=true 返回全字段（仍脱敏）。from 从 0 起（偏移量，非页码）；时间用秒（__time__）。"
+            "默认 compact（full=false）；窄条件缺细节时再 full=true（仍脱敏）。"
+            "from 从 0 起（偏移量，非页码）；时间用秒（__time__）。"
         ),
         annotations=READ_ONLY,
         structured_output=True,
@@ -269,14 +284,18 @@ def register_cloudlog_tools(
             Field(
                 description=(
                     "检索条件，默认关键词。查人相关传学员 uid 裸数字（如 5570040），不要学员编号/card，不要 uid:/card: 字段语法。"
-                    "日常排查不要用 | select * / select … from log；字段直接靠 full=true。"
+                    "日常排查不要用 | select * / select … from log。"
+                    "默认 compact（full=false）；窄条件缺细节时再 full=true。"
                 )
             ),
         ] = "*",
-        size: Annotated[int, Field(ge=1, le=1000, description="每页条数，最大 1000")] = 100,
+        size: Annotated[int, Field(ge=1, le=1000, description="每页条数，最大 1000")] = 30,
         from_: Annotated[int, Field(ge=0, description="偏移量（非页码）")] = 0,
         reverse: Annotated[bool, Field(description="是否倒序")] = False,
-        full: Annotated[bool, Field(description="是否返回完整日志条目；排查默认 true")] = True,
+        full: Annotated[
+            bool,
+            Field(description="是否返回完整日志条目；默认 false=compact，窄条件缺细节时再 true"),
+        ] = False,
         vendor: Annotated[
             str, Field(description="aliyun（默认）/ tencent（当前报错）")
         ] = vendor_default,
@@ -307,7 +326,8 @@ def register_cloudlog_tools(
             raise _upstream_error(exc, topic=topic) from exc
         logs = result["logs"]
         rows = logs if full else [_compact_cloud_log(log) for log in logs]
-        return {
+        rows, budget_meta = apply_budget_to_log_rows(rows)
+        payload = {
             "source": "cloud",
             "vendor": vendor,
             "account": account,
@@ -323,6 +343,8 @@ def register_cloudlog_tools(
             "count": len(rows),
             "logs": redact(rows),
         }
+        payload.update(budget_meta)
+        return payload
 
     @server.tool(
         name="cloud_probe",

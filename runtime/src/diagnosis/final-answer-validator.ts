@@ -31,14 +31,21 @@ const FENCED_CODE = /```[\s\S]*?```/g;
 const TEXTUAL_TOOL_MARKUP = /<\s*\/?\s*(?:(?:[｜|]{2}DSML[｜|]{2}\s*)(?:calls|invoke|parameter)|(?:invoke|parameter))\b[^>]*>/i;
 const EVIDENCE_ID_PATTERN = /\bev-(?:user-)?[0-9a-f]{12,16}\b/g;
 const VERDICT_LINE = /判定\s*[:：]\s*(已定位|可能定位|证据不足|工具异常|信息查询)/;
-/** 信息查询里「无设备 / 未登录」类空结论；须先调用过云日志工具才允许写。 */
+/** 信息查询里「无设备 / 未登录」类空结论；须双侧日志覆盖后才允许写。 */
 const EMPTY_DEVICE_CLAIM =
-  /最近\s*7\s*天未登录|暂无.{0,24}(登录|设备)|无近\s*7\s*天.{0,12}(登录|设备)|未检索到.{0,24}(登录|设备)|无法给出近\s*7\s*天的设备/;
-/** 客户端设备线索在云日志；只打日志中心 query 容易假阴性。 */
-const DEVICE_CLOUD_LOG_TOOLS = new Set(['search_both_logs', 'cloud_search']);
+  /最近\s*[37]\s*天未登录|暂无.{0,24}(登录|设备)|无近\s*[37]\s*天.{0,12}(登录|设备)|未检索到.{0,24}(登录|设备)|无法给出近\s*[37]\s*天的设备/;
 /** 纯数字且 ≥11 位，按本项目约定视为学员编号/card，不是 uid。 */
 const CARD_LIKE_QUERY = /^\d{11,}$/;
 const UID_LIKE_QUERY = /^\d{1,10}$/;
+
+/** 设备结论要求双侧：search_both_logs，或 cloud_search + query。 */
+export function hasBilateralDeviceLogCoverage(
+  calledTools: ReadonlySet<string> | readonly string[],
+): boolean {
+  const called = calledTools instanceof Set ? calledTools : new Set(calledTools);
+  if (called.has('search_both_logs')) return true;
+  return called.has('cloud_search') && called.has('query');
+}
 
 export type FinalAnswerValidationContext = {
   /** 本轮（含校验重试）已发起的工具名；信息查询空设备结论依赖它。 */
@@ -111,12 +118,11 @@ export function validateFinalAnswer(
         ? context.calledTools
         : new Set(context.calledTools)
       : new Set<string>();
-    const queriedCloudLogs = [...DEVICE_CLOUD_LOG_TOOLS].some((name) => called.has(name));
-    if (!queriedCloudLogs) {
+    if (!hasBilateralDeviceLogCoverage(called)) {
       return {
         ok: false,
         feedback:
-          '信息查询写了「未登录/暂无设备线索」，但本轮尚未调用 search_both_logs（需 cloud={}）或 cloud_search。请先用学员 uid 裸数字查近 7 天云日志再写设备段；若 log-mcp 不可用，写「设备侧暂不可查」，不要写「未登录」。',
+          '信息查询写了「未登录/暂无设备线索」，但本轮尚未双侧覆盖日志（须 search_both_logs 且 cloud={}，或 cloud_search + query）。请用学员 uid 裸数字查近 3 天两侧日志再写设备段；若 log-mcp 不可用，写「设备侧暂不可查」，不要写「未登录」。',
       };
     }
 

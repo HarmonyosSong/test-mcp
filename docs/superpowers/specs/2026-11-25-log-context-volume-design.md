@@ -2,8 +2,8 @@
 
 ## 状态
 
-- Spec 已落地；**代码实现未开工**（确认后按 Part 分期开发）。
-- Part B 字段：P0/P1 已按人工反馈锁定（`currenthref` 去 token 保留；`ua` 改设备/App 摘要；不整段丢弃）。
+- Spec 已落地；**Part A / Part B 已实现并通过测试**（Skill、校验、MCP 默认与 compact）。
+- Part B 字段：P0/P1 已按人工反馈锁定（`currenthref` 去 token 保留；`ua` 改设备/App 摘要；`data.response` 留 code/message）。
 
 ## 目标与边界
 
