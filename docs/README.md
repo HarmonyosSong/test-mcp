@@ -13,6 +13,7 @@
 | [../spec/compass-a2a-integration.md](../spec/compass-a2a-integration.md) | Compass A2A 传输、槽位、审批与真实联调边界 |
 | [../spec/sso-login-design.md](../spec/sso-login-design.md) | 知音楼网页 SSO、local/server 模式和安全边界 |
 | [../spec/yach-im-lightweight.md](../spec/yach-im-lightweight.md) | 知音楼 IM 渠道接入契约 |
+| [../spec/simulation-login-token.md](../spec/simulation-login-token.md) | 学员模拟登录 Token：API MCP 窄工具、Skill、渠道 QR/COS |
 | [diagrams/](diagrams/) | 当前架构图：01 诊断主流程（单 loop）、02 知识与证据架构 |
 
 ## 2. 运维与评估
