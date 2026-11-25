@@ -1,8 +1,8 @@
 import { apiPath } from './auth/paths';
 import { authenticatedFetch } from './auth/session-fetch';
 import type {
-  AiTraceDetail,
   AiTraceSummary,
+  AiTraceOrEventDetail,
   ChatConversation,
   ChatConversationSummary,
   CreateConversationInput,
@@ -122,5 +122,5 @@ export const api = {
     request<void>(`/conversations/${id}`, { method: 'DELETE' }),
   listAiTraces: (id: string) => request<AiTraceSummary[]>(`/conversations/${id}/ai-traces`),
   getAiTrace: (id: string, traceId: string) =>
-    request<AiTraceDetail>(`/conversations/${id}/ai-traces/${traceId}`),
+    request<AiTraceOrEventDetail>(`/conversations/${id}/ai-traces/${traceId}`),
 };

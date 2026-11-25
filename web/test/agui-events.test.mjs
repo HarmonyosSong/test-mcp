@@ -35,6 +35,31 @@ test('旧前端兼容策略仍忽略真正未知的未来事件', () => {
   );
 });
 
+test('FOLLOWUP_PENDING（后台协查进行中）解码为已知事件', () => {
+  const event = {
+    type: 'FOLLOWUP_PENDING',
+    run_id: 'run-1',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    conversation_id: 'conv-1',
+  };
+  assert.deepEqual(
+    decodeAguiEventBlock(`data: ${JSON.stringify(event)}`),
+    event,
+  );
+});
+
+test('协查落地补推的 STATE_SNAPSHOT 保留 followup_message_id 字段', () => {
+  const event = {
+    type: 'STATE_SNAPSHOT',
+    run_id: 'run-1',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    conversation_id: 'conv-1',
+    followup_message_id: 'msg-9',
+  };
+  const decoded = decodeAguiEventBlock(`data: ${JSON.stringify(event)}`);
+  assert.equal(decoded.followup_message_id, 'msg-9');
+});
+
 test('未知事件的非法 JSON 仍是协议错误', () => {
   assert.throws(
     () => decodeAguiEventBlock('event: FUTURE_ORCHESTRATION_EVENT\ndata: {not-json}'),

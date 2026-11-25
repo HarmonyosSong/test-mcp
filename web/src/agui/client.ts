@@ -27,6 +27,8 @@ export class AguiRunError<TState> extends Error {
 interface EventStreamOptions<TState> {
   signal?: AbortSignal;
   onEvent?: (event: AguiEvent, state: TState | null) => void;
+  /** 事件流彻底结束（正常关闭或出错）时触发一次；终态事件先于它发生。 */
+  onClose?: () => void;
   reduce: (state: TState | null, event: AguiEvent) => TState | null;
 }
 
@@ -125,6 +127,7 @@ async function readEventStream<TState>(
         // 已按终态收尾后，后台补推阶段的读取失败静默忽略。
       } finally {
         reader.releaseLock();
+        options.onClose?.();
       }
     })();
   });
@@ -136,6 +139,8 @@ export async function streamChatMessage(
   options: {
     signal?: AbortSignal;
     onEvent?: (event: AguiEvent, conversation: ChatConversation | null) => void;
+    /** 事件流彻底结束（含终态后的后台协查补推阶段）时触发。 */
+    onClose?: () => void;
   } = {},
 ): Promise<ChatConversation> {
   return readEventStream<ChatConversation>(
@@ -144,6 +149,7 @@ export async function streamChatMessage(
     {
       signal: options.signal,
       onEvent: options.onEvent,
+      onClose: options.onClose,
       reduce: reduceChatEvent,
     },
   );

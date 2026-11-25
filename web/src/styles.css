@@ -578,6 +578,28 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* 会话 ID 徽章：点击复制，便于排查时引用 */
+.chat-conv-id {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.chat-conv-id:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+
 .chat-thread-header-actions {
   display: flex;
   align-items: center;
@@ -682,6 +704,55 @@ button:disabled {
 
 .ai-trace-item-meta {
   color: var(--muted);
+}
+
+/* —— 会话时间线事件卡片（协查发起/回执等编排事实） —— */
+.ph-event .ai-trace-item-head svg {
+  color: var(--accent, #6c8cff);
+}
+
+.ph-event-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.ph-event-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ph-event-detail {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.ph-event-data {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ph-event-data > div {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.ph-event-data dt {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ph-event-data dd {
+  margin: 0;
+  word-break: break-all;
 }
 
 /* —— PenguinHarness 轨迹观测：汇总 / 统计 chips / 时间线 —— */

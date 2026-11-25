@@ -13,6 +13,7 @@ export const AGUI_EVENT_TYPES = [
   'TEXT_MESSAGE_START',
   'TEXT_MESSAGE_CONTENT',
   'TEXT_MESSAGE_END',
+  'FOLLOWUP_PENDING',
 ] as const;
 
 export type AguiEventType = (typeof AGUI_EVENT_TYPES)[number];
@@ -45,6 +46,14 @@ export interface StateSnapshotEvent extends AguiEventBase {
   type: 'STATE_SNAPSHOT';
   conversation_id?: string;
   conversation?: ChatConversation;
+  /** 后台协查落地后的补推快照带此字段，用于识别「协查中」状态可收尾。 */
+  followup_message_id?: string;
+}
+
+/** 本轮已用初步判定收尾、服务端协查仍在后台等待：终态后由服务端补推。 */
+export interface FollowupPendingEvent extends AguiEventBase {
+  type: 'FOLLOWUP_PENDING';
+  conversation_id?: string;
 }
 
 export interface RunFinishedEvent extends AguiEventBase {
@@ -87,7 +96,8 @@ export type AguiEvent =
   | RunErrorEvent
   | TextMessageStartEvent
   | TextMessageContentEvent
-  | TextMessageEndEvent;
+  | TextMessageEndEvent
+  | FollowupPendingEvent;
 
 const EVENT_TYPE_SET = new Set<string>(AGUI_EVENT_TYPES);
 
