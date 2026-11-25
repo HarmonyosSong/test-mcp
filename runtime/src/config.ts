@@ -122,6 +122,8 @@ export const runtimeConfigSchema = z.object({
   yachRobotId: z.string().default(''),
   /** 机器人在群里的显示名；群聊历史注入前据此过滤机器人自身消息（可逗号分隔多个）。 */
   yachBotName: z.string().default('培优问题排查助手'),
+  /** 群/私聊 → 会话 ID 映射的落盘文件：重启后同群同学员的追问仍能找回原会话。 */
+  yachSessionMappingFile: z.string().optional(),
   /** 学员编号通过内网 UCenter 查档案（lookup_learner）。 */
   ucenterBaseUrl: z.string().default(UCENTER_DEFAULT_BASE_URL),
   ucenterTimeoutMs: z.coerce.number().int().min(100).max(60_000).default(10_000),
@@ -153,6 +155,7 @@ export type RuntimeConfig = Omit<
   | 'caseArchiveDir'
   | 'mastraObservabilityDir'
   | 'snapshotDir'
+  | 'yachSessionMappingFile'
 > & {
   authMode: 'local' | 'sso';
   dataDir: string;
@@ -164,6 +167,7 @@ export type RuntimeConfig = Omit<
   caseArchiveDir: string;
   mastraObservabilityDir: string;
   snapshotDir: string;
+  yachSessionMappingFile: string;
 };
 
 function optionalEnvPath(value: string | undefined): string | undefined {
@@ -231,6 +235,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     yachCliPath: env.HARMONY_AGENT_YACH_CLI_PATH,
     yachRobotId: env.HARMONY_AGENT_YACH_ROBOT_ID ?? env.YACH_ROBOT_ID,
     yachBotName: env.HARMONY_AGENT_YACH_BOT_NAME ?? env.YACH_BOT_NAME,
+    yachSessionMappingFile: optionalEnvPath(env.HARMONY_AGENT_YACH_SESSION_MAPPING_FILE),
     ucenterBaseUrl: env.HARMONY_AGENT_UCENTER_BASE_URL,
     ucenterTimeoutMs: env.HARMONY_AGENT_UCENTER_TIMEOUT_MS,
     logMcpUrl: env.LOG_MCP_URL || defaultLogMcpUrl(env),
@@ -301,6 +306,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     modelConfigFile: underDataRoot(config.modelConfigFile, 'model-config.json'),
     knowledgeQueryLog: underDataRoot(config.knowledgeQueryLog, 'knowledge-queries.jsonl'),
     caseArchiveDir: underDataRoot(config.caseArchiveDir, 'knowledge-cases'),
+    yachSessionMappingFile: underDataRoot(config.yachSessionMappingFile, 'yach-session-mapping.json'),
     mastraObservabilityDir: config.mastraObservabilityDir
       ? fromRoot(config.mastraObservabilityDir)
       : resolve(dataDir, 'observability'),

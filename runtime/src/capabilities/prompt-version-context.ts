@@ -117,7 +117,9 @@ export function resolvePromptSourceContext(
     ? null
     : firstDetected(previousMessages, detectVersion);
   const platform = currentPlatform ?? historyPlatform ?? conversation.platform;
-  const productLine = currentProductLine ?? historyProductLine ?? conversation.product_line;
+  // 产品线未指明时默认学而思（C 端主 App）：消除「命中多个产品线」的绑定失败；
+  // 用户明确说是学家云时检测值优先，永远压过默认值。
+  const productLine = currentProductLine ?? historyProductLine ?? conversation.product_line ?? 'xueersi';
   const formFactor = currentFormFactor ?? historyFormFactor ?? conversation.form_factor;
   const version = currentVersion ?? historyVersion ?? conversation.version;
   const build = detectBuild(content, version)

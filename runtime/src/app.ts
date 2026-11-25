@@ -16,6 +16,7 @@ import { ModelConfiguration } from './model/configuration.js';
 import { createModelRoutes } from './http/models.js';
 import { RepositoryCapability, SnapshotNotReadyError } from './capabilities/repository.js';
 import { CapabilityMcp } from './capabilities/mcp.js';
+import { loadCodeIndexScopeSummary } from './capabilities/code-index-scope.js';
 import { SkillRegistry } from './diagnosis/skills.js';
 import { DiagnosisAgent } from './diagnosis/agent.js';
 import {
@@ -116,6 +117,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         budgetTokens: config.contextEvictionBudgetTokens,
         offloadDir: resolve(config.dataDir, 'evidence-offload'),
       },
+      loadCodeIndexScopeSummary(resolve(config.codeIndexScopeFile)),
     );
     const admission = new InMemoryRunAdmission(config.maxConcurrentRuns);
     const slotRegistry = new InMemoryAgentSlotRegistry();

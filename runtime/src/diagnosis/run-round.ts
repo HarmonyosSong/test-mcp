@@ -27,6 +27,7 @@ import type { ModelConfiguration } from '../model/configuration.js';
 import type { ProductStore } from '../product/store.js';
 import { redactRecord, redactRecordInPlace, redactSensitiveText } from '../security/redaction.js';
 import { appendDiagnosisOutcome, archiveDiagnosisCase } from '../observability/cases.js';
+import { recordConversationEvent } from '../observability/conversation-span-file-exporter.js';
 import { DiagnosisAgent, type DiagnosisStreamEvent } from './agent.js';
 import { analyzeFollowupWithSource, synthesizeYachFollowupReply } from './followup-analysis.js';
 import { createStreamRedactor } from '../security/stream-redaction.js';
@@ -133,6 +134,36 @@ async function recordTerminalCase(
   ]);
 }
 
+/** 会话时间线事件：settle 流程的编排事实落盘（协查发起/回执/分析轮跳过等），best-effort。 */
+function emitFollowupEvent(
+  conversationId: string,
+  conversationCreatedAt: string | null | undefined,
+  event: {
+    kind: string;
+    title: string;
+    detail?: string;
+    data?: Record<string, unknown>;
+    at?: string;
+  },
+): void {
+  void recordConversationEvent(conversationId, conversationCreatedAt, event).catch(() => undefined);
+}
+
+/** 有序落盘版本：同一 settle 内先后两件事实必须保证 events.jsonl 文件顺序即发生顺序。 */
+async function emitFollowupEventOrdered(
+  conversationId: string,
+  conversationCreatedAt: string | null | undefined,
+  event: {
+    kind: string;
+    title: string;
+    detail?: string;
+    data?: Record<string, unknown>;
+    at?: string;
+  },
+): Promise<void> {
+  await recordConversationEvent(conversationId, conversationCreatedAt, event).catch(() => undefined);
+}
+
 /** 后台协查收尾：等远端出结果 → 更新 consultation/finding → 追加协查消息 → 落库 → 回调渠道。 */
 function scheduleCompassFollowupSettle(input: {
   store: ProductStore;
@@ -158,6 +189,27 @@ function scheduleCompassFollowupSettle(input: {
     const outcome = await handle.promise;
     // 重新拉取会话：协查等待期间用户可能已开始下一轮，不能用旧对象覆盖。
     const conversation = await input.store.getConversation(input.conversationId);
+    // 时间线事件：协查发起与回执（等待期间主轮 trace 早已封盘，只能靠事件通道看见这段）。
+    // 两条顺序落盘，保证 events.jsonl 文件顺序即发生顺序。
+    await emitFollowupEventOrdered(conversation.id, conversation.created_at, {
+      kind: 'compass_followup_sent',
+      title: '发起服务端协查',
+      detail: handle.question,
+      data: { consultation_id: handle.consultationId },
+      at: handle.startedAt,
+    });
+    await emitFollowupEventOrdered(conversation.id, conversation.created_at, {
+      kind: 'compass_followup_settled',
+      title: outcome.state === 'completed' ? '服务端协查回执（完成）' : `服务端协查回执（${outcome.state}）`,
+      detail: outcome.text || outcome.error || '',
+      data: {
+        consultation_id: handle.consultationId,
+        task_id: outcome.taskId,
+        state: outcome.state,
+        wait_ms: Date.now() - new Date(handle.startedAt).getTime(),
+        truncated: outcome.truncated,
+      },
+    });
     const index = conversation.consultations.findIndex((item) => item.id === handle.consultationId);
     if (index >= 0) {
       conversation.consultations[index] = transitionExternalConsultation(
@@ -530,22 +582,75 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
     conversationId: conversation.id,
     followupState,
     options,
-    analyzeFollowup: ({ conversation: latest, outcome }) =>
-      analyzeFollowupWithSource({
+    analyzeFollowup: async ({ conversation: latest, outcome }) => {
+      // 兜底绑源码：分析轮的性命不该捏在主轮手里——主轮没走 prepare_source 时，
+      // 按会话已有上下文（端/版本/历史消息）补绑，让协查结论永远能映射回客户端代码。
+      // 绑定结果随 settle 末尾的 saveConversation 一并落库。
+      if (!latest.workspace_path && options.createConversationSource) {
+        const lastUser = [...latest.messages].reverse().find((message) => message.role === 'user');
+        await prepareConversationSource(
+          latest,
+          lastUser?.content ?? '',
+          options.createConversationSource,
+        ).catch(() => undefined);
+        if (latest.workspace_path) {
+          emitFollowupEvent(latest.id, latest.created_at, {
+            kind: 'followup_source_bound',
+            title: '分析前自动绑定源码快照（主轮未绑定，settle 兜底）',
+            data: {
+              platform: latest.platform,
+              version: latest.version,
+              repositories: (latest.source_repositories ?? []).map((repository) => repository.repository_id),
+            },
+          });
+        }
+      }
+      const analysis = await analyzeFollowupWithSource({
         modelConfiguration: input.modelConfiguration,
         capabilities: input.capabilities,
         conversation: latest,
         outcome,
         mastra: input.diagnosisAgent.tracingMastra,
-      }),
-    synthesizeYachReply: ({ conversation: latest, outcome, analysis }) =>
-      synthesizeYachFollowupReply({
+        onSkip: (reason) =>
+          emitFollowupEvent(latest.id, latest.created_at, {
+            kind: 'followup_analysis_skipped',
+            title: '客户端侧源码分析未执行',
+            data: { reason },
+          }),
+      });
+      if (analysis) {
+        emitFollowupEvent(latest.id, latest.created_at, {
+          kind: 'followup_analysis_completed',
+          title: '客户端侧源码分析完成',
+          detail: analysis.text,
+          data: { input_tokens: analysis.inputTokens, output_tokens: analysis.outputTokens },
+        });
+      }
+      return analysis;
+    },
+    synthesizeYachReply: async ({ conversation: latest, outcome, analysis }) => {
+      const synthesis = await synthesizeYachFollowupReply({
         modelConfiguration: input.modelConfiguration,
         conversation: latest,
         outcome,
         analysis,
         mastra: input.diagnosisAgent.tracingMastra,
-      }),
+        onSkip: (reason) =>
+          emitFollowupEvent(latest.id, latest.created_at, {
+            kind: 'followup_synthesis_fallback',
+            title: '知音楼综合答复未生成，回退拼装文案',
+            data: { reason },
+          }),
+      });
+      if (synthesis) {
+        emitFollowupEvent(latest.id, latest.created_at, {
+          kind: 'followup_synthesis_completed',
+          title: '知音楼综合答复生成完成',
+          data: { chars: synthesis.text.length, input_tokens: synthesis.inputTokens, output_tokens: synthesis.outputTokens },
+        });
+      }
+      return synthesis;
+    },
   });
 
   return {

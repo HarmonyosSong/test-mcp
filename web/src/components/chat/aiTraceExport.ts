@@ -1,10 +1,12 @@
-import type { AiTraceDetail, AiTraceStep, AiTraceSummary, AiTraceTool } from '../../types';
+import type { AiTraceOrEventDetail, AiTraceStep, AiTraceSummary, AiTraceTool } from '../../types';
 
-/** AI 调试导出：把会话的全部轮次 trace 组装成可读文本 / JSON 下载，用于线上问题排查。 */
+/** AI 调试导出：把会话的全部轮次 trace 组装成可读文本 / JSON 下载，用于线上问题排查。
+ *  注意：本文件被 node --test（--experimental-strip-types）直接执行，只能 import type——
+ *  值导入会被 Node 按严格 ESM 解析（../../types 无扩展名解析失败），事件判别因此内联。 */
 
 export interface TraceExportEntry {
   summary: AiTraceSummary;
-  detail: AiTraceDetail;
+  detail: AiTraceOrEventDetail;
 }
 
 /** 步骤 token 用量：输入（新内容 / 缓存命中）与输出。与调试面板同一口径。 */
@@ -52,7 +54,17 @@ export function tracesToMarkdown(conversationId: string, entries: TraceExportEnt
     `- 轮次：${entries.length}（按时间倒序）`,
   ];
   for (const { summary, detail } of entries) {
-    lines.push('', '---', '', `## 轮次 ${summary.ts}（${summary.trace_id}）`);
+    lines.push('', '---', '');
+    // 时间线事件（协查发起/回执等编排事实）：不是模型轮，紧凑成一小节。
+    if (detail.entry_type === 'event') {
+      lines.push(`## 事件 ${summary.ts} · ${detail.title}（${detail.kind}）`);
+      if (detail.detail) lines.push('', '```', detail.detail, '```');
+      if (detail.data && Object.keys(detail.data).length > 0) {
+        lines.push('', '```json', JSON.stringify(detail.data, null, 2), '```');
+      }
+      continue;
+    }
+    lines.push(`## 轮次 ${summary.ts}（${summary.trace_id}）`);
     if (detail.model) lines.push(`- 模型：${detail.model}`);
     const meta = summary.summary;
     if (meta) {

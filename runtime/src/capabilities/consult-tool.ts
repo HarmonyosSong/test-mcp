@@ -26,6 +26,9 @@ import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js'
 const OUTBOUND_USER_MESSAGE_MAX = 2_000;
 const OUTBOUND_USER_TOTAL_MAX = 8_000;
 const OUTBOUND_QUESTION_MAX = 1_000;
+/** 对账凭据：每条一行（原始对账键），服务端按它逐条核对，禁止模型手工汇总计数。 */
+const EVIDENCE_LINE_MAX = 200;
+const EVIDENCE_MAX_ITEMS = 8;
 
 function clipCodepoints(text: string, max: number): string {
   const chars = Array.from(text);
@@ -285,9 +288,21 @@ export function createRequestCompassFollowupTool(options: {
     description:
       '发起服务端/全栈协查（Compass）但不等待结果：本地已有初步归因、需要服务端结论补强时使用。' +
       '调用后立即返回，你应随即用初步判定收尾本轮（最终答复必须标注「初步」并说明协查结果稍后同步）；' +
-      '协查结果由系统在后台等待并以新消息推送。question 须写明具体协查问题与本地已确认事实。',
+      '协查结果由系统在后台等待并以新消息推送。question 只写要服务端查什么与已确认事实；' +
+      'key_evidence 逐条携带每条请求特有的对账键（北京时间、接口路径、httpCode、业务判定等），服务端按凭据逐条核对；' +
+      'uid/client_ip/devid 等身份字段写在 question 里一次即可，不要逐条重复。',
     inputSchema: z.object({
-      question: z.string().min(1).describe('具体的协查问题（含本地已确认的关键事实与缺口）'),
+      question: z.string().min(1).describe('具体的协查问题（含本地已确认的关键事实与缺口；不要手工罗列请求时间清单，计数以凭据区为准）'),
+      key_evidence: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(8)
+        .describe(
+          '每条请求特有的对账凭据，逐条一行（≤120 字为宜）：北京时间（秒级）+ 接口路径 + httpCode + 客户端业务判定，' +
+            '失败请求逐条列出，正常样本列 1-2 条对照。身份字段（uid/client_ip/devid）已在 question 里写过，不要逐条重复；' +
+            '客户端 traceId（network_apm_*）服务端日志查不到，如需保留放行尾并标注「客户端侧」。' +
+            '关键字段从日志观测原文照抄，不要改写、不要汇总',
+        ),
     }),
     execute: async (args) => {
       capabilityContext.abortSignal?.throwIfAborted();
@@ -299,13 +314,18 @@ export function createRequestCompassFollowupTool(options: {
       }
 
       const brief = buildConsultationBrief(conversation, args.question, content);
+      // 对账凭据区：逐条原样（仅做长度钳制），服务端按它核对，不做任何汇总改写。
+      const evidenceLines = args.key_evidence
+        .slice(0, EVIDENCE_MAX_ITEMS)
+        .map((line, index) => `${index + 1}. ${clipCodepoints(line.trim(), EVIDENCE_LINE_MAX)}`);
+      const outboundText = `${brief}\n\n对账凭据（客户端原始观测，逐条可核对）：\n${evidenceLines.join('\n')}`;
       let consultation = approveExternalConsultation(
         createExternalConsultation({
           conversationId: conversation.id,
           messageId,
           runId,
           reason: `模型发起后台协查：${clipCodepoints(args.question, 120)}`,
-          outboundText: brief,
+          outboundText,
           redact: (text) => text,
         }),
         { conversationId: conversation.id, runId },

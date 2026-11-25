@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Activity,
   ChevronDown,
   ChevronRight,
   Cloud,
@@ -23,9 +24,12 @@ import { api } from '../../api';
 import { formatDate, formatTokens } from '../../format';
 import type {
   AiTraceDetail,
+  AiTraceOrEventDetail,
   AiTraceStepUsage,
   AiTraceSummary,
+  AiTimelineEventDetail,
 } from '../../types';
+import { isTimelineEventDetail } from '../../types';
 import { MarkdownContent } from './MarkdownContent';
 import { downloadText, tracesToMarkdown } from './aiTraceExport';
 
@@ -1071,6 +1075,60 @@ function EventRow({
 /** 点击时间线段后，目标行高亮钉住的时长。 */
 const PIN_MS = 2500;
 
+/** 时间线事件卡片：编排事实（协查发起/回执、兜底绑定、分析轮跳过等），不是模型轮。 */
+function EventCard({
+  summary,
+  detail,
+  detailError,
+  open,
+  onToggle,
+}: {
+  summary: AiTraceSummary;
+  detail: AiTimelineEventDetail | null;
+  detailError: string | null;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="ai-trace-item ph-event">
+      <button type="button" className="ai-trace-item-head" onClick={onToggle} aria-expanded={open}>
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <Activity size={13} aria-hidden />
+        <time>{formatDate(summary.ts)}</time>
+        <span className="ph-event-title">{summary.title ?? summary.event_kind ?? '系统事件'}</span>
+      </button>
+      {open && (
+        <div className="ph-round-body">
+          {detailError && <div className="ai-trace-error">加载失败：{detailError}</div>}
+          {!detail && !detailError && <div className="ai-trace-loading">加载中…</div>}
+          {detail && (
+            <div className="ph-event-body">
+              <div className="ph-chips">
+                <StatChip label="事件" value={detail.kind} title="事件种类" />
+              </div>
+              {detail.detail && (
+                <div className="ph-event-detail">
+                  <MarkdownContent content={detail.detail} />
+                </div>
+              )}
+              {detail.data && Object.keys(detail.data).length > 0 && (
+                <dl className="ph-event-data">
+                  {Object.entries(detail.data).map(([key, value]) => (
+                    <div key={key}>
+                      <dt>{key}</dt>
+                      <dd>{typeof value === 'string' ? value : JSON.stringify(value)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RoundCard({
   summary,
   detail,
@@ -1235,7 +1293,7 @@ export function PenguinHarnessPanel({
   onClose: () => void;
 }) {
   const [traces, setTraces] = useState<AiTraceSummary[] | null>(null);
-  const [details, setDetails] = useState<ReadonlyMap<string, AiTraceDetail>>(new Map());
+  const [details, setDetails] = useState<ReadonlyMap<string, AiTraceOrEventDetail>>(new Map());
   const [detailErrors, setDetailErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [openTraceId, setOpenTraceId] = useState<string | null>(null);
@@ -1311,6 +1369,8 @@ export function PenguinHarnessPanel({
       toolMs: 0,
     };
     for (const detail of details.values()) {
+      // 时间线事件不是模型轮，不参与 token/耗时统计。
+      if (isTimelineEventDetail(detail)) continue;
       const s = roundStats(detail);
       acc.rounds += 1;
       acc.toolCalls += s.toolCalls;
@@ -1324,6 +1384,9 @@ export function PenguinHarnessPanel({
   }, [details]);
 
   const allLoaded = traces != null && details.size + detailErrors.size >= traces.length;
+
+  /** 模型轮次数（时间线事件不计入）。 */
+  const roundCount = traces?.filter((trace) => trace.entry_type !== 'event').length ?? 0;
 
   return (
     <aside
@@ -1394,7 +1457,7 @@ export function PenguinHarnessPanel({
             <section className="ph-summary" aria-label="全局汇总">
               <div className="ph-summary-grid">
                 <div>
-                  <SummaryRow label="轮次" value={String(traces.length)} />
+                  <SummaryRow label="轮次" value={String(roundCount)} />
                   <SummaryRow label="工具调用" value={String(globalStats.toolCalls)} />
                 </div>
                 <div>
@@ -1424,18 +1487,33 @@ export function PenguinHarnessPanel({
               )}
             </section>
 
-            <div className="ai-trace-toolbar">按轮次查看（最新在前），点击展开单轮完整轨迹</div>
-            {traces.map((trace) => (
-              <RoundCard
-                key={trace.trace_id}
-                summary={trace}
-                detail={details.get(trace.trace_id) ?? null}
-                detailError={detailErrors.get(trace.trace_id) ?? null}
-                open={openTraceId === trace.trace_id}
-                onToggle={() => setOpenTraceId(openTraceId === trace.trace_id ? null : trace.trace_id)}
-                contextWindow={contextWindow}
-              />
-            ))}
+            <div className="ai-trace-toolbar">会话时间线（最新在前）：模型轮次与系统事件，点击展开</div>
+            {traces.map((trace) => {
+              const detail = details.get(trace.trace_id) ?? null;
+              if (trace.entry_type === 'event') {
+                return (
+                  <EventCard
+                    key={trace.trace_id}
+                    summary={trace}
+                    detail={detail && isTimelineEventDetail(detail) ? detail : null}
+                    detailError={detailErrors.get(trace.trace_id) ?? null}
+                    open={openTraceId === trace.trace_id}
+                    onToggle={() => setOpenTraceId(openTraceId === trace.trace_id ? null : trace.trace_id)}
+                  />
+                );
+              }
+              return (
+                <RoundCard
+                  key={trace.trace_id}
+                  summary={trace}
+                  detail={detail && !isTimelineEventDetail(detail) ? detail : null}
+                  detailError={detailErrors.get(trace.trace_id) ?? null}
+                  open={openTraceId === trace.trace_id}
+                  onToggle={() => setOpenTraceId(openTraceId === trace.trace_id ? null : trace.trace_id)}
+                  contextWindow={contextWindow}
+                />
+              );
+            })}
           </>
         )}
       </div>

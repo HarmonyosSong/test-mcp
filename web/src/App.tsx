@@ -214,6 +214,7 @@ function App() {
               onStop={chat.stop}
               onModelChange={(spec) => void chat.setModelOverride(spec)}
               progress={chat.progress}
+              followupPending={chat.followupPending}
             />
           ) : (
             <div className="chat-guide" role="status">

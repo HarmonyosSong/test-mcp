@@ -12,6 +12,9 @@
  *    占位符与钳制都不销毁信息——与已回滚的 log-mcp 硬截断的本质区别；
  * 3. 增量摘要：仍超目标时，把最旧的消息段交给模型压成结构化检查点
  *    （保 ev-ID/uid/订单号/错误码等锚点），新历史在旧检查点上更新。
+ *    当前轮提问消息逐字保护、不参与压缩——它是「正在回答的问题」，
+ *    被压进检查点后只剩摘要里的一条任务记录，模型收尾时可能把会话里
+ *    更早的问题误当当前任务（2026-11-25 知音楼串题事故）。
  *
  * 语义白名单：prepare_source / lookup_learner / load_skill / 协查 /
  * read_evidence 携带绑定状态或自身有界，永不清理（Compass 的状态工具原则）。
@@ -174,6 +177,8 @@ export type ContextEvictionOptions = {
   summarize?: SummarizeFn;
   /** 摘要输出 token 上限。 */
   summaryMaxOutputTokens?: number;
+  /** 当前轮提问原文：与文本一致的最后一条 user 消息逐字保护、不压进检查点。 */
+  currentQuestion?: string;
 };
 
 type Candidate = {
@@ -336,7 +341,7 @@ export class ToolResultEvictor {
    * 第 3 层：把最旧的 part 段压成结构化检查点。
    * Mastra 会把整轮所有工具调用累积进同一条 assistant 消息，所以切割按
    * part 粒度（每个 tool-invocation part 自含调用与结果，删除旧 part 安全）。
-   * 结构保持：[首条用户消息（原样）][检查点][...近期 part（原样）]；
+   * 结构保持：[首条用户消息（原样）][检查点][...近期 part（原样，含受保护的当前提问）]；
    * 已有检查点时在其上增量更新（opencode 的检查点语义）。
    */
   private async summarizeOldest(messages: MastraDBMessage[]): Promise<boolean> {
@@ -344,6 +349,10 @@ export class ToolResultEvictor {
     if (!summarize) return false;
     if (messages.length < 2) return false;
     const firstUser = messages[0]!;
+    // 当前轮提问逐字保护：被压进检查点后它只剩摘要里的一条任务记录，
+    // 模型收尾时可能把逐字保留的首条旧问题误当当前任务（知音楼同群同人会话
+    // 里多题并存时真实发生过答非所问）。
+    const protectedQuestion = this.findCurrentQuestionMessage(messages);
     let previousCheckpoint: string | null = null;
     let middleStart = 1;
     if (isCheckpointMessage(messages[1])) {
@@ -357,6 +366,8 @@ export class ToolResultEvictor {
     const units: Unit[] = [];
     let current: Unit | null = null;
     for (const message of messages.slice(middleStart)) {
+      // 受保护的当前提问不进切割单元：part 不进 oldUnits 就不会被删，原位置保留。
+      if (protectedQuestion && message === protectedQuestion) continue;
       const parts = message.content?.parts;
       if (!Array.isArray(parts)) continue;
       for (const part of parts) {
@@ -430,6 +441,25 @@ export class ToolResultEvictor {
       console.warn(`[context-eviction] 摘要层失败，本轮降级为清理+钳制: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
+  }
+
+  /**
+   * 当前轮提问消息：从尾部找最后一条与提问原文一致的 user 消息（检查点除外）。
+   * 重复提问时历史里会有多条同文消息，最后一处才是本轮在答的那条；
+   * 精确匹配失败（文本被规范化等）退化为包含匹配，仍取尾部最新。
+   */
+  private findCurrentQuestionMessage(messages: MastraDBMessage[]): MastraDBMessage | null {
+    const question = this.options.currentQuestion?.trim();
+    if (!question) return null;
+    let fallback: MastraDBMessage | null = null;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]!;
+      if (message.role !== 'user' || isCheckpointMessage(message)) continue;
+      const text = messageText(message).trim();
+      if (text === question) return message;
+      if (!fallback && text.includes(question)) fallback = message;
+    }
+    return fallback;
   }
 }
 

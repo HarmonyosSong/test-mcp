@@ -311,6 +311,16 @@ export function createConversationRoutes(
     summary?: Record<string, unknown>;
   };
 
+  /** 会话时间线事件（events.jsonl 一行）：编排事实，与模型轮 trace 合并渲染。 */
+  type TimelineEvent = {
+    event_id: string;
+    kind: string;
+    at: string;
+    title: string;
+    detail?: string;
+    data?: Record<string, unknown>;
+  };
+
   const readTraceManifest = async (conversationId: string): Promise<TraceManifestEntry[] | null> => {
     if (!options.observabilityDir) return null;
     const dir = await findConversationObservabilityDir(options.observabilityDir, conversationId);
@@ -334,10 +344,50 @@ export function createConversationRoutes(
     return entries.reverse();
   };
 
+  const readTimelineEvents = async (conversationId: string): Promise<TimelineEvent[]> => {
+    if (!options.observabilityDir) return [];
+    const dir = await findConversationObservabilityDir(options.observabilityDir, conversationId);
+    if (!dir) return [];
+    let raw: string;
+    try {
+      raw = await readFile(`${dir}/events.jsonl`, 'utf8');
+    } catch {
+      return [];
+    }
+    const events: TimelineEvent[] = [];
+    for (const line of raw.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line) as TimelineEvent;
+        if (event.event_id && event.at && event.kind) events.push(event);
+      } catch {
+        // 跳过坏行
+      }
+    }
+    return events;
+  };
+
+  // 会话时间线：trace（模型轮）与 event（编排事实）按时间合并，最新在前。
   routes.get('/conversations/:id/ai-traces', async (context) => {
-    const entries = await readTraceManifest(context.req.param('id'));
-    if (!entries) return context.json([]);
-    return context.json(entries.map(({ file: _file, ...entry }) => entry));
+    const conversationId = context.req.param('id');
+    const [manifest, events] = await Promise.all([
+      readTraceManifest(conversationId),
+      readTimelineEvents(conversationId),
+    ]);
+    const traceEntries = (manifest ?? []).map(({ file: _file, ...entry }) => ({
+      ...entry,
+      entry_type: 'trace' as const,
+    }));
+    const eventEntries = events.map((event) => ({
+      ts: event.at,
+      trace_id: event.event_id,
+      message_id: null,
+      entry_type: 'event' as const,
+      event_kind: event.kind,
+      title: event.title,
+    }));
+    const merged = [...traceEntries, ...eventEntries].sort((a, b) => b.ts.localeCompare(a.ts));
+    return context.json(merged);
   });
 
   routes.get('/conversations/:id/ai-traces/:traceId', async (context) => {
@@ -346,7 +396,18 @@ export function createConversationRoutes(
     if (!/^[0-9a-zA-Z_-]{1,64}$/.test(traceId)) return jsonError('trace not found', 404);
     const entries = await readTraceManifest(conversationId);
     const entry = entries?.find((item) => item.trace_id === traceId);
-    if (!entry) return jsonError('trace not found', 404);
+    if (!entry) {
+      // trace 清单里找不到时按时间线事件兜底（evt- 前缀）。
+      const event = (await readTimelineEvents(conversationId)).find((item) => item.event_id === traceId);
+      if (!event) return jsonError('trace not found', 404);
+      return context.json({
+        entry_type: 'event',
+        conversation_id: conversationId,
+        trace_id: event.event_id,
+        captured_at: event.at,
+        ...event,
+      });
+    }
     const fileName = entry.file.replace(/^traces\//, '');
     if (!/^[\w.-]+\.json$/.test(fileName)) return jsonError('trace not found', 404);
     const dir = await findConversationObservabilityDir(options.observabilityDir!, conversationId);

@@ -168,11 +168,17 @@ export interface CreateConversationInput {
   title?: string;
 }
 
-/** 调试面板：一轮诊断的 AI trace 摘要（manifest 行）。 */
+/** 调试面板：一轮诊断的 AI trace 摘要（manifest 行），或一条会话时间线事件。 */
 export interface AiTraceSummary {
   ts: string;
   trace_id: string;
   message_id: string | null;
+  /** trace = 模型轮；event = 编排事实（协查发起/回执/分析轮跳过等）。旧服务端缺省视为 trace。 */
+  entry_type?: 'trace' | 'event';
+  /** event 条目的事件种类（compass_followup_sent 等）。 */
+  event_kind?: string;
+  /** event 条目的一行标题。 */
+  title?: string;
   summary?: {
     duration_ms?: number | null;
     steps?: number;
@@ -228,6 +234,29 @@ export interface AiTraceDetail {
   final_answer?: string;
   steps: AiTraceStep[];
   orphan_tools?: AiTraceTool[];
+}
+
+/** 调试面板：一条会话时间线事件的详情（协查发起/回执、分析轮跳过等编排事实）。 */
+export interface AiTimelineEventDetail {
+  entry_type: 'event';
+  conversation_id: string;
+  trace_id: string;
+  captured_at: string;
+  event_id: string;
+  kind: string;
+  at: string;
+  title: string;
+  detail?: string;
+  data?: Record<string, unknown>;
+}
+
+/** ai-traces/:id 的返回：模型轮 trace 或时间线事件。 */
+export type AiTraceOrEventDetail =
+  | (AiTraceDetail & { entry_type?: 'trace' })
+  | AiTimelineEventDetail;
+
+export function isTimelineEventDetail(detail: AiTraceOrEventDetail): detail is AiTimelineEventDetail {
+  return (detail as AiTimelineEventDetail).entry_type === 'event';
 }
 
 export interface HealthResponse {

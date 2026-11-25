@@ -98,6 +98,53 @@ test('超长分析按上限截断', async () => {
   assert.ok(result.text.endsWith('…'));
 });
 
+// ———— onSkip 跳过原因：观测面板据此区分「为什么没分析」 ————
+
+test('会话未绑定源码快照：不触发模型轮，onSkip 报告未绑定', async () => {
+  const skips: string[] = [];
+  const input = makeInput(async () => {
+    assert.fail('未绑源码不应触发分析轮');
+  });
+  input.conversation = ConversationRecordSchema.parse({
+    id: 'conv-nosource',
+    title: 't',
+    workspace_path: null,
+    messages: [{ id: 'msg-0', role: 'user', content: '支付问题', created_at: timestamp }],
+    created_at: timestamp,
+    updated_at: timestamp,
+  });
+  const result = await analyzeFollowupWithSource({ ...input, onSkip: (reason) => skips.push(reason) });
+  assert.equal(result, null);
+  assert.deepEqual(skips, ['会话未绑定源码快照']);
+});
+
+test('onSkip 依次报告：纯服务端原因 / 无产出 / 异常 / 协查未完成', async () => {
+  const skips: string[] = [];
+  const onSkip = (reason: string) => skips.push(reason);
+
+  await analyzeFollowupWithSource({
+    ...makeInput(async () => ({ text: '无需客户端分析：纯服务端配置。', inputTokens: 1, outputTokens: 1 })),
+    onSkip,
+  });
+  await analyzeFollowupWithSource({ ...makeInput(async () => null), onSkip });
+  await analyzeFollowupWithSource({
+    ...makeInput(async () => {
+      throw new Error('model down');
+    }),
+    onSkip,
+  });
+  const failed = makeInput(async () => null);
+  failed.outcome = makeOutcome({ state: 'failed', text: '', error: 'A2A timeout' });
+  await analyzeFollowupWithSource({ ...failed, onSkip });
+
+  assert.deepEqual(skips, [
+    '模型判定纯服务端原因',
+    '分析轮无产出（超时或空输出）',
+    '分析轮异常：model down',
+    '协查未完成或无结论文本',
+  ]);
+});
+
 test('composeFollowupMessage 有分析时追加客户端侧段落', () => {
   const text = composeFollowupMessage(makeOutcome(), '构造点在某文件:1293。');
   assert.match(text, /【服务端协查结果】/);

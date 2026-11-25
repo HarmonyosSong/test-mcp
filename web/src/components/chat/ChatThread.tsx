@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Check,
   Copy,
+  Hash,
   LoaderCircle,
   MessageSquare,
   Wrench,
@@ -34,6 +35,8 @@ interface ChatThreadProps {
   onStop: () => void;
   onModelChange: (spec: string) => void;
   progress: ChatProgress | null;
+  /** 服务端协查后台等待中：提示结果稍后自动同步，避免误以为已查完。 */
+  followupPending: boolean;
 }
 
 /** 从模型名解析上下文窗口的兜底：如 k3-256k → 256k，k3-1m → 1M。 */
@@ -94,6 +97,35 @@ function UserMessage({ message }: { message: ChatMessage }) {
       </div>
       <time className="chat-message-time">{formatDate(message.created_at)}</time>
     </div>
+  );
+}
+
+/** 会话 ID 徽章：常显便于排查定位，点击复制（发给研发/AI 协助分析时直接引用）。 */
+function ConversationIdChip({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(id);
+    } catch {
+      // 剪贴板不可用时静默——文本本身可选中手动复制。
+      return;
+    }
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button
+      type="button"
+      className="chat-conv-id"
+      onClick={copy}
+      title={copied ? '已复制' : '复制会话 ID（排查问题时发给协助分析的人）'}
+      aria-label={`复制会话 ID ${id}`}
+    >
+      {copied ? <Check size={12} /> : <Hash size={12} />}
+      <span>{id}</span>
+    </button>
   );
 }
 
@@ -167,6 +199,7 @@ export function ChatThread({
   onStop,
   onModelChange,
   progress,
+  followupPending,
 }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -294,6 +327,7 @@ export function ChatThread({
       <div className="chat-thread-main">
         <header className="chat-thread-header">
           <h2>{conversation.title}</h2>
+          <ConversationIdChip id={conversation.id} />
           {conversation.repository_name && (
             <span className="chat-thread-source">
               {conversation.repository_name} @ {conversation.requested_ref}
@@ -315,6 +349,13 @@ export function ChatThread({
           <div className="investigation-progress investigation-progress-active" role="status">
             <LoaderCircle className="spin" size={15} aria-hidden="true" />
             <span>{progress.text}</span>
+          </div>
+        )}
+
+        {followupPending && !progress && (
+          <div className="investigation-progress investigation-progress-waiting" role="status">
+            <LoaderCircle className="spin" size={15} aria-hidden="true" />
+            <span>服务端协查进行中，结果出来后会自动同步到本会话，无需重复提问。</span>
           </div>
         )}
 

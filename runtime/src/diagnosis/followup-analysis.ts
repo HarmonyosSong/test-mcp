@@ -37,7 +37,9 @@ const TIMEOUT_MS = 180_000;
 
 const INSTRUCTIONS = `你是客户端源码分析助手。输入是用户的问题原文和一份服务端协查结论（远端 Agent 对服务端日志/代码的核查结果）。
 
-第一步先判断：协查结论是否与客户端代码有关。以下情形一律视为「与客户端有关」，不得回哨兵词：
+第零步先看协查结论有没有带回新事实。若结论属于「无法定位请求 / 无法核实 / 缺少服务端记录 / 未查到」这类无结论回复，直接回复「${SKIP_SENTINEL}」并加一句理由（协查未带回可映射的新事实），不要调用任何工具——没有分析对象时读源码只会编出臆测。
+
+第一步再判断：协查结论是否与客户端代码有关。以下情形一律视为「与客户端有关」，不得回哨兵词：
 - 结论提到客户端请求参数缺失、为空或异常（如"客户端请求体 X 为空""App 端未携带 Y""下单时没有携带 Z"）；
 - 结论提到端侧调用方式、操作路径、版本/平台行为差异；
 - 结论建议或暗示需要再核查端侧实现。
@@ -49,6 +51,7 @@ const INSTRUCTIONS = `你是客户端源码分析助手。输入是用户的问�
 输出纪律：
 - 只输出分析正文（中文，≤400 字），不要标题、不要「判定：」前缀、不要重复协查结论原文；
 - 关键结论引用「文件路径:行号」；
+- 分析必须锚定协查结论指出的具体事实，且不得与已有观测矛盾（例如日志已证明请求到达服务端并拿到应答时，不得提出"请求可能没发到服务端"类理论）；
 - 源码里找不到解释时如实说明「现有源码无法解释该现象」，不要编造。`;
 
 function lastUserText(conversation: ConversationRecord): string {
@@ -73,9 +76,22 @@ export async function analyzeFollowupWithSource(input: {
   mastra?: Mastra;
   /** 测试可注入的模型轮实现；缺省走真实 Mastra Agent。 */
   runRound?: (prompt: string) => Promise<FollowupAnalysis | null>;
+  /** 跳过/失败原因回调：观测面板据此把"无声的 null"变成可见的跳过事件。 */
+  onSkip?: (reason: string) => void;
 }): Promise<FollowupAnalysis | null> {
   const { conversation, outcome } = input;
-  if (outcome.state !== 'completed' || !outcome.text.trim()) return null;
+  if (outcome.state !== 'completed' || !outcome.text.trim()) {
+    input.onSkip?.('协查未完成或无结论文本');
+    return null;
+  }
+  // 源码快照是分析轮的米：主轮没绑、settle 兜底也没绑上时如实记录，不再混进"无产出"。
+  if (!conversation.workspace_path) {
+    console.warn('[followup-analysis] 会话未绑定源码快照，跳过客户端侧分析', {
+      conversationId: conversation.id,
+    });
+    input.onSkip?.('会话未绑定源码快照');
+    return null;
+  }
 
   const userQuestion = lastUserText(conversation);
   const prompt = [
@@ -96,7 +112,8 @@ export async function analyzeFollowupWithSource(input: {
   try {
     const result = await runRound(prompt);
     if (!result) {
-      console.warn('[followup-analysis] 分析轮无产出（未绑源码/超时/空输出），按纯转发处理');
+      console.warn('[followup-analysis] 分析轮无产出（超时/空输出），按纯转发处理');
+      input.onSkip?.('分析轮无产出（超时或空输出）');
       return null;
     }
     const cleaned = stripVerdictLines(result.text);
@@ -105,6 +122,7 @@ export async function analyzeFollowupWithSource(input: {
         conversationId: conversation.id,
         preview: cleaned.slice(0, 120),
       });
+      input.onSkip?.('模型判定纯服务端原因');
       return null;
     }
     console.warn('[followup-analysis] 客户端侧分析完成', {
@@ -122,6 +140,7 @@ export async function analyzeFollowupWithSource(input: {
       conversationId: conversation.id,
       error: error instanceof Error ? error.message : String(error),
     });
+    input.onSkip?.(`分析轮异常：${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }
@@ -232,9 +251,14 @@ export async function synthesizeYachFollowupReply(input: {
   mastra?: Mastra;
   /** 测试可注入的模型轮实现；缺省走真实 Mastra Agent（无工具）。 */
   runRound?: (prompt: string) => Promise<FollowupAnalysis | null>;
+  /** 跳过/失败原因回调：观测面板据此把回退拼装文案的原因变成可见事件。 */
+  onSkip?: (reason: string) => void;
 }): Promise<FollowupAnalysis | null> {
   const { conversation, outcome } = input;
-  if (outcome.state !== 'completed' || !outcome.text.trim()) return null;
+  if (outcome.state !== 'completed' || !outcome.text.trim()) {
+    input.onSkip?.('协查未完成或无结论文本');
+    return null;
+  }
 
   const prompt = [
     `用户问题原文：${lastUserText(conversation)}`,
@@ -287,6 +311,7 @@ export async function synthesizeYachFollowupReply(input: {
         conversationId: conversation.id,
         preview: cleaned.slice(0, 120),
       });
+      input.onSkip?.('综合轮无产出或缺判定锚点');
       return null;
     }
     console.warn('[followup-analysis] 知音楼综合答复完成', {
@@ -303,6 +328,7 @@ export async function synthesizeYachFollowupReply(input: {
       conversationId: conversation.id,
       error: error instanceof Error ? error.message : String(error),
     });
+    input.onSkip?.(`综合轮异常：${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }

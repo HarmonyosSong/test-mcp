@@ -265,6 +265,78 @@ test('摘要层：旧历史压成检查点，首条用户消息与近期尾部�
   });
 });
 
+test('摘要层：当前轮提问逐字保护，不压进检查点（知音楼多题会话串题防线）', async () => {
+  await withStore(async (dir) => {
+    const calls: string[] = [];
+    const summarize: SummarizeFn = async (input) => {
+      calls.push(input.user);
+      return '## 任务目标\n旧问题排查记录';
+    };
+    const evictor = new ToolResultEvictor({
+      ...BASE,
+      offloadDir: dir,
+      budgetTokens: 100,
+      targetTokens: 50,
+      keepRecentResults: 1,
+      clampChars: 4_000,
+      summarize,
+      currentQuestion: '当前提问：跨报成功记录不展示去结算按钮',
+    });
+    const messages = [
+      userMessage('旧问题：微信支付失败请给查一下啥原因啊'),
+      toolResultMessage('call-a', 'query', 'A'.repeat(20_000)),
+      toolResultMessage('call-b', 'query', 'B'.repeat(20_000)),
+      userMessage('当前提问：跨报成功记录不展示去结算按钮'),
+      toolResultMessage('call-c', 'query', 'C'.repeat(20_000)),
+      toolResultMessage('call-d', 'query', 'D'.repeat(20_000)),
+    ];
+    await evictor.processInputStep(argsOf(messages));
+    assert.equal(evictor.stats.summaries, 1);
+    // 压缩后结构：[首条锚点][检查点][当前提问（原样）][近期尾部]。
+    const texts = messages.map((message) =>
+      message.role === 'user' ? String((message.content.parts[0] as { text?: string }).text ?? '') : '');
+    assert.equal(texts[0], '旧问题：微信支付失败请给查一下啥原因啊', '首条锚点不变');
+    assert.match(texts[1]!, /【上下文检查点/);
+    const questionAt = texts.findIndex((text) => text === '当前提问：跨报成功记录不展示去结算按钮');
+    assert.ok(questionAt > 1, '当前提问须在锚点与检查点之后');
+    assert.ok(questionAt < messages.length - 1, '当前提问须保留在近期步骤之前');
+    // 当前提问不是被摘要复述，而是作为活消息逐字保留——摘要输入里没有它。
+    assert.ok(!calls[0]!.includes('跨报成功记录不展示去结算按钮'), '当前提问不得进入检查点摘要');
+  });
+});
+
+test('摘要层：重复同文提问时保护最后一次出现（历史同文消息照常压缩）', async () => {
+  await withStore(async (dir) => {
+    const summarize: SummarizeFn = async () => '检查点';
+    const evictor = new ToolResultEvictor({
+      ...BASE,
+      offloadDir: dir,
+      budgetTokens: 100,
+      targetTokens: 50,
+      keepRecentResults: 1,
+      clampChars: 4_000,
+      summarize,
+      currentQuestion: '重复的问题',
+    });
+    const messages = [
+      userMessage('重复的问题'), // 首条锚点（同文）
+      toolResultMessage('call-a', 'query', 'A'.repeat(20_000)),
+      userMessage('重复的问题'), // 历史同文消息——应被压缩掉
+      toolResultMessage('call-b', 'query', 'B'.repeat(20_000)),
+      userMessage('重复的问题'), // 当前提问（最后一次出现）——受保护
+      toolResultMessage('call-c', 'query', 'C'.repeat(20_000)),
+    ];
+    await evictor.processInputStep(argsOf(messages));
+    assert.equal(evictor.stats.summaries, 1);
+    const survivors = messages.filter((message) =>
+      message.role === 'user'
+      && String((message.content.parts[0] as { text?: string }).text ?? '') === '重复的问题');
+    // 锚点 + 受保护的当前提问共两条；中间那条同文历史已被检查点取代。
+    assert.equal(survivors.length, 2);
+    assert.ok(messages.indexOf(survivors[1]!) > 1, '受保护的当前提问在检查点之后');
+  });
+});
+
 test('摘要层增量更新：旧检查点并入新检查点，不叠加', async () => {
   await withStore(async (dir) => {
     const seen: string[] = [];
