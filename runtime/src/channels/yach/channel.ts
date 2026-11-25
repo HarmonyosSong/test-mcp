@@ -14,6 +14,7 @@ import { isTopicSwitch } from './topic-switch.js';
 import { yachHistory, yachInbound, yachInboundSkipped, yachOutbound } from './log.js';
 import { InvalidYachEvent, parseYachEvent, peekWorkCode, type YachEvent } from './parse.js';
 import { YachProgressCard } from './progress.js';
+import { enrichSimulationLoginReply } from '../../capabilities/simulation-login-reply.js';
 
 const DEDUPE_LIMIT = 4096;
 const DEDUPE_TTL_MS = 15 * 60 * 1000;
@@ -380,10 +381,26 @@ export class YachChannel {
           tool_usage: {},
         });
       await progress.finish(result.terminal === 'completed' ? '诊断完成' : '诊断失败');
-      const body = result.terminal === 'completed'
+      let body = result.terminal === 'completed'
         ? formatYachFinalReply(result.text)
         // 失败原因可能含堆栈/路径等内部细节，不进群消息；服务端已落日志。
         : '诊断失败：服务调用异常，请稍后重试或打开网页工作台。';
+      if (result.terminal === 'completed') {
+        try {
+          body = await enrichSimulationLoginReply({
+            text: body,
+            messageId: result.assistantMessage.id,
+            owner: event.workCode || result.conversation.owner_subject || 'anonymous',
+            config: this.deps.config,
+          });
+          if (body !== result.assistantMessage.content) {
+            result.assistantMessage.content = body;
+            await this.deps.store.saveConversation(result.conversation);
+          }
+        } catch {
+          // 出图失败不阻断知音楼终态发送。
+        }
+      }
       await this.reply(event, body);
     } catch (error) {
       if (abort.signal.aborted) {

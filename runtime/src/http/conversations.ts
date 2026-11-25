@@ -27,8 +27,11 @@ import type { AuthVariables } from '../auth/index.js';
 import { InMemoryRunAdmission, type RunAdmission, type RunAdmissionGrant } from '../orchestration/admission.js';
 import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js';
 import { clearIncompleteSourceBinding, type BoundSourceContext } from '../capabilities/source-binding.js';
+import type { RuntimeConfig } from '../config.js';
+import { enrichSimulationLoginReply } from '../capabilities/simulation-login-reply.js';
 
 interface ConversationRouteOptions {
+  config?: RuntimeConfig;
   knowledgeQueryLog?: string;
   caseArchiveDir?: string;
   /** 调试面板读取已落盘 AI trace（.data/observability）；缺省不提供 ai-traces 接口。 */
@@ -95,11 +98,12 @@ export function createConversationRoutes(
     admissionGrant: RunAdmissionGrant;
     content: string;
     requestSignal: AbortSignal;
+    ownerSubject?: string;
   }): Response => {
     if (!diagnosisAgent || !capabilities || !modelConfiguration) {
       throw new Error('诊断运行依赖尚未配置');
     }
-    const { id, prepared, admissionGrant, content, requestSignal } = input;
+    const { id, prepared, admissionGrant, content, requestSignal, ownerSubject } = input;
     const runController = new AbortController();
     const signal = AbortSignal.any([requestSignal, runController.signal]);
     const body = new ReadableStream<Uint8Array>({
@@ -186,6 +190,31 @@ export function createConversationRoutes(
           });
           runId = result.runId;
           terminalPersisted = result.terminalPersisted;
+          if (result.terminal === 'completed' && options.config) {
+            try {
+              const enriched = await enrichSimulationLoginReply({
+                text: result.assistantMessage.content || result.text,
+                messageId: result.assistantMessage.id,
+                owner: ownerSubject || result.conversation.owner_subject || 'anonymous',
+                config: options.config,
+              });
+              if (enriched !== result.assistantMessage.content) {
+                const appendix = enriched.startsWith(result.assistantMessage.content)
+                  ? enriched.slice(result.assistantMessage.content.length)
+                  : '';
+                result.assistantMessage.content = enriched;
+                await store.saveConversation(result.conversation);
+                if (textStarted && appendix) {
+                  send(sse('TEXT_MESSAGE_CONTENT', runId, {
+                    message_id: result.assistantMessage.id,
+                    delta: appendix,
+                  }));
+                }
+              }
+            } catch {
+              // 出图失败不阻断网页终态。
+            }
+          }
           if (textStarted) send(sse('TEXT_MESSAGE_END', runId, { message_id: result.assistantMessage.id }));
           send(sse('STATE_SNAPSHOT', runId, { conversation_id: id, conversation: publicView(result.conversation) }));
           if (result.terminal === 'completed') {
@@ -418,6 +447,7 @@ export function createConversationRoutes(
       admissionGrant,
       content: parsedInput.data.content,
       requestSignal: context.req.raw.signal,
+      ownerSubject: context.get('identity')?.subject,
     });
   });
 

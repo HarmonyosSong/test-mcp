@@ -320,6 +320,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       model_prices: MODEL_PRICES,
     }));
     app.route('/api', createConversationRoutes(store, diagnosisAgent, capabilities, modelConfiguration, {
+      config,
       knowledgeQueryLog: config.knowledgeQueryLog,
       caseArchiveDir: config.caseArchiveDir,
       observabilityDir: config.mastraObservabilityDir,

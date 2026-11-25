@@ -142,5 +142,13 @@ export function createRoundCapabilitySession(provider: CapabilityMcp, context: C
       return session ? { toolsets: { learner: session.tools } } : null;
     },
   });
+  registrations.push({
+    id: 'simulation_login',
+    optional: true,
+    create: async ({ abortSignal, messageId }) => {
+      const session = await provider.createSimulationLoginTools?.({ abortSignal, messageId });
+      return session ? { toolsets: { simulation_login: session.tools } } : null;
+    },
+  });
   return createCapabilitySession(registrations, context);
 }

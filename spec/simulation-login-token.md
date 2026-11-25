@@ -54,7 +54,8 @@
 - 名称：`get_simulation_login_token`  
 - 入参：`{ identifier: string }` — 用户原始标识（学员编号或看起来像 uid 的数字），保持字符串与前导零  
 - 内部：`api_query(student.resolve)` → 取顶层 `uid` → `api_query(student.get_token)`  
-- 禁止：把原始 `identifier` 直接当 `uid` 调 `get_token`；禁止向模型暴露其它 `api_id`  
+- 禁止：把原始 `identifier` 直接当 `uid` 调 `get_token`（正常路径）；禁止向模型暴露其它 `api_id`  
+- 降级：仅当 `student.resolve` 返回 `UPSTREAM_ERROR` 且 `identifier` 已是 `^[0-9]{1,20}$` 时，按 uid 继续 `get_token`，并在 `message` 标明「身份核实上游失败、已降级」；`not_found` / 非 uid 形态不得降级  
 - 返回：
 
 ```ts
@@ -124,9 +125,8 @@
 
 ## 6. 验收
 
-1.       破；】破婆婆婆婆哦；il；p09iujkl;']-0i9ujl;0987ythrfgdvxc’；来看，吗  
-「“？怕；。¬  
-】=-【‘怕；-0pp0-p0[[poikjhn[po8u7y6tre .;p0p;p;lp;lp'./'[-p0;'[p0;'[jkml,’怕；oliuytrefdsZX/
+1. 配置齐全时，用户明确要模拟登录 → 工具可用 → 返回 Token 或明确无 Token。
 2. 未配 `API_MCP_*` 时工具不挂载，对应 Skill 不可用。
 3. 有 Token 且 COS 可用 → 回复含二维码；COS 不可用 → 仅文本并说明缺口。
 4. 模型工具列表中无上传/生图工具；进程中无新建 MCP server。
+5. 未触发模拟登录意图时，普通排障/查档主路径行为与现网一致。
