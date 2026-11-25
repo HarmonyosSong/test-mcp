@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { formatYachFinalReply } from '../src/channels/yach/channel.js';
+import { appendFollowupPendingNotice, formatYachFinalReply } from '../src/channels/yach/channel.js';
 import { IM_MESSAGE_LIMIT } from '../src/channels/yach/cli.js';
 
 test('知音楼发送校验后的最终回答全文，首行判定锚点即结论标签', () => {
@@ -53,4 +53,19 @@ test('超长回答截断到 IM 上限，不再追加工作台链接', () => {
   assert.ok(reply.length <= IM_MESSAGE_LIMIT);
   assert.match(reply, /已截断/);
   assert.doesNotMatch(reply, /完整报告请打开工作台/);
+});
+
+test('协查在途时最终回复确定性追加提示行，不依赖模型记得写「初步」', () => {
+  const reply = appendFollowupPendingNotice(formatYachFinalReply('判定：可能定位\n播放心跳超时阈值疑似过短。'));
+  assert.match(reply, /^判定：可能定位/);
+  assert.match(reply, /服务端协查进行中/);
+  assert.match(reply, /无需重复提问/);
+});
+
+test('协查提示行优先保留：正文超长时先裁正文，整体不超 IM 上限', () => {
+  const longBody = formatYachFinalReply(`判定：可能定位\n${'很长的结论。'.repeat(2000)}`);
+  const reply = appendFollowupPendingNotice(longBody);
+  assert.ok(reply.length <= IM_MESSAGE_LIMIT, `超长: ${reply.length}`);
+  assert.match(reply, /已截断/);
+  assert.ok(reply.trimEnd().endsWith('无需重复提问。'), '提示行必须完整保留在末尾');
 });

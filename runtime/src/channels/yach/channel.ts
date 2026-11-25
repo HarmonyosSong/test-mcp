@@ -50,6 +50,19 @@ export function formatYachFinalReply(text: string | null | undefined): string {
   return truncateReply(body);
 }
 
+/** 协查进行中的群消息提示行：追加在初步判定正文末尾，让群里知道结果还会自动同步。 */
+const FOLLOWUP_PENDING_NOTICE = '⏳ 服务端协查进行中，结论出来后自动同步，无需重复提问。';
+
+/** 给最终回复追加「协查中」提示行（初步判定轮且后台协查在途时用）。
+ *  整体仍受 IM 长度上限约束：正文超长时先裁正文，提示行始终保留。 */
+export function appendFollowupPendingNotice(body: string): string {
+  const truncatedSuffix = '\n…（已截断）';
+  // 预算扣除：提示行 + 两个换行 + 可能的截断后缀，保证任何情况下整体不超上限。
+  const budget = Math.max(0, IM_MESSAGE_LIMIT - FOLLOWUP_PENDING_NOTICE.length - 2 - truncatedSuffix.length);
+  const trimmed = body.length > budget ? `${body.slice(0, budget).trimEnd()}${truncatedSuffix}` : body;
+  return `${trimmed}\n\n${FOLLOWUP_PENDING_NOTICE}`;
+}
+
 export interface YachChannelDeps {
   config: RuntimeConfig;
   store: ProductStore;
@@ -379,12 +392,18 @@ export class YachChannel {
           output_tokens: result.assistantMessage.output_tokens ?? null,
           tool_usage: {},
         });
-      await progress.finish(result.terminal === 'completed' ? '诊断完成' : '诊断失败');
+      await progress.finish(result.terminal === 'completed'
+        // 协查在途时进度卡收尾行如实说明，避免「诊断完成」让群里误以为已查完。
+        ? (result.compassFollowupPending ? '初步判定完成，服务端协查进行中' : '诊断完成')
+        : '诊断失败');
       const body = result.terminal === 'completed'
         ? formatYachFinalReply(result.text)
         // 失败原因可能含堆栈/路径等内部细节，不进群消息；服务端已落日志。
         : '诊断失败：服务调用异常，请稍后重试或打开网页工作台。';
-      await this.reply(event, body);
+      // 初步判定轮 + 协查在途：正文末尾确定性追加提示行（不依赖模型记得写「初步」）。
+      await this.reply(event, result.terminal === 'completed' && result.compassFollowupPending
+        ? appendFollowupPendingNotice(body)
+        : body);
     } catch (error) {
       if (abort.signal.aborted) {
         await progress.finish('已取消');
