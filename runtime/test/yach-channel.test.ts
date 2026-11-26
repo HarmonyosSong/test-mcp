@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { appendFollowupPendingNotice, formatYachFinalReply } from '../src/channels/yach/channel.js';
+import { appendFollowupPendingNotice, formatYachFinalReply, stripBotMention } from '../src/channels/yach/channel.js';
 import { IM_MESSAGE_LIMIT } from '../src/channels/yach/cli.js';
 
 test('知音楼发送校验后的最终回答全文，首行判定锚点即结论标签', () => {
@@ -68,4 +68,14 @@ test('协查提示行优先保留：正文超长时先裁正文，整体不超 I
   assert.ok(reply.length <= IM_MESSAGE_LIMIT, `超长: ${reply.length}`);
   assert.match(reply, /已截断/);
   assert.ok(reply.trimEnd().endsWith('无需重复提问。'), '提示行必须完整保留在末尾');
+});
+
+test('群聊 @机器人 前缀剥除：指令与归档识别基于净文本', () => {
+  assert.equal(stripBotMention('@beta-培优问题排查助手 /new', 'beta-培优问题排查助手'), '/new');
+  assert.equal(stripBotMention('@beta-培优问题排查助手 问题分析正确', 'beta-培优问题排查助手'), '问题分析正确');
+  // 多机器人名（逗号分隔配置）按任一匹配。
+  assert.equal(stripBotMention('@助手二号 /stop', 'beta-培优问题排查助手,助手二号'), '/stop');
+  // 私聊/无 @ 前缀的消息原样保留；@ 的是别人则不剥。
+  assert.equal(stripBotMention('/new', 'beta-培优问题排查助手'), '/new');
+  assert.equal(stripBotMention('@宋一博 看一下', 'beta-培优问题排查助手'), '@宋一博 看一下');
 });

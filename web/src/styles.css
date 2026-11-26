@@ -4913,3 +4913,7 @@ button:disabled {
   color: var(--danger, #d5495b);
   opacity: 1;
 }
+
+.feedback-stats-vague {
+  color: var(--warning, #d9a03f);
+}

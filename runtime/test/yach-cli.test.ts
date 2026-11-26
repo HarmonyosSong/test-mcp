@@ -94,6 +94,35 @@ test('accepts letter-prefixed work codes from group events', () => {
   assert.equal(event.conversationType, '2');
 });
 
+test('fold 快捷回复消息按文本解析（归档回执通道）', () => {
+  // 真实形态：content 是链接本体，回执文本在 reply 参数（URL 编码）。
+  const event = parseYachEvent({
+    msgtype: 'fold',
+    conversationType: '2',
+    createAt: Date.now(),
+    senderUUid: 'yach999',
+    msgId: 'msg-fold',
+    conversationId: '64134877732',
+    userJson: { workCode: 'V0047863', name: 'Tester' },
+    content: `yach://yach.zhiyinlou.com/session/robot?type=fold&extra=%7B%7D&reply=${encodeURIComponent('问题分析正确')}`,
+  });
+  assert.equal(event.text, '问题分析正确');
+  assert.equal(event.workCode, 'V0047863');
+
+  // 非链接形态的 fold（理论上）保留原文。
+  const plain = parseYachEvent({
+    msgtype: 'fold',
+    conversationType: '2',
+    createAt: Date.now(),
+    senderUUid: 'yach999',
+    msgId: 'msg-fold-2',
+    conversationId: '64134877732',
+    userJson: { workCode: 'V0047863', name: 'Tester' },
+    content: '问题分析失败',
+  });
+  assert.equal(plain.text, '问题分析失败');
+});
+
 test('ignores bot workCode -1', () => {
   assert.throws(() => parseYachEvent({
     msgtype: 'text',

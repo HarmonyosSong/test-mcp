@@ -88,9 +88,9 @@ export interface ChatMessage {
   context_tokens?: number | null;
   /** 水位快照同次请求的缓存命中 tokens。 */
   context_cache_read_tokens?: number | null;
-  /** 问题归档：支持老师在知音楼点「问题分析正确/失败」后的回写；null/缺省=未归档。 */
+  /** 问题归档：支持老师在知音楼点「问题分析正确/模糊/失败」后的回写；null/缺省=未归档。 */
   analysis_feedback?: {
-    verdict: 'correct' | 'failed';
+    verdict: 'correct' | 'vague' | 'failed';
     by_work_code: string | null;
     by_name: string | null;
     at: string;
@@ -105,14 +105,17 @@ export interface YachFeedbackStats {
     final_answers: number;
     archived: number;
     correct: number;
+    vague: number;
     failed: number;
     unarchived: number;
+    /** 归档正确率 = correct / archived（模糊计为未达标）。 */
     accuracy: number | null;
   };
   by_user: Array<{
     work_code: string | null;
     name: string | null;
     correct: number;
+    vague: number;
     failed: number;
     total: number;
   }>;

@@ -14,15 +14,17 @@ export interface YachFeedbackStats {
     final_answers: number;
     archived: number;
     correct: number;
+    vague: number;
     failed: number;
     unarchived: number;
-    /** 归档正确率 = correct / archived；无归档时为 null。 */
+    /** 归档正确率 = correct / archived（模糊计为未达标）；无归档时为 null。 */
     accuracy: number | null;
   };
   by_user: Array<{
     work_code: string | null;
     name: string | null;
     correct: number;
+    vague: number;
     failed: number;
     total: number;
   }>;
@@ -41,8 +43,8 @@ export function aggregateYachFeedback(
   conversations: ConversationRecord[],
   window: StatsWindow,
 ): YachFeedbackStats {
-  const totals = { final_answers: 0, archived: 0, correct: 0, failed: 0 };
-  const byUser = new Map<string, { work_code: string | null; name: string | null; correct: number; failed: number }>();
+  const totals = { final_answers: 0, archived: 0, correct: 0, vague: 0, failed: 0 };
+  const byUser = new Map<string, { work_code: string | null; name: string | null; correct: number; vague: number; failed: number }>();
 
   for (const conversation of conversations) {
     if (conversation.channel !== 'yach_im') continue;
@@ -57,15 +59,18 @@ export function aggregateYachFeedback(
       if (!feedback) continue;
       totals.archived += 1;
       if (feedback.verdict === 'correct') totals.correct += 1;
+      else if (feedback.verdict === 'vague') totals.vague += 1;
       else totals.failed += 1;
       const key = feedback.by_work_code ?? feedback.by_name ?? '(未知)';
       const bucket = byUser.get(key) ?? {
         work_code: feedback.by_work_code,
         name: feedback.by_name,
         correct: 0,
+        vague: 0,
         failed: 0,
       };
       if (feedback.verdict === 'correct') bucket.correct += 1;
+      else if (feedback.verdict === 'vague') bucket.vague += 1;
       else bucket.failed += 1;
       byUser.set(key, bucket);
     }
@@ -79,7 +84,7 @@ export function aggregateYachFeedback(
       accuracy: totals.archived > 0 ? totals.correct / totals.archived : null,
     },
     by_user: [...byUser.values()]
-      .map((bucket) => ({ ...bucket, total: bucket.correct + bucket.failed }))
+      .map((bucket) => ({ ...bucket, total: bucket.correct + bucket.vague + bucket.failed }))
       .sort((a, b) => b.total - a.total),
   };
 }

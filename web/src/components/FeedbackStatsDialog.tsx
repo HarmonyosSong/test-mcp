@@ -102,11 +102,17 @@ export function FeedbackStatsDialog({ onClose }: { onClose: () => void }) {
                 <span className="feedback-stats-label">分析正确</span>
               </div>
               <div className="feedback-stats-card">
+                <span className="feedback-stats-value feedback-stats-vague">{stats.totals.vague}</span>
+                <span className="feedback-stats-label">分析模糊</span>
+              </div>
+              <div className="feedback-stats-card">
                 <span className="feedback-stats-value feedback-stats-bad">{stats.totals.failed}</span>
                 <span className="feedback-stats-label">分析失败</span>
               </div>
               <div className="feedback-stats-card">
-                <span className="feedback-stats-value">{percent(stats.totals.accuracy)}</span>
+                <span className="feedback-stats-value" title="正确 ÷ 已归档（模糊计为未达标）">
+                  {percent(stats.totals.accuracy)}
+                </span>
                 <span className="feedback-stats-label">归档正确率</span>
               </div>
             </div>
@@ -117,6 +123,7 @@ export function FeedbackStatsDialog({ onClose }: { onClose: () => void }) {
                   <tr>
                     <th>支持老师</th>
                     <th>正确</th>
+                    <th>模糊</th>
                     <th>失败</th>
                     <th>合计</th>
                     <th>正确率</th>
@@ -127,6 +134,7 @@ export function FeedbackStatsDialog({ onClose }: { onClose: () => void }) {
                     <tr key={row.work_code ?? row.name ?? '(未知)'}>
                       <td>{row.name || row.work_code || '(未知)'}</td>
                       <td>{row.correct}</td>
+                      <td>{row.vague}</td>
                       <td>{row.failed}</td>
                       <td>{row.total}</td>
                       <td>{percent(row.total > 0 ? row.correct / row.total : null)}</td>

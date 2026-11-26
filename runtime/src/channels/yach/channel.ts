@@ -22,6 +22,7 @@ import {
   findArchivableMessage,
   isFaultFinalAnswer,
   parseArchiveFeedback,
+  type ArchiveVerdict,
 } from './archive.js';
 import { createSessionMappingStore, type SessionMappingStore } from './session-mapping-store.js';
 
@@ -71,6 +72,14 @@ export function appendFollowupPendingNotice(body: string): string {
   const budget = Math.max(0, IM_MESSAGE_LIMIT - FOLLOWUP_PENDING_NOTICE.length - 2 - truncatedSuffix.length);
   const trimmed = body.length > budget ? `${body.slice(0, budget).trimEnd()}${truncatedSuffix}` : body;
   return `${trimmed}\n\n${FOLLOWUP_PENDING_NOTICE}`;
+}
+
+/** 群聊里 @机器人 的消息带「@机器人名 」前缀；剥掉后指令（/new、/stop）与归档识别才生效。 */
+export function stripBotMention(text: string, botNames: string): string {
+  for (const name of botNames.split(',').map((n) => n.trim()).filter(Boolean)) {
+    if (text.startsWith(`@${name}`)) return text.slice(name.length + 1).trim();
+  }
+  return text;
 }
 
 export interface YachChannelDeps {
@@ -206,6 +215,8 @@ export class YachChannel {
 
   private async enqueue(event: YachEvent): Promise<void> {
     const session = this.sessionFor(event);
+    // 统一剥掉群聊 @机器人 前缀：/stop、/new、归档回执的识别都基于净文本。
+    event.text = stripBotMention(event.text, this.deps.config.yachBotName);
     if (event.text === '/stop') {
       session.abort?.abort();
       session.queue = [];
@@ -338,7 +349,7 @@ export class YachChannel {
   private async recordArchiveFeedback(
     session: EmployeeSession,
     event: YachEvent,
-    verdict: 'correct' | 'failed',
+    verdict: ArchiveVerdict,
   ): Promise<void> {
     // 不传 incomingText：跳过话题切换检测，晚到的归档仍落回原会话。
     const conversation = await this.resolveConversation(session, event, false);

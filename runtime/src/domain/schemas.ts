@@ -250,7 +250,7 @@ export const ChatMessageSchema = z.object({
   /** 问题归档：支持老师在知音楼点「问题分析正确/失败」链接后的回写结果；null=未归档。
    *  重复点击以最新一次覆盖（允许点错纠正）。 */
   analysis_feedback: z.object({
-    verdict: z.enum(['correct', 'failed']),
+    verdict: z.enum(['correct', 'vague', 'failed']),
     by_work_code: z.string().nullable().default(null),
     by_name: z.string().nullable().default(null),
     at: isoDateTime,

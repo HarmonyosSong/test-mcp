@@ -115,8 +115,10 @@ function unwrapMessage(raw: unknown): Record<string, unknown> {
 export function parseYachEvent(raw: unknown): YachEvent {
   const message = unwrapMessage(raw);
   const kind = message.msgtype;
-  if (kind !== 'text' && kind !== 'start_new_session' && kind !== 'reply') {
-    throw new InvalidYachEvent('unsupported message type');
+  // fold：点「问题归档」等快捷回复链接（yach://...type=fold&reply=...）后知音楼发出的消息类型，
+  // content 即 reply 参数文本，按普通文本消息处理。
+  if (kind !== 'text' && kind !== 'start_new_session' && kind !== 'reply' && kind !== 'fold') {
+    throw new InvalidYachEvent(`unsupported message type: ${String(kind)}`);
   }
   const conversationType = normalizeConversationType(message.conversationType);
   const created = message.createAt ?? message.ts;
@@ -151,6 +153,18 @@ export function parseYachEvent(raw: unknown): YachEvent {
   let rawText = message.content;
   if (kind === 'reply' && (typeof rawText !== 'string' || !rawText.trim()) && typeof message.replyContent === 'string') {
     rawText = message.replyContent;
+  }
+  // fold 快捷回复消息的 content 是链接本体（yach://...&reply=<urlencoded 文本>），
+  // 真正的回执文本在 reply 参数里——解出来当用户发言（点链接 = 说了这句话）。
+  if (kind === 'fold' && typeof rawText === 'string' && rawText.startsWith('yach://')) {
+    const replyParam = /[?&]reply=([^&\s]+)/.exec(rawText)?.[1];
+    if (replyParam) {
+      try {
+        rawText = decodeURIComponent(replyParam);
+      } catch {
+        // 解码失败保留原文，按普通文本继续。
+      }
+    }
   }
   if (typeof rawText !== 'string' || Buffer.byteLength(rawText, 'utf8') > MAX_EVENT_BYTES / 2) {
     throw new InvalidYachEvent('invalid text');

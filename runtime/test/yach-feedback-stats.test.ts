@@ -47,6 +47,9 @@ test('聚合：只统计知音楼会话的故障终稿，按归档人分组算�
       message('m2', {
         analysis_feedback: { verdict: 'failed', by_work_code: 'zhangsan', by_name: '张三', at: '2026-11-20T12:00:00.000Z' },
       }),
+      message('m2v', {
+        analysis_feedback: { verdict: 'vague', by_work_code: 'lisi', by_name: '李四', at: '2026-11-20T12:30:00.000Z' },
+      }),
       // 未归档终稿：计入 final_answers，不进 archived。
       message('m3'),
       // 初步判定不是终稿，不参与统计。
@@ -64,15 +67,17 @@ test('聚合：只统计知音楼会话的故障终稿，按归档人分组算�
 
   const stats = aggregateYachFeedback(conversations, WINDOW);
   assert.deepEqual(stats.totals, {
-    final_answers: 3,
-    archived: 2,
+    final_answers: 4,
+    archived: 3,
     correct: 1,
+    vague: 1,
     failed: 1,
     unarchived: 1,
-    accuracy: 0.5,
+    accuracy: 1 / 3,
   });
   assert.deepEqual(stats.by_user, [
-    { work_code: 'zhangsan', name: '张三', correct: 1, failed: 1, total: 2 },
+    { work_code: 'zhangsan', name: '张三', correct: 1, vague: 0, failed: 1, total: 2 },
+    { work_code: 'lisi', name: '李四', correct: 0, vague: 1, failed: 0, total: 1 },
   ]);
 });
 

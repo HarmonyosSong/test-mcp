@@ -6,10 +6,14 @@ import type { ChatMessage } from '../../domain/schemas.js';
  * 供「谁用了、分析正确率多少」的评测统计。
  */
 
+/** 归档结论三档：正确 / 模糊（方向对但不够具体）/ 失败。 */
+export type ArchiveVerdict = 'correct' | 'vague' | 'failed';
+
 /** 归档反馈文本 → 归档结论。精确匹配（trim 后），避免把正常提问误判成归档。 */
-export function parseArchiveFeedback(text: string): 'correct' | 'failed' | null {
+export function parseArchiveFeedback(text: string): ArchiveVerdict | null {
   const trimmed = text.trim();
   if (trimmed === '问题分析正确') return 'correct';
+  if (trimmed === '问题分析模糊') return 'vague';
   if (trimmed === '问题分析失败') return 'failed';
   return null;
 }
@@ -19,8 +23,8 @@ function archiveLink(label: string): string {
   return `[${label}](yach://yach.zhiyinlou.com/session/robot?type=fold&extra={}&reply=${label})`;
 }
 
-/** 归档区正文：两个选项并排。 */
-export const ARCHIVE_SECTION = `**【问题归档】**\n${archiveLink('问题分析正确')}　${archiveLink('问题分析失败')}`;
+/** 归档区正文：三个选项并排（正确 / 模糊 / 失败）。 */
+export const ARCHIVE_SECTION = `**【问题归档】**\n${archiveLink('问题分析正确')}　${archiveLink('问题分析模糊')}　${archiveLink('问题分析失败')}`;
 
 /**
  * 故障排查终稿判定：首行「判定：已定位|可能定位|证据不足|工具异常」且不标「（初步）」。
@@ -42,10 +46,10 @@ export function appendArchiveSection(body: string, messageLimit: number): string
 }
 
 /** 归档确认回执文案。 */
-export function archiveAckText(verdict: 'correct' | 'failed'): string {
-  return verdict === 'correct'
-    ? '已记录归档：问题分析正确，感谢反馈。'
-    : '已记录归档：问题分析失败，感谢反馈，我们会复盘改进。';
+export function archiveAckText(verdict: ArchiveVerdict): string {
+  if (verdict === 'correct') return '已记录归档：问题分析正确，感谢反馈。';
+  if (verdict === 'vague') return '已记录归档：问题分析模糊，感谢反馈，我们会争取写得更具体。';
+  return '已记录归档：问题分析失败，感谢反馈，我们会复盘改进。';
 }
 
 /** 在会话消息里找归档回写目标：最近一条故障终稿 assistant 消息（从后往前）。 */
