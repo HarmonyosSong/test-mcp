@@ -390,6 +390,7 @@ export class YachChannel {
           input_tokens: result.assistantMessage.input_tokens ?? null,
           output_tokens: result.assistantMessage.output_tokens ?? null,
           context_tokens: result.assistantMessage.context_tokens ?? null,
+          context_cache_read_tokens: result.assistantMessage.context_cache_read_tokens ?? null,
           tool_usage: {},
         }
         : {
@@ -400,6 +401,7 @@ export class YachChannel {
           input_tokens: result.assistantMessage.input_tokens ?? null,
           output_tokens: result.assistantMessage.output_tokens ?? null,
           context_tokens: result.assistantMessage.context_tokens ?? null,
+          context_cache_read_tokens: result.assistantMessage.context_cache_read_tokens ?? null,
           tool_usage: {},
         });
       await progress.finish(result.terminal === 'completed'

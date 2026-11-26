@@ -229,7 +229,13 @@ export function ChatThread({
     const window =
       (activeModelName ? contextWindows[activeModelName] : undefined) ??
       (activeModelName ? inferContextWindow(activeModelName) : undefined);
-    return { tokens, window, estimated: !snapshot };
+    // 缓存命中率：与水位同次请求的命中占比（仅快照口径有数据）。
+    const cacheRead = snapshot?.context_cache_read_tokens ?? null;
+    const hitRate =
+      snapshot && cacheRead != null && (snapshot.context_tokens ?? 0) > 0
+        ? cacheRead / (snapshot.context_tokens as number)
+        : null;
+    return { tokens, window, estimated: !snapshot, hitRate };
   }, [conversation.messages, activeModelName, contextWindows]);
 
   const sessionCost = useMemo(() => {
@@ -325,6 +331,11 @@ export function ChatThread({
                   Math.round((contextUsage.tokens / contextUsage.window) * 100),
                 )}%）`
             : ''}
+          {contextUsage.hitRate != null && (
+            <span title="同次请求输入的缓存命中率（命中按 0.1 折计费，但仍占上下文窗口）">
+              {' '}· 缓存 {Math.round(contextUsage.hitRate * 100)}%
+            </span>
+          )}
         </span>
       )}
     </>

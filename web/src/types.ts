@@ -86,6 +86,8 @@ export interface ChatMessage {
   output_tokens?: number | null;
   /** 窗口水位快照：本轮最后一次模型请求的实报输入 tokens（非吞吐累计）。 */
   context_tokens?: number | null;
+  /** 水位快照同次请求的缓存命中 tokens。 */
+  context_cache_read_tokens?: number | null;
   created_at: string;
 }
 

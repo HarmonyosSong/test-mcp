@@ -123,6 +123,8 @@ export type DiagnosisStreamEvent =
       output_tokens: number | null;
       /** 窗口水位快照：本轮最后一次模型请求的实报输入 tokens（含系统提示/工具/历史），非吞吐累计。 */
       context_tokens: number | null;
+      /** 水位快照同次请求的缓存命中 tokens（命中率=本值/context_tokens）。 */
+      context_cache_read_tokens: number | null;
       tool_usage: Record<string, number | string>;
     }
   | {
@@ -134,6 +136,8 @@ export type DiagnosisStreamEvent =
       output_tokens: number | null;
       /** 窗口水位快照（中断前最后一次模型请求的实报输入）。 */
       context_tokens: number | null;
+      /** 水位快照同次请求的缓存命中 tokens。 */
+      context_cache_read_tokens: number | null;
       tool_usage: Record<string, number | string>;
     };
 
@@ -499,6 +503,8 @@ export class DiagnosisAgent {
     const usage = { inputTokens: null as number | null, outputTokens: null as number | null, cacheReadTokens: null as number | null };
     // 窗口水位快照：每次 step-finish 的实报输入覆盖更新，终值=本轮最后一次模型请求的水位。
     let lastStepInputTokens: number | null = null;
+    // 同次请求的缓存命中 tokens（与水位同口径，供头部显示命中率）。
+    let lastStepCacheReadTokens: number | null = null;
     let attempted = 0;
     let failed = 0;
     let modelRequests = 0;
@@ -547,6 +553,7 @@ export class DiagnosisAgent {
         let bufferedText = "";
         // 水位按校验重试轮重置：终值必须来自放行（或收尾）这一轮自己的步骤。
         lastStepInputTokens = null;
+        lastStepCacheReadTokens = null;
         // 思考捕获：Mastra 1.81 的 MODEL_STEP span 不带 reasoning，从 fullStream 按步骤累积，
         // 交给 trace 落盘合并（面板「思考」行的数据来源）。
         const thinkingSteps: string[] = [];
@@ -648,10 +655,21 @@ export class DiagnosisAgent {
             wasAborted = true;
           } else if (chunk.type === "step-finish") {
             // 与 AI 观测 trace 的「上下文快照」同口径：最后一次带用量步骤的输入 tokens。
-            const stepUsage = (chunk.payload as { output?: { usage?: { inputTokens?: unknown } } })
-              .output?.usage;
+            const stepUsage = (chunk.payload as {
+              output?: {
+                usage?: {
+                  inputTokens?: unknown;
+                  inputDetails?: { cacheRead?: unknown };
+                  cachedInputTokens?: unknown;
+                };
+              };
+            }).output?.usage;
             if (typeof stepUsage?.inputTokens === "number" && Number.isFinite(stepUsage.inputTokens)) {
               lastStepInputTokens = stepUsage.inputTokens;
+              // cacheRead 两种形状兼容（与轮聚合处的口径一致）。
+              const cacheRead = stepUsage.inputDetails?.cacheRead ?? stepUsage.cachedInputTokens;
+              lastStepCacheReadTokens =
+                typeof cacheRead === "number" && Number.isFinite(cacheRead) ? cacheRead : null;
             }
           } else if (chunk.type === "error") {
             throw new Error(truncate(chunk.payload.error, 1_000));
@@ -706,6 +724,7 @@ export class DiagnosisAgent {
         input_tokens: usage.inputTokens,
         output_tokens: usage.outputTokens,
         context_tokens: lastStepInputTokens,
+        context_cache_read_tokens: lastStepCacheReadTokens,
         tool_usage: toolUsage(),
         messages_state: transcript.map((message) => ({ ...message })),
       };
@@ -729,6 +748,7 @@ export class DiagnosisAgent {
         input_tokens: usage.inputTokens,
         output_tokens: usage.outputTokens,
         context_tokens: lastStepInputTokens,
+        context_cache_read_tokens: lastStepCacheReadTokens,
         tool_usage: { ...toolUsage(), failure_category: category },
       };
     }

@@ -96,7 +96,12 @@ function modelFor(turns: Turn[]) {
         type: 'finish',
         finishReason: 'tool' in turn ? turn.finishReason ?? 'tool-calls' : 'stop',
         // 逐步递增量：便于区分「末步快照」与「轮累计」口径。
-        usage: { inputTokens: 100 + index, outputTokens: 3, totalTokens: 103 + index },
+        usage: {
+          inputTokens: 100 + index,
+          outputTokens: 3,
+          totalTokens: 103 + index,
+          cachedInputTokens: 40 + index,
+        },
       });
       return {
         stream: new ReadableStream({
@@ -249,6 +254,7 @@ test('窗口水位快照取末步实报输入，且按校验重试轮重置', as
   assert.equal(singleCompleted?.type, 'completed');
   if (singleCompleted?.type !== 'completed') return;
   assert.equal(singleCompleted.context_tokens, 102);
+  assert.equal(singleCompleted.context_cache_read_tokens, 42);
   assert.equal(singleCompleted.input_tokens, 101 + 102);
 
   // 校验打回重试：快照按重试轮重置，取放行轮（103）而不是打回轮的 102。
@@ -262,6 +268,7 @@ test('窗口水位快照取末步实报输入，且按校验重试轮重置', as
   assert.equal(retriedCompleted?.type, 'completed');
   if (retriedCompleted?.type !== 'completed') return;
   assert.equal(retriedCompleted.context_tokens, 103);
+  assert.equal(retriedCompleted.context_cache_read_tokens, 43);
 });
 
 test('incident 全链路：prepare_source 绑定后读码，最终回答引用真实 ev-ID', async () => {
