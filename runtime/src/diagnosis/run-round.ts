@@ -264,6 +264,7 @@ function scheduleCompassFollowupSettle(input: {
       output_tokens: sumTokens(analysis?.outputTokens, synthesis?.outputTokens),
       // 协查回执消息不记水位：头部快照以主诊断轮消息为准。
       context_tokens: null,      context_cache_read_tokens: null,
+      analysis_feedback: null,
       tool_usage: {
         compass_followup: 1,
         ...(analysis ? { followup_analysis: 1 } : {}),
@@ -292,6 +293,7 @@ function newAssistantMessage(): ChatMessage {  return {
     input_tokens: null,
     output_tokens: null,
     context_tokens: null,    context_cache_read_tokens: null,
+      analysis_feedback: null,
     tool_usage: {},
     created_at: new Date().toISOString(),
   };
@@ -348,6 +350,7 @@ export async function prepareDiagnosisRound(
     input_tokens: null,
     output_tokens: null,
     context_tokens: null,    context_cache_read_tokens: null,
+      analysis_feedback: null,
     tool_usage: {},
     created_at: new Date().toISOString(),
   };

@@ -93,6 +93,17 @@ export class ProductStore {
     return ConversationRecordSchema.parse(parseData<unknown>(row.data));
   }
 
+  /** 全量会话记录（含消息）：仅供内部统计聚合用（如问题归档正确率），量级小不分页。 */
+  async listConversationRecords(): Promise<ConversationRecord[]> {
+    await this.initialize();
+    const result = await this.client.execute(
+      "SELECT data FROM product_conversations ORDER BY updated_at DESC",
+    );
+    return result.rows.map((row) =>
+      ConversationRecordSchema.parse(parseData<unknown>(row.data)),
+    );
+  }
+
   async saveConversation(
     conversation: ConversationRecord,
   ): Promise<ConversationRecord> {

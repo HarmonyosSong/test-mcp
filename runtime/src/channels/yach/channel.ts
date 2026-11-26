@@ -16,6 +16,13 @@ import { InvalidYachEvent, parseYachEvent, peekWorkCode, type YachEvent } from '
 import { YachProgressCard } from './progress.js';
 import { enrichSimulationLoginReply } from '../../capabilities/simulation-login-reply.js';
 import { clearSimulationLoginTokens } from '../../capabilities/simulation-login-tokens.js';
+import {
+  appendArchiveSection,
+  archiveAckText,
+  findArchivableMessage,
+  isFaultFinalAnswer,
+  parseArchiveFeedback,
+} from './archive.js';
 import { createSessionMappingStore, type SessionMappingStore } from './session-mapping-store.js';
 
 const DEDUPE_LIMIT = 4096;
@@ -214,6 +221,12 @@ export class YachChannel {
         session.queue = [event];
         return;
       }
+      // 归档回执轻量且必须送达：不占排队限额、不被「仍在诊断」拒绝；
+      // 随队列串行处理，避免与在途诊断轮并发写同一会话。
+      if (parseArchiveFeedback(event.text)) {
+        session.queue.push(event);
+        return;
+      }
       if (session.queue.length >= 1) {
         try {
           await this.reply(event, '上一轮仍在诊断，请稍后再试。');
@@ -321,10 +334,44 @@ export class YachChannel {
     }
   }
 
+  /** 归档回执落库：写入当前会话最近一条故障终稿；重复点击以最新覆盖（允许点错纠正）。 */
+  private async recordArchiveFeedback(
+    session: EmployeeSession,
+    event: YachEvent,
+    verdict: 'correct' | 'failed',
+  ): Promise<void> {
+    // 不传 incomingText：跳过话题切换检测，晚到的归档仍落回原会话。
+    const conversation = await this.resolveConversation(session, event, false);
+    const target = findArchivableMessage(conversation.messages);
+    if (!target) {
+      await this.reply(event, '当前会话还没有可归档的故障结论，无需归档。');
+      return;
+    }
+    target.analysis_feedback = {
+      verdict,
+      by_work_code: event.workCode || null,
+      by_name: event.displayName || null,
+      at: new Date().toISOString(),
+    };
+    await this.deps.store.saveConversation(conversation);
+    await this.reply(event, archiveAckText(verdict));
+  }
+
   private async handleEvent(session: EmployeeSession, event: YachEvent): Promise<void> {
     if (event.text === '/new') {
       await this.resolveConversation(session, event, true);
       await this.reply(event, '已开启新的诊断会话，请发送问题。');
+      return;
+    }
+
+    // 问题归档回执：只回写最近一条故障终稿 + 发确认，不触发诊断；不要求模型已配置。
+    const archiveVerdict = parseArchiveFeedback(event.text);
+    if (archiveVerdict) {
+      try {
+        await this.recordArchiveFeedback(session, event, archiveVerdict);
+      } catch {
+        // 归档落库失败不打扰群；skipped 日志由上层兜底。
+      }
       return;
     }
 
@@ -355,7 +402,10 @@ export class YachChannel {
           // 后台协查出结果后主动推送到群/私聊。
           onCompassFollowupSettled: async ({ message }) => {
             try {
-              await this.reply(event, message.content);
+              // 综合终稿同样挂「问题归档」区（仅出站展示，不落库）。
+              await this.reply(event, isFaultFinalAnswer(message.content)
+                ? appendArchiveSection(message.content, IM_MESSAGE_LIMIT)
+                : message.content);
             } catch {
               // 推送失败不影响落库结果，用户下一轮仍能在工作台看到。
             }
@@ -433,9 +483,13 @@ export class YachChannel {
         }
       }
       // 初步判定轮 + 协查在途：正文末尾确定性追加提示行（不依赖模型记得写「初步」）。
+      // 故障终稿（非初步、判定四选一）：末尾挂「问题归档」区，供支持老师回评正确率；
+      // 信息查询与兜底句不挂。归档区只在出站追加，落库正文保持原样。
       await this.reply(event, result.terminal === 'completed' && result.compassFollowupPending
         ? appendFollowupPendingNotice(body)
-        : body);
+        : result.terminal === 'completed' && isFaultFinalAnswer(body)
+          ? appendArchiveSection(body, IM_MESSAGE_LIMIT)
+          : body);
     } catch (error) {
       if (abort.signal.aborted) {
         await progress.finish('已取消');

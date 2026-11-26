@@ -4813,3 +4813,103 @@ button:disabled {
   color: var(--text);
   border-color: var(--border-strong, var(--border));
 }
+
+/* 问题归档统计弹窗（知音楼评测集） */
+.feedback-stats-dialog {
+  width: min(560px, 100%);
+  padding-bottom: 20px;
+}
+
+.feedback-stats-range {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px 0;
+}
+
+.feedback-stats-range button {
+  padding: 4px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary, inherit);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.feedback-stats-range button.selected {
+  background: var(--accent, #4c6fff);
+  border-color: var(--accent, #4c6fff);
+  color: #fff;
+}
+
+.feedback-stats-cards {
+  display: flex;
+  gap: 10px;
+  padding: 16px 20px 4px;
+  flex-wrap: wrap;
+}
+
+.feedback-stats-card {
+  flex: 1;
+  min-width: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.feedback-stats-value {
+  font-size: 20px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.feedback-stats-ok {
+  color: var(--success, #2fa564);
+}
+
+.feedback-stats-bad {
+  color: var(--danger, #d5495b);
+}
+
+.feedback-stats-label {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.feedback-stats-table {
+  width: calc(100% - 40px);
+  margin: 14px 20px 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.feedback-stats-table th,
+.feedback-stats-table td {
+  padding: 7px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.feedback-stats-table th {
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.feedback-stats-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 20px 0;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.feedback-stats-error {
+  color: var(--danger, #d5495b);
+  opacity: 1;
+}

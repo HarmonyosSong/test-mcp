@@ -14,6 +14,7 @@ import { createAuthRoutes } from './http/auth.js';
 import { ProductStore } from './product/store.js';
 import { ModelConfiguration } from './model/configuration.js';
 import { createModelRoutes } from './http/models.js';
+import { createYachFeedbackRoutes } from './http/yach-feedback.js';
 import { RepositoryCapability, SnapshotNotReadyError } from './capabilities/repository.js';
 import { CapabilityMcp } from './capabilities/mcp.js';
 import { loadCodeIndexScopeSummary } from './capabilities/code-index-scope.js';
@@ -336,6 +337,7 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       createConversationSource,
     }));
     app.route('/api', createModelRoutes(modelConfiguration));
+    app.route('/api', createYachFeedbackRoutes(store));
 
     if (config.serveWeb) {
       const webRoot = resolve(config.projectRoot, config.webDist);

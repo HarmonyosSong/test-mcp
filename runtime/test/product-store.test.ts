@@ -40,6 +40,7 @@ test("product store owns conversation CRUD and repairs stale streaming messages"
         input_tokens: null,
         output_tokens: null,
         context_tokens: null,        context_cache_read_tokens: null,
+        analysis_feedback: null,
         tool_usage: {},
         created_at: "2026-11-03T00:00:00.000Z",
       },
@@ -65,6 +66,7 @@ test("product store owns conversation CRUD and repairs stale streaming messages"
         input_tokens: null,
         output_tokens: null,
         context_tokens: null,        context_cache_read_tokens: null,
+        analysis_feedback: null,
         tool_usage: {},
         created_at: "2026-11-03T00:00:01.000Z",
       },
@@ -85,6 +87,7 @@ test("product store owns conversation CRUD and repairs stale streaming messages"
         input_tokens: null,
         output_tokens: null,
         context_tokens: null,        context_cache_read_tokens: null,
+        analysis_feedback: null,
         tool_usage: {},
         created_at: "2026-11-03T00:00:00.000Z",
       },
@@ -183,5 +186,71 @@ test("product store owns conversation CRUD and repairs stale streaming messages"
   );
   await restarted.deleteConversation("conv-store");
   await restarted.close();
+  await rm(dataDir, { recursive: true, force: true });
+});
+
+test("analysis_feedback 归档字段：写入读回完整保留，旧数据缺省为 null", async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), "troubleshoot-feedback-"));
+  const config = loadRuntimeConfig({
+    HARMONY_MASTRA_DATA_DIR: dataDir,
+    HARMONY_MASTRA_DATABASE_URL: `file:${join(dataDir, "runtime.db")}`,
+  });
+  const store = new ProductStore(createRuntimeDatabase(config));
+  const created = await store.createConversation({
+    id: "conv-feedback",
+    title: "feedback test",
+    channel: "yach_im",
+    messages: [
+      {
+        id: "assistant-final",
+        role: "assistant",
+        content: "判定：已定位\n【问题原因】…",
+        status: "completed",
+        steps: [],
+        error: null,
+        report: null,
+        input_tokens: null,
+        output_tokens: null,
+        context_tokens: null,
+        context_cache_read_tokens: null,
+        analysis_feedback: null,
+        tool_usage: {},
+        created_at: "2026-11-26T10:00:00.000Z",
+      },
+    ],
+  });
+
+  // 归档回写： verdict + 归档人 + 时间。
+  const target = created.messages[0]!;
+  target.analysis_feedback = {
+    verdict: "failed",
+    by_work_code: "zhangsan",
+    by_name: "张三",
+    at: "2026-11-26T10:05:00.000Z",
+  };
+  await store.saveConversation(created);
+
+  const reloaded = await store.getConversation("conv-feedback");
+  assert.deepEqual(reloaded.messages[0]?.analysis_feedback, {
+    verdict: "failed",
+    by_work_code: "zhangsan",
+    by_name: "张三",
+    at: "2026-11-26T10:05:00.000Z",
+  });
+
+  // 旧数据兼容：手工写入一条无 analysis_feedback 字段的 JSON，parse 后缺省 null。
+  const client = createClient({ url: config.databaseUrl });
+  const raw = JSON.parse(JSON.stringify(reloaded)) as Record<string, unknown>;
+  (raw.messages as Array<Record<string, unknown>>)[0]!.analysis_feedback = undefined;
+  delete (raw.messages as Array<Record<string, unknown>>)[0]!.analysis_feedback;
+  await client.execute({
+    sql: "UPDATE product_conversations SET data = ? WHERE id = ?",
+    args: [JSON.stringify(raw), "conv-feedback"],
+  });
+  await client.close();
+  const legacy = await store.getConversation("conv-feedback");
+  assert.equal(legacy.messages[0]?.analysis_feedback, null);
+
+  await store.close();
   await rm(dataDir, { recursive: true, force: true });
 });

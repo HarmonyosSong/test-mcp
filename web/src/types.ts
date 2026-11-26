@@ -88,7 +88,34 @@ export interface ChatMessage {
   context_tokens?: number | null;
   /** 水位快照同次请求的缓存命中 tokens。 */
   context_cache_read_tokens?: number | null;
+  /** 问题归档：支持老师在知音楼点「问题分析正确/失败」后的回写；null/缺省=未归档。 */
+  analysis_feedback?: {
+    verdict: 'correct' | 'failed';
+    by_work_code: string | null;
+    by_name: string | null;
+    at: string;
+  } | null;
   created_at: string;
+}
+
+/** 问题归档统计（GET /api/yach-feedback/stats 响应）。 */
+export interface YachFeedbackStats {
+  range: { from: string | null; to: string | null };
+  totals: {
+    final_answers: number;
+    archived: number;
+    correct: number;
+    failed: number;
+    unarchived: number;
+    accuracy: number | null;
+  };
+  by_user: Array<{
+    work_code: string | null;
+    name: string | null;
+    correct: number;
+    failed: number;
+    total: number;
+  }>;
 }
 
 // waiting_confirmation 随人工审批流退役；历史数据由服务端启动修复为 failed。

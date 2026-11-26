@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   LoaderCircle,
   LogOut,
   MessageSquare,
@@ -19,6 +20,8 @@ interface SidebarProps {
   identityLabel?: string;
   onRefresh: () => void;
   onModelSettings: () => void;
+  /** 打开问题归档统计（知音楼评测集）。 */
+  onFeedbackStats: () => void;
   onLogout?: () => void;
   children: ReactNode;
 }
@@ -29,6 +32,7 @@ export function Sidebar({
   identityLabel,
   onRefresh,
   onModelSettings,
+  onFeedbackStats,
   onLogout,
   children,
 }: SidebarProps) {
@@ -79,6 +83,15 @@ export function Sidebar({
             disabled={refreshing}
           >
             <RefreshCw className={refreshing ? 'spin' : ''} size={16} />
+          </button>
+          <button
+            className="sidebar-icon-button"
+            type="button"
+            onClick={onFeedbackStats}
+            title="问题归档统计"
+            aria-label="打开问题归档统计"
+          >
+            <BarChart3 size={16} />
           </button>
           <button
             className="sidebar-icon-button"

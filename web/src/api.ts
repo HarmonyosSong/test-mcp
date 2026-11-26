@@ -12,6 +12,7 @@ import type {
   ModelConnectionResult,
   ModelProviderPreset,
   ModelStatus,
+  YachFeedbackStats,
 } from './types';
 
 const REQUEST_TIMEOUT_MS = 5_000;
@@ -121,6 +122,14 @@ export const api = {
   deleteConversation: (id: string) =>
     request<void>(`/conversations/${id}`, { method: 'DELETE' }),
   listAiTraces: (id: string) => request<AiTraceSummary[]>(`/conversations/${id}/ai-traces`),
+  /** 问题归档统计（知音楼评测集）：from/to 为可选日期（YYYY-MM-DD）。 */
+  yachFeedbackStats: (range?: { from?: string; to?: string }) => {
+    const params = new URLSearchParams();
+    if (range?.from) params.set('from', range.from);
+    if (range?.to) params.set('to', range.to);
+    const query = params.toString();
+    return request<YachFeedbackStats>(`/yach-feedback/stats${query ? `?${query}` : ''}`);
+  },
   getAiTrace: (id: string, traceId: string) =>
     request<AiTraceOrEventDetail>(`/conversations/${id}/ai-traces/${traceId}`),
 };

@@ -247,6 +247,14 @@ export const ChatMessageSchema = z.object({
   context_tokens: z.number().int().nullable().default(null),
   /** 水位快照同次请求的缓存命中 tokens；旧消息无此数据为 null。 */
   context_cache_read_tokens: z.number().int().nullable().default(null),
+  /** 问题归档：支持老师在知音楼点「问题分析正确/失败」链接后的回写结果；null=未归档。
+   *  重复点击以最新一次覆盖（允许点错纠正）。 */
+  analysis_feedback: z.object({
+    verdict: z.enum(['correct', 'failed']),
+    by_work_code: z.string().nullable().default(null),
+    by_name: z.string().nullable().default(null),
+    at: isoDateTime,
+  }).nullable().default(null),
   tool_usage: z.record(z.string(), z.union([z.number().int(), z.string(), z.null()])).default({}),
   created_at: isoDateTime.default(nowIsoDateTime),
 });

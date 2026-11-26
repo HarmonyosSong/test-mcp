@@ -7,6 +7,7 @@ import { NewConversationDialog } from './components/chat/NewConversationDialog';
 import { ChatThread } from './components/chat/ChatThread';
 import { HudBar } from './components/HudBar';
 import { ModelSettingsDialog } from './components/ModelSettingsDialog';
+import { FeedbackStatsDialog } from './components/FeedbackStatsDialog';
 import { Sidebar } from './components/Sidebar';
 import { SunSky } from './components/SunSky';
 import { Typewriter } from './components/Typewriter';
@@ -45,6 +46,7 @@ function App() {
   const [connection, setConnection] = useState<ConnectionState>('checking');
   const [meta, setMeta] = useState<MetaResponse>(EMPTY_META);
   const [showModelSettings, setShowModelSettings] = useState(false);
+  const [showFeedbackStats, setShowFeedbackStats] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [modelProviders, setModelProviders] = useState<ModelProviderPreset[]>([]);
   const [modelStatus, setModelStatus] = useState<ModelStatus>(OFFLINE_MODEL_STATUS);
@@ -150,6 +152,7 @@ function App() {
           identityLabel={session?.identity.displayName || session?.identity.subject}
           onRefresh={() => void refreshWorkspace()}
           onModelSettings={openModelSettings}
+          onFeedbackStats={() => setShowFeedbackStats(true)}
           onLogout={session?.authMode === 'sso' ? handleLogout : undefined}
         >
           <ChatPanel
@@ -254,6 +257,10 @@ function App() {
           onClose={() => setShowModelSettings(false)}
           onChanged={handleModelChanged}
         />
+      )}
+
+      {showFeedbackStats && (
+        <FeedbackStatsDialog onClose={() => setShowFeedbackStats(false)} />
       )}
 
       {showNewConversation && (
