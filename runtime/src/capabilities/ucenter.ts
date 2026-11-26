@@ -149,7 +149,7 @@ export function createLearnerLookupTools(
       id: 'lookup_learner',
       description:
         '按学员编号(card)查询学员档案（uid、姓名、年级等）。用户问“查用户信息/学员信息”且已识别为学员编号时调用；'
-        + '仅接受学员编号，不接受 uid。只有 uid 时不要调用本工具，改查 log-mcp 近 7 天登录线索。不返回手机号。',
+        + '仅接受学员编号，不接受 uid。只有 uid 时不要调用本工具，改查 log-mcp 近 3 天登录线索。不返回手机号。',
       inputSchema: z.object({
         learner_id: z.string().min(1).describe('学员编号 card（8–20 位纯数字，如 184010299547；不要传短 uid）'),
       }),

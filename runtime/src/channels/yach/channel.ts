@@ -14,6 +14,7 @@ import { isTopicSwitch } from './topic-switch.js';
 import { yachHistory, yachInbound, yachInboundSkipped, yachOutbound } from './log.js';
 import { InvalidYachEvent, parseYachEvent, peekWorkCode, type YachEvent } from './parse.js';
 import { YachProgressCard } from './progress.js';
+import { enrichSimulationLoginReply } from '../../capabilities/simulation-login-reply.js';
 import { createSessionMappingStore, type SessionMappingStore } from './session-mapping-store.js';
 
 const DEDUPE_LIMIT = 4096;
@@ -399,10 +400,26 @@ export class YachChannel {
         // 协查在途时进度卡收尾行如实说明，避免「诊断完成」让群里误以为已查完。
         ? (result.compassFollowupPending ? '初步判定完成，服务端协查进行中' : '诊断完成')
         : '诊断失败');
-      const body = result.terminal === 'completed'
+      let body = result.terminal === 'completed'
         ? formatYachFinalReply(result.text)
         // 失败原因可能含堆栈/路径等内部细节，不进群消息；服务端已落日志。
         : '诊断失败：服务调用异常，请稍后重试或打开网页工作台。';
+      if (result.terminal === 'completed') {
+        try {
+          body = await enrichSimulationLoginReply({
+            text: body,
+            messageId: result.assistantMessage.id,
+            owner: event.workCode || result.conversation.owner_subject || 'anonymous',
+            config: this.deps.config,
+          });
+          if (body !== result.assistantMessage.content) {
+            result.assistantMessage.content = body;
+            await this.deps.store.saveConversation(result.conversation);
+          }
+        } catch {
+          // 出图失败不阻断知音楼终态发送。
+        }
+      }
       // 初步判定轮 + 协查在途：正文末尾确定性追加提示行（不依赖模型记得写「初步」）。
       await this.reply(event, result.terminal === 'completed' && result.compassFollowupPending
         ? appendFollowupPendingNotice(body)

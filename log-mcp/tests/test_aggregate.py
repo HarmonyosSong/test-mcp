@@ -312,8 +312,9 @@ def test_search_both_logs_inherits_top_query_into_empty_cloud(tmp_path) -> None:
     payload = json.loads(result.content[0].text)
     assert seen_cloud_queries == ["sample-query"]
     assert payload["cloud"]["matched_topics"] == 1
-    # cloud={} 默认 full=true：非白名单字段也应保留
-    assert payload["cloud"]["results"][0]["logs"][0]["non_whitelist_field"] == "keep-me"
+    # cloud={} 默认 full=false：非白名单字段应被丢掉
+    assert "non_whitelist_field" not in payload["cloud"]["results"][0]["logs"][0]
+    assert payload["cloud"]["results"][0]["logs"][0]["message"] == "hit"
 
 
 def test_serviceid_overrides_keyword(tmp_path) -> None:

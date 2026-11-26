@@ -33,9 +33,9 @@ test('结论正文在锚点之前（句尾锚点）时不误裁正文', () => {
 });
 
 test('判定锚点缺失时只发兜底句，不放出未校验文本', () => {
-  const info = formatYachFinalReply('判定：信息查询\n\n【学员信息】\nUID：5570040\n\n【最近登录设备（近7天）】\n- 最近 7 天未登录');
+  const info = formatYachFinalReply('判定：信息查询\n\n【学员信息】\nUID：5570040\n\n【最近登录设备（近3天）】\n- 最近 3 天未登录');
   assert.match(info, /^判定：信息查询/);
-  assert.match(info, /最近 7 天未登录/);
+  assert.match(info, /最近 3 天未登录/);
 
   const reply = formatYachFinalReply('没有锚点的回答正文');
   assert.match(reply, /诊断已完成，请打开工作台查看详情/);

@@ -131,6 +131,16 @@ export const runtimeConfigSchema = z.object({
   logMcpUrl: z.string().default('http://127.0.0.1:8766/mcp'),
   logMcpBearerToken: z.string().default(''),
   logMcpTimeoutMs: z.coerce.number().int().min(1_000).max(600_000).default(60_000),
+  /** cloudlearn-devtools API MCP；URL+Token 均非空才挂载模拟登录窄工具。 */
+  apiMcpUrl: z.string().default(''),
+  apiMcpToken: z.string().default(''),
+  /** 私有 COS：四要素齐全才启用 Token 二维码上传。 */
+  cosSecretId: z.string().default(''),
+  cosSecretKey: z.string().default(''),
+  cosRegion: z.string().default(''),
+  cosBucket: z.string().default(''),
+  cosPrefix: z.string().default('troubleshoot-odyssey/test'),
+  cosSignedUrlTtlSeconds: z.coerce.number().int().min(60).max(3_600).default(900),
 });
 
 export type RuntimeConfig = Omit<
@@ -231,6 +241,14 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     logMcpUrl: env.LOG_MCP_URL || defaultLogMcpUrl(env),
     logMcpBearerToken: env.LOG_MCP_BEARER_TOKEN,
     logMcpTimeoutMs: env.LOG_MCP_CLIENT_TIMEOUT_MS,
+    apiMcpUrl: env.API_MCP_URL,
+    apiMcpToken: env.API_MCP_TOKEN,
+    cosSecretId: env.COS_SECRET_ID,
+    cosSecretKey: env.COS_SECRET_KEY,
+    cosRegion: env.COS_REGION,
+    cosBucket: env.COS_BUCKET,
+    cosPrefix: env.COS_PREFIX,
+    cosSignedUrlTtlSeconds: env.COS_SIGNED_URL_TTL_SECONDS,
   });
   const projectRoot = resolve(repositoryRoot, config.projectRoot);
   const fromRoot = (path: string) => resolve(projectRoot, path);
@@ -254,6 +272,28 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   }
   if (config.a2aDebugEnabled && !config.a2aToken.trim()) {
     throw new Error('A2A debug provider requires a non-empty local HARMONY_AGENT_A2A_TOKEN');
+  }
+  const cosValues = [
+    config.cosSecretId.trim(),
+    config.cosSecretKey.trim(),
+    config.cosRegion.trim(),
+    config.cosBucket.trim(),
+  ];
+  if (cosValues.some(Boolean) && !cosValues.every(Boolean)) {
+    throw new Error('COS requires COS_SECRET_ID, COS_SECRET_KEY, COS_REGION and COS_BUCKET together');
+  }
+  if (config.cosRegion.trim() && !/^[a-z]+(?:-[a-z0-9]+)+$/.test(config.cosRegion.trim())) {
+    throw new Error('COS_REGION must be a COS region identifier');
+  }
+  if (config.cosBucket.trim() && !/^[a-z0-9][a-z0-9-]*-[0-9]+$/.test(config.cosBucket.trim())) {
+    throw new Error('COS_BUCKET must use BucketName-APPID format');
+  }
+  const cosPrefix = config.cosPrefix.trim().replace(/^\/+|\/+$/g, '') || 'troubleshoot-odyssey/test';
+  if (!cosPrefix.split('/').every((part) => /^[A-Za-z0-9_-]+$/.test(part))) {
+    throw new Error('COS_PREFIX must contain safe nonempty path segments');
+  }
+  if (config.apiMcpToken.trim() && !config.apiMcpUrl.trim()) {
+    throw new Error('API_MCP_URL is required when API_MCP_TOKEN is configured');
   }
   return {
     ...config,
@@ -304,7 +344,26 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     ucenterTimeoutMs: config.ucenterTimeoutMs,
     logMcpUrl: normalizeLogMcpUrl(config.logMcpUrl),
     logMcpBearerToken: config.logMcpBearerToken.trim(),
+    apiMcpUrl: normalizeLogMcpUrl(config.apiMcpUrl),
+    apiMcpToken: config.apiMcpToken.trim(),
+    cosSecretId: config.cosSecretId.trim(),
+    cosSecretKey: config.cosSecretKey.trim(),
+    cosRegion: config.cosRegion.trim(),
+    cosBucket: config.cosBucket.trim(),
+    cosPrefix,
   };
+}
+
+export function cosUploadEnabled(config: Pick<
+  RuntimeConfig,
+  'cosSecretId' | 'cosSecretKey' | 'cosRegion' | 'cosBucket'
+>): boolean {
+  return Boolean(
+    config.cosSecretId
+    && config.cosSecretKey
+    && config.cosRegion
+    && config.cosBucket,
+  );
 }
 
 function defaultLogMcpUrl(env: NodeJS.ProcessEnv): string {

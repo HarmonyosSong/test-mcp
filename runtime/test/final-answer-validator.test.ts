@@ -74,7 +74,7 @@ test('判定：信息查询 通过校验', () => {
 学员编号：184010299547
 UID：5570040
 
-【最近登录设备（近7天）】
+【最近登录设备（近3天）】
 - iPad / 5.106.0 / device_id ABC`;
   const check = validateFinalAnswer(text, registry);
   assert.equal(check.ok, true);
@@ -89,18 +89,28 @@ test('信息查询未调日志工具却写未登录/暂无线索 → 打回', ()
 【学员信息】
 UID：5570040
 
-【最近登录设备（近7天）】
-- 最近 7 天未登录`;
+【最近登录设备（近3天）】
+- 最近 3 天未登录`;
   const noTool = validateFinalAnswer(emptyLogin, registry, { calledTools: ['lookup_learner'] });
   assert.equal(noTool.ok, false);
-  if (!noTool.ok) assert.match(noTool.feedback, /尚未调用 search_both_logs/);
+  if (!noTool.ok) assert.match(noTool.feedback, /尚未双侧覆盖/);
 
-  const vague = `判定：信息查询\n\n【最近登录设备（近7天）】\n暂无近 7 天登录设备线索。`;
+  const vague = `判定：信息查询\n\n【最近登录设备（近3天）】\n暂无近 3 天登录设备线索。`;
   assert.equal(validateFinalAnswer(vague, registry).ok, false);
 
   // 只打日志中心 query、未打云日志 → 仍打回（客户端线索假阴性）
   const onlyLogcenter = validateFinalAnswer(emptyLogin, registry, { calledTools: ['query'] });
   assert.equal(onlyLogcenter.ok, false);
+
+  // 只打云、未打日志中心 → 打回（须双侧）
+  const onlyCloud = validateFinalAnswer(emptyLogin, registry, { calledTools: ['cloud_search'] });
+  assert.equal(onlyCloud.ok, false);
+
+  const bothSides = validateFinalAnswer(emptyLogin, registry, {
+    calledTools: ['cloud_search', 'query'],
+    logQueries: ['5570040'],
+  });
+  assert.equal(bothSides.ok, true);
 
   const afterLog = validateFinalAnswer(emptyLogin, registry, {
     calledTools: ['lookup_learner', 'search_both_logs'],
@@ -116,7 +126,7 @@ UID：5570040
   assert.equal(cardQuery.ok, false);
   if (!cardQuery.ok) assert.match(cardQuery.feedback, /学员编号/);
 
-  const unavailable = `判定：信息查询\n\n【学员信息】\nUID：5570040\n\n【最近登录设备（近7天）】\n- 设备侧暂不可查`;
+  const unavailable = `判定：信息查询\n\n【学员信息】\nUID：5570040\n\n【最近登录设备（近3天）】\n- 设备侧暂不可查`;
   assert.equal(validateFinalAnswer(unavailable, registry, { calledTools: ['lookup_learner'] }).ok, true);
 });
 
