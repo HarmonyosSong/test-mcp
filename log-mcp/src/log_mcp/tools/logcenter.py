@@ -23,6 +23,7 @@ from log_mcp.tools.compact_util import (
     scrub_currenthref,
     slim_response_field,
     summarize_ua,
+    ua_excerpt,
 )
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
@@ -187,6 +188,11 @@ def _compact_log(log: dict[str, Any]) -> dict[str, Any]:
         for key, value in ua_summary.items():
             if key not in out or out.get(key) in (None, ""):
                 out[key] = value
+    else:
+        # 摘要抽不出字段时保留极短占位（对齐云侧 P0-2），原文可 full=true 看。
+        excerpt = ua_excerpt(log.get("ua"), (log.get("data") or {}).get("rsd") if isinstance(log.get("data"), dict) else None)
+        if excerpt:
+            out["ua_excerpt"] = excerpt
     return out
 
 
@@ -431,7 +437,8 @@ def register_logcenter_tools(
             raise _upstream_error(exc, service_id=serviceId) from exc
         logs = result["logs"]
         rows = logs if full else [_compact_log(log) for log in logs]
-        rows, budget_meta = apply_budget_to_log_rows(rows)
+        # full=true 按工具契约返回全字段：不做逐字段截断，只保留总预算护栏。
+        rows, budget_meta = apply_budget_to_log_rows(rows, clip=not full)
         payload = {
             "source": "logcenter",
             "service_id": serviceId,

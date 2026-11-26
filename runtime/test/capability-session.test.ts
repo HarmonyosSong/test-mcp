@@ -203,7 +203,8 @@ test('round factory mounts learner; knowledge/log 降级时记 unavailable，不
       'get_code_index_entry',
     ]);
     assert.deepEqual(Object.keys(session.toolsets.learner!), ['lookup_learner']);
-    assert.deepEqual(session.unavailable, ['knowledge', 'log']);
+    // simulation_login 未配置 API_MCP 时同样记 unavailable（optional 注册的有意行为）。
+    assert.deepEqual(session.unavailable, ['knowledge', 'log', 'simulation_login']);
   } finally {
     await session.close();
   }

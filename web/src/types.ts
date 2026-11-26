@@ -84,6 +84,8 @@ export interface ChatMessage {
   report?: DiagnosticReport | null;
   input_tokens?: number | null;
   output_tokens?: number | null;
+  /** 窗口水位快照：本轮最后一次模型请求的实报输入 tokens（非吞吐累计）。 */
+  context_tokens?: number | null;
   created_at: string;
 }
 

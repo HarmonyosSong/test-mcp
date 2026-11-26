@@ -125,3 +125,40 @@ def test_compact_data_field_scrubs_href() -> None:
     assert "token=" not in data["currenthref"]
     assert "gradeId=2" in data["currenthref"]
     assert data["response"] == {"code": "1", "message": "fail"}
+
+
+def test_compact_cloud_log_keeps_short_ua_excerpt_when_unparseable() -> None:
+    """摘要抽不出字段时保留极短占位（P0-2），不静默丢设备线索。"""
+    row = _compact_cloud_log({"uid": "1", "ua": "curl/8.0"})
+    assert "ua" not in row
+    assert "ua_summary" not in row
+    assert row["ua_excerpt"] == "curl/8.0"
+    # 超长 UA 只留开头占位
+    long_ua = "x" * 200
+    row2 = _compact_cloud_log({"uid": "1", "ua": long_ua})
+    assert row2["ua_excerpt"].endswith("…")
+    assert len(row2["ua_excerpt"]) <= 81
+
+
+def test_compact_log_ua_excerpt_placeholder() -> None:
+    row = _compact_log({"@timestamp": 1, "ua": "okhttp/4.12.0"})
+    assert "ua" not in row
+    assert row.get("ua_excerpt") == "okhttp/4.12.0"
+    # 完全无 ua/rsd 时不放占位
+    row2 = _compact_log({"@timestamp": 1})
+    assert "ua_excerpt" not in row2
+    assert "ua_summary" not in row2
+
+
+def test_apply_budget_clip_false_keeps_full_fields() -> None:
+    """full=true：不逐字段截断，只保留总预算护栏。"""
+    from log_mcp.tools.compact_util import VALUE_MAX_CHARS, apply_budget_to_log_rows
+
+    long_value = "y" * (VALUE_MAX_CHARS + 500)
+    kept, meta = apply_budget_to_log_rows([{"message": long_value}], clip=False)
+    assert kept[0]["message"] == long_value
+    assert meta == {}
+    # clip=True（默认）维持逐字段截断
+    kept2, _ = apply_budget_to_log_rows([{"message": long_value}])
+    assert len(kept2[0]["message"]) == VALUE_MAX_CHARS
+    assert kept2[0]["message"].endswith("…")

@@ -64,8 +64,10 @@ test('lookup-learner-profile Skill 闭环：编号/uid 分流与信息查询模�
   assert.match(skill.instructions, /最近 3 天未登录/);
   assert.match(skill.instructions, /time="3d"/);
   assert.match(skill.instructions, /未调 log-mcp 前禁止/);
-  assert.match(skill.instructions, /判定：信息查询/);
+  // 锚点必须在信息查询模板代码块里（模型照抄模板时不会被校验打回），而非只出现在散文里。
+  assert.match(skill.instructions, /```text\n判定：信息查询/);
   assert.match(skill.instructions, /请补充学员编号或 uid/);
   assert.match(skill.instructions, /log-mcp/);
-  assert.ok(skill.requiredTools.includes('lookup_learner'));
+  // 不锁定 required_tools：ucenter 未配置时 uid 直连路径仍应能加载本技能。
+  assert.deepEqual(skill.requiredTools, []);
 });

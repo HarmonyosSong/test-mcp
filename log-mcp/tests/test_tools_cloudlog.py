@@ -243,3 +243,29 @@ def test_cloud_search_upstream_error(tmp_path) -> None:
     assert payload["error"]["code"] == "upstream"
     assert payload["error"]["upstream"]["side"] == "cloud"
     assert payload["error"]["upstream"]["topic"] == "t1"
+
+
+def test_cloud_search_full_does_not_clip_long_fields(tmp_path) -> None:
+    """full=true 按工具契约返回全字段：长字段不逐字段截断（只做总预算护栏）。"""
+    long_value = "w" * 2000
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=_cl_body(
+                {
+                    "data": {
+                        "logs": [{"__time__": 1, "message": long_value}],
+                        "total": 1,
+                        "progress": "Complete",
+                    },
+                }
+            ),
+        )
+
+    server = _make_server(_settings(tmp_path), handler)
+    result = asyncio.run(
+        _call(server, "cloud_search", {"topic": "t1", "time": "15m", "full": True})
+    )
+    payload = json.loads(result.content[0].text)
+    assert payload["logs"][0]["message"] == long_value

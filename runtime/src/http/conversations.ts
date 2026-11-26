@@ -29,6 +29,7 @@ import type { AgentSlotRegistry } from '../orchestration/agent-slot-registry.js'
 import { clearIncompleteSourceBinding, type BoundSourceContext } from '../capabilities/source-binding.js';
 import type { RuntimeConfig } from '../config.js';
 import { enrichSimulationLoginReply } from '../capabilities/simulation-login-reply.js';
+import { clearSimulationLoginTokens } from '../capabilities/simulation-login-tokens.js';
 
 interface ConversationRouteOptions {
   config?: RuntimeConfig;
@@ -190,6 +191,10 @@ export function createConversationRoutes(
           });
           runId = result.runId;
           terminalPersisted = result.terminalPersisted;
+          // 失败轮不走出站后处理：登记在本轮消息上的 Token 直接清掉，防驻留。
+          if (result.terminal === 'failed') clearSimulationLoginTokens(result.assistantMessage.id);
+          // enrich 双形态：persist（无签名 URL）落库；outbound（含二维码）只随终态事件出站。
+          let persistContent: string | null = null;
           if (result.terminal === 'completed' && options.config) {
             try {
               const enriched = await enrichSimulationLoginReply({
@@ -198,18 +203,13 @@ export function createConversationRoutes(
                 owner: ownerSubject || result.conversation.owner_subject || 'anonymous',
                 config: options.config,
               });
-              if (enriched !== result.assistantMessage.content) {
-                const appendix = enriched.startsWith(result.assistantMessage.content)
-                  ? enriched.slice(result.assistantMessage.content.length)
-                  : '';
-                result.assistantMessage.content = enriched;
+              if (enriched.persist !== result.assistantMessage.content) {
+                result.assistantMessage.content = enriched.persist;
                 await store.saveConversation(result.conversation);
-                if (textStarted && appendix) {
-                  send(sse('TEXT_MESSAGE_CONTENT', runId, {
-                    message_id: result.assistantMessage.id,
-                    delta: appendix,
-                  }));
-                }
+              }
+              if (enriched.outbound !== result.assistantMessage.content) {
+                persistContent = result.assistantMessage.content;
+                result.assistantMessage.content = enriched.outbound;
               }
             } catch {
               // 出图失败不阻断网页终态。
@@ -229,6 +229,10 @@ export function createConversationRoutes(
             }));
           }
           terminalSent = true;
+          if (persistContent !== null) {
+            // 出站事件已发完，立刻恢复落库版：协查 settle 等后续写库不得把签名 URL 带进去。
+            result.assistantMessage.content = persistContent;
+          }
           if (result.compassFollowupPending) {
             send(sse('FOLLOWUP_PENDING', runId, { conversation_id: id }));
             // 协查后台等待（上限=远端 invoke 超时 + 收尾余量）；客户端断开则提前放行。

@@ -282,14 +282,16 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
   if (cosValues.some(Boolean) && !cosValues.every(Boolean)) {
     throw new Error('COS requires COS_SECRET_ID, COS_SECRET_KEY, COS_REGION and COS_BUCKET together');
   }
-  if (config.cosRegion.trim() && !/^[a-z]+(?:-[a-z0-9]+)+$/.test(config.cosRegion.trim())) {
+  // COS 未启用时 region/bucket/prefix 的形态校验不生效：无效默认值不应击穿启动。
+  const cosEnabled = cosValues.every(Boolean);
+  if (cosEnabled && !/^[a-z]+(?:-[a-z0-9]+)+$/.test(config.cosRegion.trim())) {
     throw new Error('COS_REGION must be a COS region identifier');
   }
-  if (config.cosBucket.trim() && !/^[a-z0-9][a-z0-9-]*-[0-9]+$/.test(config.cosBucket.trim())) {
+  if (cosEnabled && !/^[a-z0-9][a-z0-9-]*-[0-9]+$/.test(config.cosBucket.trim())) {
     throw new Error('COS_BUCKET must use BucketName-APPID format');
   }
   const cosPrefix = config.cosPrefix.trim().replace(/^\/+|\/+$/g, '') || 'troubleshoot-odyssey/test';
-  if (!cosPrefix.split('/').every((part) => /^[A-Za-z0-9_-]+$/.test(part))) {
+  if (cosEnabled && !cosPrefix.split('/').every((part) => /^[A-Za-z0-9_-]+$/.test(part))) {
     throw new Error('COS_PREFIX must contain safe nonempty path segments');
   }
   if (config.apiMcpToken.trim() && !config.apiMcpUrl.trim()) {

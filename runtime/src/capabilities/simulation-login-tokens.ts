@@ -5,30 +5,46 @@ export type SimulationLoginTokenHit = {
   token: string;
 };
 
-const byMessageId = new Map<string, SimulationLoginTokenHit[]>();
+type Entry = {
+  hits: SimulationLoginTokenHit[];
+  updatedAt: number;
+};
+
+/** 条目最长驻留：诊断轮失败/中断时出站后处理不会取走，靠 TTL 惰性清理防进程级泄漏。 */
+const ENTRY_TTL_MS = 30 * 60 * 1000;
+
+const byMessageId = new Map<string, Entry>();
+
+function sweepExpired(now: number): void {
+  for (const [messageId, entry] of byMessageId) {
+    if (now - entry.updatedAt > ENTRY_TTL_MS) byMessageId.delete(messageId);
+  }
+}
 
 export function recordSimulationLoginToken(messageId: string, hit: SimulationLoginTokenHit): void {
   const token = hit.token.trim();
   const uid = hit.uid.trim();
   if (!messageId || !token || !uid) return;
-  const list = byMessageId.get(messageId) ?? [];
-  if (list.some((item) => item.uid === uid && item.token === token)) {
-    byMessageId.set(messageId, list);
-    return;
+  const now = Date.now();
+  sweepExpired(now);
+  const entry = byMessageId.get(messageId) ?? { hits: [], updatedAt: now };
+  entry.updatedAt = now;
+  if (!entry.hits.some((item) => item.uid === uid && item.token === token)) {
+    entry.hits.push({ uid, token });
   }
-  list.push({ uid, token });
-  byMessageId.set(messageId, list);
+  byMessageId.set(messageId, entry);
 }
 
 /** 取出并清除，避免跨轮误用。 */
 export function takeSimulationLoginTokens(messageId: string): SimulationLoginTokenHit[] {
-  const list = byMessageId.get(messageId) ?? [];
+  sweepExpired(Date.now());
+  const entry = byMessageId.get(messageId);
   byMessageId.delete(messageId);
-  return list;
+  return entry?.hits ?? [];
 }
 
 export function peekSimulationLoginTokens(messageId: string): readonly SimulationLoginTokenHit[] {
-  return byMessageId.get(messageId) ?? [];
+  return byMessageId.get(messageId)?.hits ?? [];
 }
 
 export function clearSimulationLoginTokens(messageId: string): void {

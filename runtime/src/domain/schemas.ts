@@ -243,6 +243,8 @@ export const ChatMessageSchema = z.object({
   report: DiagnosisReportSchema.nullable().default(null),
   input_tokens: z.number().int().nullable().default(null),
   output_tokens: z.number().int().nullable().default(null),
+  /** 窗口水位快照：本轮最后一次模型请求的实报输入 tokens（非吞吐累计）；旧消息无此数据为 null。 */
+  context_tokens: z.number().int().nullable().default(null),
   tool_usage: z.record(z.string(), z.union([z.number().int(), z.string(), z.null()])).default({}),
   created_at: isoDateTime.default(nowIsoDateTime),
 });

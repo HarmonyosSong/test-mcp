@@ -216,14 +216,20 @@ export function ChatThread({
   }, [conversation.model_override, modelStatus.model_name]);
 
   const contextUsage = useMemo(() => {
-    const lastWithUsage = [...conversation.messages]
-      .reverse()
-      .find((message) => message.role === 'assistant' && message.input_tokens != null);
-    if (!lastWithUsage?.input_tokens) return null;
+    const assistants = [...conversation.messages].reverse();
+    // 优先窗口水位快照（本轮最后一次模型请求的实报输入）；旧消息无此字段时回退轮累计输入。
+    const snapshot = assistants.find(
+      (message) => message.role === 'assistant' && message.context_tokens != null,
+    );
+    const legacy = snapshot
+      ? null
+      : assistants.find((message) => message.role === 'assistant' && message.input_tokens != null);
+    const tokens = snapshot?.context_tokens ?? legacy?.input_tokens ?? null;
+    if (!tokens) return null;
     const window =
       (activeModelName ? contextWindows[activeModelName] : undefined) ??
       (activeModelName ? inferContextWindow(activeModelName) : undefined);
-    return { tokens: lastWithUsage.input_tokens, window };
+    return { tokens, window, estimated: !snapshot };
   }, [conversation.messages, activeModelName, contextWindows]);
 
   const sessionCost = useMemo(() => {
@@ -308,9 +314,11 @@ export function ChatThread({
       {contextUsage && (
         <span
           className="chat-context-usage"
-          title="上下文占用（最近一轮请求的输入 tokens，含历史消息与工具结果）"
+          title={contextUsage.estimated
+            ? '上下文水位（历史消息缺少快照字段，回退为轮累计输入，多步轮会偏高）'
+            : '上下文水位（本轮最后一次模型请求的实报输入 tokens，含系统提示、工具定义与历史）'}
         >
-          上下文占用 {formatTokens(contextUsage.tokens)}
+          上下文水位 {formatTokens(contextUsage.tokens)}
           {contextUsage.window
             ? ` / ${formatTokens(contextUsage.window)}（${Math.min(
                   999,

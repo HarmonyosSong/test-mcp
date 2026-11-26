@@ -376,3 +376,29 @@ def test_invalid_time_range_returns_bad_request(tmp_path) -> None:
     assert result.is_error is True
     payload = json.loads(result.content[0].text)
     assert payload["error"]["code"] == "bad_request"
+
+
+def test_query_full_does_not_clip_long_fields(tmp_path) -> None:
+    """full=true 按工具契约返回全字段：长字段不逐字段截断（只做总预算护栏）。"""
+    long_value = "z" * 2000
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=_lc_body(
+                {
+                    "total": 1,
+                    "data": {"data": [{"@timestamp": 1, "message": long_value}]},
+                }
+            ),
+        )
+
+    server = _make_server(_settings(tmp_path), handler)
+    result = asyncio.run(_call(server, "query", {"serviceId": 6111, "time": "15m", "full": True}))
+    payload = json.loads(result.content[0].text)
+    assert payload["logs"][0]["message"] == long_value
+
+    result2 = asyncio.run(_call(server, "query", {"serviceId": 6111, "time": "15m", "full": False}))
+    payload2 = json.loads(result2.content[0].text)
+    # compact 路径仍逐字段截断
+    assert len(payload2["logs"][0]["message"]) <= 600

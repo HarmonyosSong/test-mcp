@@ -112,9 +112,18 @@ UID：5570040
   });
   assert.equal(bothSides.ok, true);
 
+  // search_both_logs 不带 cloud 参数只查日志中心单侧 → 仍打回（按参数不按工具名）
+  const singleSide = validateFinalAnswer(emptyLogin, registry, {
+    calledTools: ['search_both_logs'],
+    logQueries: ['5570040'],
+  });
+  assert.equal(singleSide.ok, false);
+  if (!singleSide.ok) assert.match(singleSide.feedback, /cloud/);
+
   const afterLog = validateFinalAnswer(emptyLogin, registry, {
     calledTools: ['lookup_learner', 'search_both_logs'],
     logQueries: ['5570040'],
+    searchBothWithCloud: true,
   });
   assert.equal(afterLog.ok, true);
 
@@ -122,6 +131,7 @@ UID：5570040
   const cardQuery = validateFinalAnswer(emptyLogin, registry, {
     calledTools: ['search_both_logs'],
     logQueries: ['184010299547'],
+    searchBothWithCloud: true,
   });
   assert.equal(cardQuery.ok, false);
   if (!cardQuery.ok) assert.match(cardQuery.feedback, /学员编号/);

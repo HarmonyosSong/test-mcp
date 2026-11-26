@@ -95,7 +95,8 @@ function modelFor(turns: Turn[]) {
       chunks.push({
         type: 'finish',
         finishReason: 'tool' in turn ? turn.finishReason ?? 'tool-calls' : 'stop',
-        usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8 },
+        // 逐步递增量：便于区分「末步快照」与「轮累计」口径。
+        usage: { inputTokens: 100 + index, outputTokens: 3, totalTokens: 103 + index },
       });
       return {
         stream: new ReadableStream({
@@ -227,6 +228,40 @@ test('知识问答不绑源码：规则命中后直接给出含判定锚点的�
   assert.match(prompt, /自主决定排查路径/);
   assert.match(prompt, /判定锚点/);
   void sample;
+});
+
+test('窗口水位快照取末步实报输入，且按校验重试轮重置', async () => {
+  const lookup = createTool({
+    id: 'lookup_issue',
+    description: 'Look up a product support rule.',
+    inputSchema: z.object({ query: z.string() }),
+    execute: async () => ({ matches: [{ name: 'feature-availability', text: '此功能仅对特定课程开放。' }] }),
+  });
+  const toolsets = { knowledge: { lookup_issue: lookup } };
+
+  // 单轮多步：快照=末步实报（102），轮累计毛输入（101+102=203）保持不变。
+  const single = await setup([
+    { tool: 'lookup_issue', args: { query: '入口没有显示' } },
+    { text: anchored('located', '该入口仅对符合条件的课程开放。') },
+  ]);
+  const singleEvents = await run(single.diagnosis, '为什么我的课程没有这个入口？', { toolsets });
+  const singleCompleted = singleEvents.at(-1);
+  assert.equal(singleCompleted?.type, 'completed');
+  if (singleCompleted?.type !== 'completed') return;
+  assert.equal(singleCompleted.context_tokens, 102);
+  assert.equal(singleCompleted.input_tokens, 101 + 102);
+
+  // 校验打回重试：快照按重试轮重置，取放行轮（103）而不是打回轮的 102。
+  const retried = await setup([
+    { tool: 'lookup_issue', args: { query: '入口没有显示' } },
+    { text: '没有判定锚点的回答，会被校验打回。' },
+    { text: anchored('located', '该入口仅对符合条件的课程开放。') },
+  ]);
+  const retriedEvents = await run(retried.diagnosis, '为什么我的课程没有这个入口？', { toolsets });
+  const retriedCompleted = retriedEvents.at(-1);
+  assert.equal(retriedCompleted?.type, 'completed');
+  if (retriedCompleted?.type !== 'completed') return;
+  assert.equal(retriedCompleted.context_tokens, 103);
 });
 
 test('incident 全链路：prepare_source 绑定后读码，最终回答引用真实 ev-ID', async () => {

@@ -23,6 +23,7 @@ from log_mcp.tools.compact_util import (
     apply_budget_to_log_rows,
     scrub_currenthref,
     summarize_ua,
+    ua_excerpt,
 )
 
 READ_ONLY = ToolAnnotations(read_only_hint=True)
@@ -126,6 +127,11 @@ def _compact_cloud_log(log: dict[str, Any]) -> dict[str, Any]:
             out[key] = value
     if ua_summary:
         out["ua_summary"] = ua_summary
+    else:
+        # 摘要抽不出字段时保留极短占位（P0-2），避免设备线索静默消失；原文可 full=true 看。
+        excerpt = ua_excerpt(log.get("ua"), log.get("rsd"))
+        if excerpt:
+            out["ua_excerpt"] = excerpt
     return out
 
 
@@ -326,7 +332,8 @@ def register_cloudlog_tools(
             raise _upstream_error(exc, topic=topic) from exc
         logs = result["logs"]
         rows = logs if full else [_compact_cloud_log(log) for log in logs]
-        rows, budget_meta = apply_budget_to_log_rows(rows)
+        # full=true 按工具契约返回全字段：不做逐字段截断，只保留总预算护栏。
+        rows, budget_meta = apply_budget_to_log_rows(rows, clip=not full)
         payload = {
             "source": "cloud",
             "vendor": vendor,

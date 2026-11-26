@@ -48,3 +48,30 @@ test('explicit path overrides beat DATA_ROOT derivation', () => {
   assert.equal(config.dataDir, resolve(PROJECT_ROOT, '.data/mastra'));
   assert.equal(config.modelConfigFile, resolve(PROJECT_ROOT, '.data/model-config.json'));
 });
+
+test('COS 未启用时 COS_PREFIX 形态不参与校验（不击穿启动）', () => {
+  const config = loadRuntimeConfig({
+    HARMONY_MASTRA_PROJECT_ROOT: PROJECT_ROOT,
+    COS_SECRET_ID: '',
+    COS_SECRET_KEY: '',
+    COS_REGION: '',
+    COS_BUCKET: '',
+    COS_PREFIX: '///bad/../prefix///',
+  });
+  // 原样裁斜线后保留，不做形态报错。
+  assert.equal(config.cosPrefix, 'bad/../prefix');
+});
+
+test('COS 启用时 COS_PREFIX 形态必校验', () => {
+  assert.throws(
+    () => loadRuntimeConfig({
+      HARMONY_MASTRA_PROJECT_ROOT: PROJECT_ROOT,
+      COS_SECRET_ID: 'secret-id',
+      COS_SECRET_KEY: 'secret-key',
+      COS_REGION: 'ap-beijing',
+      COS_BUCKET: 'bucket-1250000000',
+      COS_PREFIX: 'bad/../prefix',
+    }),
+    /COS_PREFIX/,
+  );
+});

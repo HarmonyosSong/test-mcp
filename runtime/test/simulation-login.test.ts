@@ -157,14 +157,41 @@ test('COS 未配置时 enrich 只补文本提示', async () => {
     COS_REGION: '',
     COS_BUCKET: '',
   });
-  const text = await enrichSimulationLoginReply({
+  const enriched = await enrichSimulationLoginReply({
     text: '判定：信息查询\n\n已查到 Token。',
     messageId: 'msg-2',
     owner: '080230',
     config,
   });
-  assert.match(text, /tok-xyz/);
-  assert.match(text, /二维码未能展示/);
+  assert.match(enriched.outbound, /tok-xyz/);
+  assert.match(enriched.outbound, /二维码未能展示/);
+  // 落库版只补 Token 代码块，不带二维码提示行、更不会有签名 URL。
+  assert.match(enriched.persist, /tok-xyz/);
+  assert.doesNotMatch(enriched.persist, /二维码未能展示/);
+});
+
+test('enrich 双形态：persistText 基准不受出站截断/格式化影响', async () => {
+  recordSimulationLoginToken('msg-3', { uid: '7', token: 'tok-abc' });
+  const config = loadRuntimeConfig({
+    ...process.env,
+    API_MCP_URL: '',
+    API_MCP_TOKEN: '',
+    COS_SECRET_ID: '',
+    COS_SECRET_KEY: '',
+    COS_REGION: '',
+    COS_BUCKET: '',
+  });
+  const enriched = await enrichSimulationLoginReply({
+    text: '判定：信息查询\n\n前半截…（已截断）',
+    persistText: '判定：信息查询\n\n完整答复全文，未被 IM 截断。',
+    messageId: 'msg-3',
+    owner: '080230',
+    config,
+  });
+  assert.match(enriched.outbound, /已截断/);
+  assert.match(enriched.persist, /完整答复全文/);
+  assert.doesNotMatch(enriched.persist, /已截断/);
+  assert.match(enriched.persist, /tok-abc/);
 });
 
 test('extractCosSignedUrl：兼容 SDK 返回 { Url } 对象', async () => {
@@ -233,4 +260,36 @@ test('fetchSimulationLoginToken：resolve UPSTREAM_ERROR 且 identifier 为 uid 
   assert.equal(result.uid, '2592373');
   assert.equal(result.token, 'sim-degraded-token');
   assert.match(String(result.message || ''), /身份核实|resolve|降级/i);
+});
+
+test('ApiMcpClient：成功码（000000）响应不误判为错误', async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as { method?: string };
+    if (body.method === 'initialize') {
+      return new Response(JSON.stringify({
+        jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18' },
+      }), { status: 200 });
+    }
+    if (body.method === 'notifications/initialized') {
+      return new Response('', { status: 202 });
+    }
+    return new Response(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 3,
+      result: {
+        structuredContent: {
+          api_id: 'student.get_token',
+          code: '000000',
+          data: { uid: '5570040', token: 'tok-ok' },
+          truncated: false,
+        },
+      },
+    }), { status: 200 });
+  };
+  const client = new ApiMcpClient({
+    url: 'https://api-mcp.example.test/x', token: 'test-token-12', fetchImpl,
+  });
+  const result = await client.apiQuery('student.get_token', {});
+  assert.notEqual(result.isError, true);
+  assert.deepEqual(result.data, { uid: '5570040', token: 'tok-ok' });
 });

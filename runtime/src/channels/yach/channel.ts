@@ -15,6 +15,7 @@ import { yachHistory, yachInbound, yachInboundSkipped, yachOutbound } from './lo
 import { InvalidYachEvent, parseYachEvent, peekWorkCode, type YachEvent } from './parse.js';
 import { YachProgressCard } from './progress.js';
 import { enrichSimulationLoginReply } from '../../capabilities/simulation-login-reply.js';
+import { clearSimulationLoginTokens } from '../../capabilities/simulation-login-tokens.js';
 import { createSessionMappingStore, type SessionMappingStore } from './session-mapping-store.js';
 
 const DEDUPE_LIMIT = 4096;
@@ -372,9 +373,12 @@ export class YachChannel {
       });
       // /stop 已发确认；取消时只关进度卡，不再发终态正文。
       if (abort.signal.aborted) {
+        clearSimulationLoginTokens(result.assistantMessage.id);
         await progress.finish('已取消');
         return;
       }
+      // 失败轮不走出站后处理：登记在本轮消息上的 Token 直接清掉，不等 TTL。
+      if (result.terminal !== 'completed') clearSimulationLoginTokens(result.assistantMessage.id);
       progress.onStreamEvent(result.terminal === 'completed'
         ? {
           type: 'completed',
@@ -385,6 +389,7 @@ export class YachChannel {
           messages_state: result.conversation.messages_state,
           input_tokens: result.assistantMessage.input_tokens ?? null,
           output_tokens: result.assistantMessage.output_tokens ?? null,
+          context_tokens: result.assistantMessage.context_tokens ?? null,
           tool_usage: {},
         }
         : {
@@ -394,6 +399,7 @@ export class YachChannel {
           evidence_state: result.conversation.evidence_state,
           input_tokens: result.assistantMessage.input_tokens ?? null,
           output_tokens: result.assistantMessage.output_tokens ?? null,
+          context_tokens: result.assistantMessage.context_tokens ?? null,
           tool_usage: {},
         });
       await progress.finish(result.terminal === 'completed'
@@ -406,14 +412,18 @@ export class YachChannel {
         : '诊断失败：服务调用异常，请稍后重试或打开网页工作台。';
       if (result.terminal === 'completed') {
         try {
-          body = await enrichSimulationLoginReply({
+          const enriched = await enrichSimulationLoginReply({
             text: body,
+            // 落库基准是未截断的完整答复：IM 格式化/截断版绝不可覆盖消息正文。
+            persistText: result.assistantMessage.content,
             messageId: result.assistantMessage.id,
             owner: event.workCode || result.conversation.owner_subject || 'anonymous',
             config: this.deps.config,
           });
-          if (body !== result.assistantMessage.content) {
-            result.assistantMessage.content = body;
+          body = enriched.outbound;
+          // 只有真正追加了 Token 代码块才写库（persist 不含签名 URL）。
+          if (enriched.persist !== result.assistantMessage.content) {
+            result.assistantMessage.content = enriched.persist;
             await this.deps.store.saveConversation(result.conversation);
           }
         } catch {

@@ -44,12 +44,13 @@ const CONSULT_TOOL_NAMES = new Set(['request_compass_followup', 'consult_compass
 const CARD_LIKE_QUERY = /^\d{11,}$/;
 const UID_LIKE_QUERY = /^\d{1,10}$/;
 
-/** 设备结论要求双侧：search_both_logs，或 cloud_search + query。 */
+/** 设备结论要求双侧：search_both_logs 且带 cloud 参数（不带只查日志中心），或 cloud_search + query。 */
 export function hasBilateralDeviceLogCoverage(
   calledTools: ReadonlySet<string> | readonly string[],
+  searchBothWithCloud = false,
 ): boolean {
   const called = calledTools instanceof Set ? calledTools : new Set(calledTools);
-  if (called.has('search_both_logs')) return true;
+  if (called.has('search_both_logs') && searchBothWithCloud) return true;
   return called.has('cloud_search') && called.has('query');
 }
 
@@ -58,6 +59,8 @@ export type FinalAnswerValidationContext = {
   calledTools?: ReadonlySet<string> | readonly string[];
   /** 本轮日志工具实际使用的 query 字符串（顶层或 cloud.query）。 */
   logQueries?: readonly string[];
+  /** 本轮 search_both_logs 是否至少有一次带 cloud 参数（不带只查日志中心单侧）。 */
+  searchBothWithCloud?: boolean;
 };
 
 /** 解析判定锚点；返回 null 表示缺失或不规范。 */
@@ -134,11 +137,11 @@ export function validateFinalAnswer(
   }
 
   if (verdict === 'info_lookup' && EMPTY_DEVICE_CLAIM.test(withoutCode)) {
-    if (!hasBilateralDeviceLogCoverage(called)) {
+    if (!hasBilateralDeviceLogCoverage(called, context.searchBothWithCloud ?? false)) {
       return {
         ok: false,
         feedback:
-          '信息查询写了「未登录/暂无设备线索」，但本轮尚未双侧覆盖日志（须 search_both_logs 且 cloud={}，或 cloud_search + query）。请用学员 uid 裸数字查近 3 天两侧日志再写设备段；若 log-mcp 不可用，写「设备侧暂不可查」，不要写「未登录」。',
+          '信息查询写了「未登录/暂无设备线索」，但本轮尚未双侧覆盖日志（须 search_both_logs 且带 cloud 参数（如 cloud={}），或 cloud_search + query）。请用学员 uid 裸数字查近 3 天两侧日志再写设备段；若 log-mcp 不可用，写「设备侧暂不可查」，不要写「未登录」。',
       };
     }
 

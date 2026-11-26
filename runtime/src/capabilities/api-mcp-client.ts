@@ -34,11 +34,21 @@ function parseMcpHttpBody(text: string): unknown {
     try {
       last = JSON.parse(data) as unknown;
     } catch {
-      // ignore non-JSON data lines
+      // 忽略非 JSON 的 data 行
     }
   }
   if (last == null) throw new Error('API MCP 响应不是合法 JSON/SSE');
   return last;
+}
+
+/** 上游业务约定的成功码：成功响应也可能带 code 字段，只有非成功码才按错误处理。 */
+const SUCCESS_CODES = new Set(['0', '200', '000000', 'SUCCESS']);
+
+function codeIndicatesError(code: unknown): boolean {
+  if (typeof code !== 'string' && typeof code !== 'number') return false;
+  const normalized = String(code).trim();
+  if (!normalized) return false;
+  return !SUCCESS_CODES.has(normalized) && !SUCCESS_CODES.has(normalized.toUpperCase());
 }
 
 function unwrapToolResult(payload: unknown): ApiMcpQueryResult {
@@ -59,7 +69,7 @@ function unwrapToolResult(payload: unknown): ApiMcpQueryResult {
   const structured = body.structuredContent;
   if (structured && typeof structured === 'object') {
     const data = structured as Record<string, unknown>;
-    if (isError || data.code) {
+    if (isError || codeIndicatesError(data.code)) {
       return {
         api_id: typeof data.api_id === 'string' ? data.api_id : '',
         data: null,
@@ -83,7 +93,7 @@ function unwrapToolResult(payload: unknown): ApiMcpQueryResult {
       if (typeof text !== 'string' || !text.trim()) continue;
       try {
         const parsed = JSON.parse(text) as Record<string, unknown>;
-        if (isError || parsed.code) {
+        if (isError || codeIndicatesError(parsed.code)) {
           return {
             api_id: typeof parsed.api_id === 'string' ? parsed.api_id : '',
             data: null,

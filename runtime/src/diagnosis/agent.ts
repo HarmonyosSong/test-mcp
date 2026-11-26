@@ -121,6 +121,8 @@ export type DiagnosisStreamEvent =
       messages_state: Array<Record<string, unknown>>;
       input_tokens: number | null;
       output_tokens: number | null;
+      /** 窗口水位快照：本轮最后一次模型请求的实报输入 tokens（含系统提示/工具/历史），非吞吐累计。 */
+      context_tokens: number | null;
       tool_usage: Record<string, number | string>;
     }
   | {
@@ -130,6 +132,8 @@ export type DiagnosisStreamEvent =
       evidence_state: Record<string, unknown>;
       input_tokens: number | null;
       output_tokens: number | null;
+      /** 窗口水位快照（中断前最后一次模型请求的实报输入）。 */
+      context_tokens: number | null;
       tool_usage: Record<string, number | string>;
     };
 
@@ -493,6 +497,8 @@ export class DiagnosisAgent {
     ) as ToolsetsInput;
 
     const usage = { inputTokens: null as number | null, outputTokens: null as number | null, cacheReadTokens: null as number | null };
+    // 窗口水位快照：每次 step-finish 的实报输入覆盖更新，终值=本轮最后一次模型请求的水位。
+    let lastStepInputTokens: number | null = null;
     let attempted = 0;
     let failed = 0;
     let modelRequests = 0;
@@ -500,6 +506,8 @@ export class DiagnosisAgent {
     const toolStartedAt = new Map<string, number>();
     const logQueries: string[] = [];
     const deviceLogTools = new Set(["search_both_logs", "cloud_search", "query"]);
+    // search_both_logs 不带 cloud 参数只查日志中心单侧（工具契约），双侧判定须按参数而非工具名。
+    let searchBothWithCloud = false;
     // 全部模型消息（含校验反馈轮），跨轮持久化。
     const transcript: Array<{ role: "user" | "assistant"; content: string }> = historyFor(
       input.conversation.messages,
@@ -537,6 +545,8 @@ export class DiagnosisAgent {
         const lastAttempt = answerAttempt === MAX_ANSWER_RETRIES;
         // 文本缓冲：最终答案经校验后才对用户放出；工具事件实时流式。
         let bufferedText = "";
+        // 水位按校验重试轮重置：终值必须来自放行（或收尾）这一轮自己的步骤。
+        lastStepInputTokens = null;
         // 思考捕获：Mastra 1.81 的 MODEL_STEP span 不带 reasoning，从 fullStream 按步骤累积，
         // 交给 trace 落盘合并（面板「思考」行的数据来源）。
         const thinkingSteps: string[] = [];
@@ -581,6 +591,7 @@ export class DiagnosisAgent {
               }
               const cloud = args.cloud;
               if (cloud && typeof cloud === "object" && !Array.isArray(cloud)) {
+                if (chunk.payload.toolName === "search_both_logs") searchBothWithCloud = true;
                 const cloudQuery = (cloud as Record<string, unknown>).query;
                 if (typeof cloudQuery === "string" && cloudQuery.trim()) {
                   logQueries.push(cloudQuery.trim());
@@ -635,6 +646,13 @@ export class DiagnosisAgent {
             yield { type: "tool-end", event, evidence_state: registry.snapshot() };
           } else if (chunk.type === "abort") {
             wasAborted = true;
+          } else if (chunk.type === "step-finish") {
+            // 与 AI 观测 trace 的「上下文快照」同口径：最后一次带用量步骤的输入 tokens。
+            const stepUsage = (chunk.payload as { output?: { usage?: { inputTokens?: unknown } } })
+              .output?.usage;
+            if (typeof stepUsage?.inputTokens === "number" && Number.isFinite(stepUsage.inputTokens)) {
+              lastStepInputTokens = stepUsage.inputTokens;
+            }
           } else if (chunk.type === "error") {
             throw new Error(truncate(chunk.payload.error, 1_000));
           }
@@ -662,7 +680,7 @@ export class DiagnosisAgent {
         const calledTools = new Set(
           [...steps.values()].map((event) => event.tool).filter((name): name is string => Boolean(name)),
         );
-        const check = validateFinalAnswer(bufferedText, registry, { calledTools, logQueries });
+        const check = validateFinalAnswer(bufferedText, registry, { calledTools, logQueries, searchBothWithCloud });
         if (check.ok || lastAttempt) {
           // 最后一轮仍不合格则放行（verdict 记 null，由下游如实展示缺口），不再循环。
           verdict = check.ok ? check.verdict : null;
@@ -687,6 +705,7 @@ export class DiagnosisAgent {
         evidence_state: registry.snapshot(),
         input_tokens: usage.inputTokens,
         output_tokens: usage.outputTokens,
+        context_tokens: lastStepInputTokens,
         tool_usage: toolUsage(),
         messages_state: transcript.map((message) => ({ ...message })),
       };
@@ -709,6 +728,7 @@ export class DiagnosisAgent {
         evidence_state: registry.snapshot(),
         input_tokens: usage.inputTokens,
         output_tokens: usage.outputTokens,
+        context_tokens: lastStepInputTokens,
         tool_usage: { ...toolUsage(), failure_category: category },
       };
     }

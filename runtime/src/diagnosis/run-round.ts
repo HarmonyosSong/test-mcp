@@ -262,6 +262,8 @@ function scheduleCompassFollowupSettle(input: {
       report: null,
       input_tokens: sumTokens(analysis?.inputTokens, synthesis?.inputTokens),
       output_tokens: sumTokens(analysis?.outputTokens, synthesis?.outputTokens),
+      // 协查回执消息不记水位：头部快照以主诊断轮消息为准。
+      context_tokens: null,
       tool_usage: {
         compass_followup: 1,
         ...(analysis ? { followup_analysis: 1 } : {}),
@@ -289,6 +291,7 @@ function newAssistantMessage(): ChatMessage {  return {
     report: null,
     input_tokens: null,
     output_tokens: null,
+    context_tokens: null,
     tool_usage: {},
     created_at: new Date().toISOString(),
   };
@@ -344,6 +347,7 @@ export async function prepareDiagnosisRound(
     report: null,
     input_tokens: null,
     output_tokens: null,
+    context_tokens: null,
     tool_usage: {},
     created_at: new Date().toISOString(),
   };
@@ -513,6 +517,7 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
         assistantMessage.report = null;
         assistantMessage.input_tokens = event.input_tokens;
         assistantMessage.output_tokens = event.output_tokens;
+        assistantMessage.context_tokens = event.context_tokens ?? null;
         assistantMessage.tool_usage = event.tool_usage;
         conversation.evidence_state = redactRecord(event.evidence_state, redact);
         conversation.messages_state = redactRecord(event.messages_state as Array<Record<string, unknown>>, redact);
@@ -533,6 +538,7 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
         assistantMessage.tool_usage = { ...event.tool_usage, failure_category: failureCategory };
         assistantMessage.input_tokens = event.input_tokens;
         assistantMessage.output_tokens = event.output_tokens;
+        assistantMessage.context_tokens = event.context_tokens ?? null;
         assistantMessage.steps = assistantMessage.steps.map((step) => (step.status === 'running'
           ? { ...step, status: 'failed' as const, summary: '工具调用中断，结果未知' }
           : step));

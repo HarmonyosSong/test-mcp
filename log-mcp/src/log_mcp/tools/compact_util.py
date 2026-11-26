@@ -10,6 +10,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 # 与聚合护栏对齐；精查 compact / 聚合共用。
 VALUE_MAX_CHARS = 600
 LOGS_BUDGET_CHARS = 24_000
+# UA 摘要抽不出字段时的极短占位长度（P0-2：提示可 full=true 看原文）。
+UA_EXCERPT_MAX_CHARS = 80
 
 _SENSITIVE_QUERY_KEYS = frozenset(
     {
@@ -160,10 +162,26 @@ def slim_response_field(value: Any) -> Any:
     return {"_omitted": True, "_reason": "unsupported_response_type"}
 
 
-def apply_budget_to_log_rows(rows: list[Any]) -> tuple[list[Any], dict[str, Any]]:
-    """对精查返回的 logs 做字符串截断 + 总预算；返回 (rows, truncation meta)。"""
-    clipped = [clip_strings(row) for row in rows]
-    kept, omitted = trim_logs_budget(clipped)
+def ua_excerpt(*sources: Any, max_chars: int = UA_EXCERPT_MAX_CHARS) -> str | None:
+    """UA/rsd 摘要抽不出字段时的极短占位：保留开头片段，提示可 full=true 看原文。"""
+    for source in sources:
+        if isinstance(source, str) and source.strip():
+            text = source.strip()
+            return text if len(text) <= max_chars else text[:max_chars] + "…"
+    return None
+
+
+def apply_budget_to_log_rows(
+    rows: list[Any],
+    *,
+    clip: bool = True,
+) -> tuple[list[Any], dict[str, Any]]:
+    """对精查返回的 logs 做字符串截断 + 总预算；返回 (rows, truncation meta)。
+
+    clip=False 用于 full=true：全字段按工具契约原样返回，只做总预算收缩。
+    """
+    prepared = [clip_strings(row) for row in rows] if clip else list(rows)
+    kept, omitted = trim_logs_budget(prepared)
     meta: dict[str, Any] = {}
     if omitted:
         meta["truncated"] = True
