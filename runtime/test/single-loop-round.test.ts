@@ -675,6 +675,34 @@ test('skills requiring unavailable tools are omitted and cannot be loaded', asyn
   assert.match(failedLoad?.type === 'tool-end' ? failedLoad.event.result_summary ?? '' : '', /unavailable skill/);
 });
 
+test('load_skill 命中被过滤技能时返回错误结果，整轮照常完成（线上事故回归）', async () => {
+  // API_MCP 未配置：get-simulation-login-token 被 required_tools 过滤出目录，
+  // 但旧提示词硬编码指引模型 load 它，throw 曾被 Mastra 包装成流错误炸掉整轮。
+  const { diagnosis } = await setup([
+    { tool: 'load_skill', args: { name: 'get-simulation-login-token' } },
+    { text: anchored('tool_error', '模拟登录能力当前未配置，无法查询 Token。') },
+  ]);
+  const events = await run(diagnosis, '帮我生成学员 165010784572 的模拟登录 token');
+  const failedLoad = events.find((event) => event.type === 'tool-end' && event.event.tool === 'load_skill');
+  assert.equal(failedLoad?.type === 'tool-end' ? failedLoad.event.status : null, 'failed');
+  assert.match(failedLoad?.type === 'tool-end' ? failedLoad.event.result_summary ?? '' : '', /unavailable skill/);
+  // 关键：错误结果可被模型消化，整轮 completed 而非 failed。
+  assert.equal(events.at(-1)?.type, 'completed');
+});
+
+test('技能指引按可用性写入提示：日志/模拟登录技能不可用时不再硬编码 load 指引', async () => {
+  const { diagnosis, scripted } = await setup([
+    { text: anchored('tool_error', '模拟登录能力当前未配置，无法查询 Token。') },
+  ]);
+  await run(diagnosis, '帮我生成模拟登录 token');
+  const prompt = JSON.stringify(scripted.prompts[0]);
+  // log/simulation 工具均未挂载：对应技能被过滤，提示词不得再指引 load 它们。
+  assert.doesNotMatch(prompt, /必须先加载 query-platform-logs/);
+  assert.doesNotMatch(prompt, /load_skill\(\\"get-simulation-login-token\\"\)/);
+  // 不可用时改写为如实说明，防编造 Token。
+  assert.match(prompt, /该能力当前未配置不可用/);
+});
+
 test('代码导航约束写入提示：导航只是线索，失败回退文本检索', async () => {
   const { diagnosis, scripted } = await setup([
     { text: anchored('insufficient_evidence', '需要读取命中源码并验证观察范围。') },
