@@ -4814,12 +4814,7 @@ button:disabled {
   border-color: var(--border-strong, var(--border));
 }
 
-/* 问题归档统计弹窗（知音楼评测集） */
-.feedback-stats-dialog {
-  width: min(560px, 100%);
-  padding-bottom: 20px;
-}
-
+/* 使用统计页（归档表格复用 feedback-stats-* 类） */
 .feedback-stats-range {
   display: flex;
   gap: 8px;
@@ -4900,20 +4895,74 @@ button:disabled {
   opacity: 0.75;
 }
 
-.feedback-stats-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 18px 20px 0;
-  font-size: 13px;
-  opacity: 0.75;
-}
-
-.feedback-stats-error {
-  color: var(--danger, #d5495b);
-  opacity: 1;
-}
-
 .feedback-stats-vague {
   color: var(--warning, #d9a03f);
+}
+
+/* 归档评价条（web 端故障终稿下，与知音楼归档同口径） */
+.archive-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.archive-feedback-label {
+  opacity: 0.55;
+  margin-right: 2px;
+}
+
+.archive-feedback-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.archive-feedback-button:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.archive-feedback-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.archive-feedback-button.selected {
+  font-weight: 600;
+}
+
+.archive-feedback-button.selected.archive-feedback-correct {
+  color: var(--success, #2fa564);
+  border-color: color-mix(in srgb, var(--success, #2fa564) 55%, transparent);
+  background: color-mix(in srgb, var(--success, #2fa564) 10%, transparent);
+}
+
+.archive-feedback-button.selected.archive-feedback-vague {
+  color: var(--warning, #d9a03f);
+  border-color: color-mix(in srgb, var(--warning, #d9a03f) 55%, transparent);
+  background: color-mix(in srgb, var(--warning, #d9a03f) 10%, transparent);
+}
+
+.archive-feedback-button.selected.archive-feedback-failed {
+  color: var(--danger, #d5495b);
+  border-color: color-mix(in srgb, var(--danger, #d5495b) 55%, transparent);
+  background: color-mix(in srgb, var(--danger, #d5495b) 10%, transparent);
+}
+
+.archive-feedback-meta {
+  opacity: 0.55;
+}
+
+.archive-feedback-error {
+  color: var(--danger, #d5495b);
 }

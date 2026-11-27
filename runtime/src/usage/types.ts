@@ -1,4 +1,4 @@
-/** Usage stats module types (independent of chat / yach-feedback). */
+/** Usage stats module types (independent of chat channels). */
 
 export type UsageFeedbackVerdict = 'correct' | 'vague' | 'failed' | 'none';
 

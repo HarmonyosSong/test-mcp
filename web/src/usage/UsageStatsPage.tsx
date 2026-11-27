@@ -2,8 +2,65 @@ import { BarChart3, LoaderCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { fetchUsageStats } from './api';
 import { navigateToUsage, readUsageRangeParam } from './route';
-import type { UsageFeedbackVerdict, UsageRangeKey, UsageStatsResult } from './types';
+import type { UsageRangeKey, UsageStatsItem, UsageStatsResult } from './types';
 import './styles.css';
+
+/** 归档统计按使用人聚合：姓名（显示名兜底工号）+ 三档评价 + 没有结论（未归档）计数。 */
+interface FeedbackRank {
+  name: string;
+  correct: number;
+  vague: number;
+  failed: number;
+  unconcluded: number;
+  total: number;
+  /** 正确/已评价（模糊计为未达标；没有结论不参与正确率），无已评价时为 null。 */
+  accuracy: number | null;
+}
+
+function rankFeedbackByUser(items: UsageStatsItem[]): FeedbackRank[] {
+  const buckets = new Map<string, FeedbackRank>();
+  for (const item of items) {
+    const label = item.owner_display_name?.trim() || item.owner_subject?.trim() || '匿名';
+    const existing = buckets.get(label);
+    if (existing) {
+      if (item.feedback === 'none') existing.unconcluded += 1;
+      else existing[item.feedback] += 1;
+      existing.total += 1;
+    } else {
+      buckets.set(label, {
+        name: label,
+        correct: item.feedback === 'correct' ? 1 : 0,
+        vague: item.feedback === 'vague' ? 1 : 0,
+        failed: item.feedback === 'failed' ? 1 : 0,
+        unconcluded: item.feedback === 'none' ? 1 : 0,
+        total: 1,
+        accuracy: null,
+      });
+    }
+  }
+  const ranks = [...buckets.values()];
+  for (const rank of ranks) {
+    const evaluated = rank.correct + rank.vague + rank.failed;
+    rank.accuracy = evaluated > 0 ? rank.correct / evaluated : null;
+  }
+  return ranks.sort((a, b) => {
+    if (b.total !== a.total) return b.total - a.total;
+    return a.name.localeCompare(b.name, 'zh-CN');
+  });
+}
+
+function formatAccuracy(accuracy: number | null): string {
+  if (accuracy == null) return '—';
+  return `${(accuracy * 100).toFixed(1)}%`;
+}
+
+/** 正确率着色：>=80% 绿，<50% 红，中间黄（复用 feedback-stats 色板）；无评价不着色。 */
+function accuracyClass(accuracy: number | null): string {
+  if (accuracy == null) return 'usage-accuracy';
+  if (accuracy >= 0.8) return 'usage-accuracy feedback-stats-ok';
+  if (accuracy < 0.5) return 'usage-accuracy feedback-stats-bad';
+  return 'usage-accuracy feedback-stats-vague';
+}
 
 const RANGE_OPTIONS: Array<{ key: UsageRangeKey; label: string }> = [
   { key: 'today', label: '今天' },
@@ -12,17 +69,6 @@ const RANGE_OPTIONS: Array<{ key: UsageRangeKey; label: string }> = [
   { key: '7d', label: '近 7 天' },
   { key: '30d', label: '近 30 天' },
 ];
-
-function feedbackLabel(value: UsageFeedbackVerdict): string {
-  if (value === 'correct') return '正确';
-  if (value === 'vague') return '模糊';
-  if (value === 'failed') return '失败';
-  return '未反馈';
-}
-
-function channelLabel(channel: 'web' | 'yach_im'): string {
-  return channel === 'yach_im' ? '知音楼' : 'Web';
-}
 
 function rangeLabel(key: UsageRangeKey): string {
   return RANGE_OPTIONS.find((item) => item.key === key)?.label ?? key;
@@ -66,6 +112,19 @@ export function UsageStatsPage() {
   };
 
   const summary = stats?.summary;
+  const feedbackRanks = stats ? rankFeedbackByUser(stats.items) : [];
+  const feedbackTotals = feedbackRanks.reduce(
+    (acc, row) => ({
+      correct: acc.correct + row.correct,
+      vague: acc.vague + row.vague,
+      failed: acc.failed + row.failed,
+      unconcluded: acc.unconcluded + row.unconcluded,
+      total: acc.total + row.total,
+    }),
+    { correct: 0, vague: 0, failed: 0, unconcluded: 0, total: 0 },
+  );
+  const evaluatedTotal = feedbackTotals.correct + feedbackTotals.vague + feedbackTotals.failed;
+  const totalAccuracy = evaluatedTotal > 0 ? feedbackTotals.correct / evaluatedTotal : null;
 
   return (
     <section className="usage-page" aria-label="使用统计">
@@ -147,30 +206,44 @@ export function UsageStatsPage() {
             </div>
           </div>
 
-          {stats.items.length > 0 ? (
+          {feedbackRanks.length > 0 ? (
             <div className="usage-table-wrap">
+              <h2 className="usage-section-title">归档统计（按使用人）</h2>
               <table className="usage-table feedback-stats-table">
                 <thead>
                   <tr>
                     <th>姓名</th>
-                    <th>工号</th>
-                    <th>渠道</th>
-                    <th>问题</th>
-                    <th>结论</th>
-                    <th>反馈状态</th>
+                    <th>分析正确</th>
+                    <th>分析模糊</th>
+                    <th>分析失败</th>
+                    <th>没有结论</th>
+                    <th>合计</th>
+                    <th>正确率</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {stats.items.map((item) => (
-                    <tr key={`${item.conversation_id}-${item.at}`}>
-                      <td>{item.owner_display_name || item.owner_subject || '匿名'}</td>
-                      <td>{item.owner_subject || '—'}</td>
-                      <td>{channelLabel(item.channel)}</td>
-                      <td className="usage-q">{item.question}</td>
-                      <td className="usage-c">{item.verdict || '未完成'}</td>
-                      <td>{feedbackLabel(item.feedback)}</td>
+                  {feedbackRanks.map((row) => (
+                    <tr key={row.name}>
+                      <td>{row.name}</td>
+                      <td>{row.correct}</td>
+                      <td>{row.vague}</td>
+                      <td>{row.failed}</td>
+                      <td>{row.unconcluded}</td>
+                      <td>{row.total}</td>
+                      <td className={accuracyClass(row.accuracy)}>{formatAccuracy(row.accuracy)}</td>
                     </tr>
                   ))}
+                  <tr className="usage-table-total">
+                    <td>合计</td>
+                    <td>{feedbackTotals.correct}</td>
+                    <td>{feedbackTotals.vague}</td>
+                    <td>{feedbackTotals.failed}</td>
+                    <td>{feedbackTotals.unconcluded}</td>
+                    <td>{feedbackTotals.total}</td>
+                    <td className={accuracyClass(totalAccuracy)}>
+                      {formatAccuracy(totalAccuracy)}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>

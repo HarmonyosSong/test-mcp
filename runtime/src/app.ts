@@ -14,7 +14,6 @@ import { createAuthRoutes } from './http/auth.js';
 import { ProductStore } from './product/store.js';
 import { ModelConfiguration } from './model/configuration.js';
 import { createModelRoutes } from './http/models.js';
-import { createYachFeedbackRoutes } from './http/yach-feedback.js';
 import { createUsageModule, USAGE_API_MOUNT, type UsageModule } from './usage/index.js';
 import { RepositoryCapability, SnapshotNotReadyError } from './capabilities/repository.js';
 import { CapabilityMcp } from './capabilities/mcp.js';
@@ -344,7 +343,6 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
       },
     }));
     app.route('/api', createModelRoutes(modelConfiguration));
-    app.route('/api', createYachFeedbackRoutes(store));
     const usageModule = createUsageModule({ store, config });
     app.route(USAGE_API_MOUNT, usageModule.routes);
 

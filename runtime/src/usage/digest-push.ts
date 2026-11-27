@@ -21,10 +21,17 @@ export interface DigestPushDeps {
   ) => Promise<{ stdout: string; stderr: string; code: number }>;
 }
 
-export interface DigestUserRank {
+/** 归档统计按使用人聚合：姓名（显示名兜底工号）+ 三档评价 + 没有结论（未归档）计数。 */
+export interface DigestFeedbackRank {
   name: string;
-  work_code: string;
-  count: number;
+  correct: number;
+  vague: number;
+  failed: number;
+  /** 没有结论：该使用人的会话无人归档评价。 */
+  unconcluded: number;
+  total: number;
+  /** 正确/已评价（模糊计为未达标；未评价不进分母），无已评价时为 null。 */
+  accuracy: number | null;
 }
 
 function defaultRunCommand(
@@ -73,27 +80,36 @@ export function buildDigestPageUrl(
   return `${base}${path}?date=${encodeURIComponent(dateYmd)}`;
 }
 
-/** Rank users by conversation count (使用次数); name falls back to work code. */
-export function rankUsageByUser(items: UsageStatsItem[]): DigestUserRank[] {
-  const buckets = new Map<string, DigestUserRank>();
+/** 按使用人聚合（谁提了问题、其会话收到的归档评价分布）；name 兜底工号，再兜底「匿名」。 */
+export function rankFeedbackByUser(items: UsageStatsItem[]): DigestFeedbackRank[] {
+  const buckets = new Map<string, DigestFeedbackRank>();
   for (const item of items) {
-    const workCode = item.owner_subject?.trim() || '匿名';
-    const name = item.owner_display_name?.trim() || workCode;
-    const key = item.owner_subject?.trim() || `__anon__:${name}`;
-    const existing = buckets.get(key);
+    const label = item.owner_display_name?.trim() || item.owner_subject?.trim() || '匿名';
+    const existing = buckets.get(label);
     if (existing) {
-      existing.count += 1;
-      // Prefer a real display name if a later item has one.
-      if (item.owner_display_name?.trim() && existing.name === existing.work_code) {
-        existing.name = item.owner_display_name.trim();
-      }
+      if (item.feedback === 'none') existing.unconcluded += 1;
+      else existing[item.feedback] += 1;
+      existing.total += 1;
     } else {
-      buckets.set(key, { name, work_code: workCode, count: 1 });
+      buckets.set(label, {
+        name: label,
+        correct: item.feedback === 'correct' ? 1 : 0,
+        vague: item.feedback === 'vague' ? 1 : 0,
+        failed: item.feedback === 'failed' ? 1 : 0,
+        unconcluded: item.feedback === 'none' ? 1 : 0,
+        total: 1,
+        accuracy: null,
+      });
     }
   }
-  return [...buckets.values()].sort((a, b) => {
-    if (b.count !== a.count) return b.count - a.count;
-    return a.work_code.localeCompare(b.work_code, 'zh-CN');
+  const ranks = [...buckets.values()];
+  for (const rank of ranks) {
+    const evaluated = rank.correct + rank.vague + rank.failed;
+    rank.accuracy = evaluated > 0 ? rank.correct / evaluated : null;
+  }
+  return ranks.sort((a, b) => {
+    if (b.total !== a.total) return b.total - a.total;
+    return a.name.localeCompare(b.name, 'zh-CN');
   });
 }
 
@@ -101,42 +117,60 @@ function escapeCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
-/** Markdown body: 标题写进正文（知音楼 --title 常只作预览，卡片内不一定显眼）。 */
+function formatAccuracy(accuracy: number | null): string {
+  // 没有结论不参与正确率：无已评价会话时显示 —。
+  if (accuracy == null) return '—';
+  return `${(accuracy * 100).toFixed(1)}%`;
+}
+
+function feedbackRowCells(row: { name: string; correct: number; vague: number; failed: number; unconcluded: number; total: number; accuracy: number | null }): string {
+  return `| ${escapeCell(row.name)} | ${row.correct} | ${row.vague} | ${row.failed} | ${row.unconcluded} | ${row.total} | ${formatAccuracy(row.accuracy)} |`;
+}
+
+const FEEDBACK_TABLE_HEADER = [
+  '| 姓名 | 分析正确 | 分析模糊 | 分析失败 | 没有结论 | 合计 | 正确率 |',
+  '| --- | ---: | ---: | ---: | ---: | ---: | ---: |',
+];
+
+/** Markdown body：归档反馈按人统计（姓名/三档/合计/正确率），头部一行使用量概要。 */
 export function buildDigestMarkdown(
   stats: UsageStatsResult,
   pageUrl: string,
 ): string {
-  const ranks = rankUsageByUser(stats.items);
+  const ranks = rankFeedbackByUser(stats.items);
   const title = buildDigestTitle(stats.date);
   const heading = `**${title}**`;
-  const lines: string[] = [heading, ''];
+  const evaluatedTotal = ranks.reduce((sum, row) => sum + row.correct + row.vague + row.failed, 0);
+  const overview = `当日使用 ${stats.summary.unique_users} 人、${stats.summary.conversations} 个会话；归档反馈 ${evaluatedTotal} 条。`;
+  const lines: string[] = [heading, '', overview];
   if (ranks.length === 0) {
     lines.push('当日暂无使用记录。');
   } else {
-    lines.push('| 姓名 | 工号 | 使用次数 |');
-    lines.push('| --- | --- | ---: |');
-    for (const row of ranks) {
-      lines.push(
-        `| ${escapeCell(row.name)} | ${escapeCell(row.work_code)} | ${row.count} |`,
-      );
-    }
+    lines.push(...FEEDBACK_TABLE_HEADER);
+    const totals = {
+      name: '合计',
+      correct: ranks.reduce((sum, row) => sum + row.correct, 0),
+      vague: ranks.reduce((sum, row) => sum + row.vague, 0),
+      failed: ranks.reduce((sum, row) => sum + row.failed, 0),
+      unconcluded: ranks.reduce((sum, row) => sum + row.unconcluded, 0),
+      total: ranks.reduce((sum, row) => sum + row.total, 0),
+      accuracy: null as number | null,
+    };
+    totals.accuracy = evaluatedTotal > 0 ? totals.correct / evaluatedTotal : null;
+    for (const row of ranks) lines.push(feedbackRowCells(row));
+    lines.push(feedbackRowCells(totals));
   }
   // 知音楼 markdown 用 align=right 把「查看详情」放到右下。
   const detailLink = `<div align="right">\n\n[查看详情](${pageUrl})\n\n</div>`;
   lines.push('', detailLink);
   let body = lines.join('\n');
   if (body.length > IM_MESSAGE_LIMIT) {
-    const header = [
-      heading,
-      '',
-      '| 姓名 | 工号 | 使用次数 |',
-      '| --- | --- | ---: |',
-    ];
+    const header = [heading, '', overview, ...FEEDBACK_TABLE_HEADER];
     const footer = ['', '…（其余见详情页）', '', detailLink];
     const budget = IM_MESSAGE_LIMIT - footer.join('\n').length - 8;
     const kept: string[] = [...header];
     for (const row of ranks) {
-      const cell = `| ${escapeCell(row.name)} | ${escapeCell(row.work_code)} | ${row.count} |`;
+      const cell = feedbackRowCells(row);
       if (kept.join('\n').length + cell.length + 1 > budget) break;
       kept.push(cell);
     }

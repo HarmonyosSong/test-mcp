@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import type { ProductStore } from '../product/store.js';
+import type { ContactResolver } from '../channels/yach/contacts.js';
 import { aggregateUsageStats, aggregateUsageStatsForDay } from './aggregate.js';
 import { addCalendarDays, isValidDateYmd, todayYmd, yesterdayYmd } from './day.js';
 import { pushUsageDigest, type DigestPushDeps } from './digest-push.js';
+import { resolveOwnerNames } from './resolve-names.js';
 
 export type UsageRangePreset = 'today' | 'yesterday' | '3d' | '7d' | '30d';
 
@@ -11,6 +13,8 @@ export interface UsageRoutesDeps {
   timeZone: string;
   digest?: DigestPushDeps;
   runDigest?: (dateYmd: string) => Promise<unknown>;
+  /** 知音楼通讯录工号→姓名；缺省时无 display_name 的使用人显示工号。 */
+  contactResolver?: ContactResolver;
 }
 
 /** Resolve preset range keys used by the web page (timezone-aware). */
@@ -74,6 +78,7 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
 
     const conversations = await deps.store.listConversationRecords();
     const stats = aggregateUsageStats(conversations, fromYmd, toYmd, deps.timeZone);
+    if (deps.contactResolver) await resolveOwnerNames(stats, deps.contactResolver);
     return context.json({
       ...stats,
       range: rangeRaw && isUsageRangePreset(rangeRaw) ? rangeRaw : null,
@@ -95,6 +100,7 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
     }
     const conversations = await deps.store.listConversationRecords();
     const stats = aggregateUsageStatsForDay(conversations, dateYmd, deps.timeZone);
+    if (deps.contactResolver) await resolveOwnerNames(stats, deps.contactResolver);
     const pushed = await pushUsageDigest(stats, deps.digest);
     return context.json({ stats, push: pushed });
   });

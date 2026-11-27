@@ -64,8 +64,11 @@
 
 .usage-table-wrap {
   overflow: auto;
-  border-radius: 12px;
+  border-radius: 14px;
   border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  background: color-mix(in srgb, canvas 88%, transparent);
+  /* 表格与卡片边框之间留呼吸感，不顶边 */
+  padding: 0.4rem;
 }
 
 .usage-table {
@@ -77,24 +80,39 @@
 .usage-table th,
 .usage-table td {
   text-align: left;
-  padding: 0.55rem 0.7rem;
-  border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent);
-  vertical-align: top;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 7%, transparent);
+  vertical-align: middle;
+}
+
+/* 数字列右对齐 + 等宽数字，纵向好对比 */
+.usage-table th:not(:first-child),
+.usage-table td:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .usage-table th {
   font-weight: 600;
-  opacity: 0.75;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  opacity: 0.6;
   white-space: nowrap;
-  background: color-mix(in srgb, canvas 90%, transparent);
-  position: sticky;
-  top: 0;
 }
 
-.usage-table td.usage-q,
-.usage-table td.usage-c {
-  max-width: 18rem;
-  word-break: break-word;
+/* 末行收边，贴住卡片底部圆角 */
+.usage-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* 行悬浮反馈（合计行除外） */
+.usage-table tbody tr:not(.usage-table-total):hover {
+  background: color-mix(in srgb, currentColor 4%, transparent);
+}
+
+/* 正确率着色：>=80% 绿，<50% 红，中间黄 */
+.usage-table td.usage-accuracy {
+  font-weight: 650;
 }
 
 .usage-note {
@@ -109,4 +127,17 @@
 .usage-note-error {
   color: #b42318;
   opacity: 1;
+}
+
+.usage-section-title {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+  opacity: 0.85;
+}
+
+.usage-table-total td {
+  font-weight: 650;
+  border-top: 1.5px solid color-mix(in srgb, currentColor 16%, transparent);
+  background: color-mix(in srgb, currentColor 3%, transparent);
 }
