@@ -22,7 +22,7 @@ import { PixelOrb } from '../PixelOrb';
 import { ChatComposer } from './ChatComposer';
 import { MarkdownContent } from './MarkdownContent';
 import { ReportCard } from './ReportCard';
-import { ToolStepCard } from './ToolStepCard';
+import { ToolStepList } from './ToolStepList';
 
 interface ChatThreadProps {
   conversation: ChatConversation;
@@ -236,9 +236,7 @@ function AssistantMessage({
     <div className={`chat-message chat-message-assistant chat-message-${message.status}`}>
       {message.steps.length > 0 && (
         <div className="chat-steps" aria-label="工具调用步骤">
-          {message.steps.map((step) => (
-            <ToolStepCard key={step.id} step={step} />
-          ))}
+          <ToolStepList steps={message.steps} />
         </div>
       )}
       {message.content && (

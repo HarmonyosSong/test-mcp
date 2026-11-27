@@ -3,25 +3,17 @@ import {
   Activity,
   ChevronDown,
   ChevronRight,
-  Cloud,
-  Database,
   FileJson,
   FileText,
-  Hash,
-  List,
   Minus,
   Plus,
-  Puzzle,
   RefreshCw,
-  Search,
-  Send,
-  Wrench,
   X,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 
 import { api } from '../../api';
 import { formatDate, formatTokens } from '../../format';
+import { toolIcon } from './toolIcons';
 import type {
   AiTraceDetail,
   AiTraceOrEventDetail,
@@ -112,25 +104,6 @@ const EVENT_ICON = {
   request_end: 'M19 12H5M11 6l-6 6 6 6',
   final: 'M5 21V4m0 1h12l-2 4 2 4H5',
 } as const;
-
-/** 工具名 → 小图标：按语义前缀/关键词映射，未命中给扳手兜底。 */
-const TOOL_ICON_RULES: [RegExp, LucideIcon][] = [
-  [/^(submit|request)_/, Send],
-  [/^load_skill/, Puzzle],
-  [/^prepare_source/, Database],
-  [/cloud/, Cloud],
-  [/search|lookup|query|resolve|consult|topic/, Search],
-  [/^(read|get|load)_/, FileText],
-  [/^count_/, Hash],
-  [/^list_/, List],
-];
-
-function toolIcon(name: string): LucideIcon {
-  for (const [re, icon] of TOOL_ICON_RULES) {
-    if (re.test(name)) return icon;
-  }
-  return Wrench;
-}
 
 /* ---------- 统计 ---------- */
 

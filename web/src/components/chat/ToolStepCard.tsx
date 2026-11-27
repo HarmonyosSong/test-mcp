@@ -3,11 +3,11 @@ import {
   ChevronDown,
   ChevronRight,
   LoaderCircle,
-  Wrench,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
 import type { ChatStep } from '../../types';
+import { ToolIcon } from './toolIcons';
 
 function StepIcon({ status }: { status: string }) {
   if (status === 'running') return <LoaderCircle className="spin" size={13} />;
@@ -32,7 +32,7 @@ export function ToolStepCard({ step }: { step: ChatStep }) {
         <span className="tool-step-icon">
           <StepIcon status={step.status} />
         </span>
-        <Wrench size={13} aria-hidden="true" />
+        <ToolIcon tool={step.tool} />
         <strong>{step.tool}</strong>
         <span className="tool-step-summary">{step.summary}</span>
         {step.duration_ms != null && (
