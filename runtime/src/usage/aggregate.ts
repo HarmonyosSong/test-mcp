@@ -1,7 +1,7 @@
 import type { ConversationRecord } from '../domain/schemas.js';
 import { isFaultFinalAnswer } from '../channels/yach/archive.js';
 import { parseVerdictMarker } from '../diagnosis/final-answer-validator.js';
-import { isInstantInDay } from './day.js';
+import { isInstantInRange } from './day.js';
 import type { UsageFeedbackVerdict, UsageStatsItem, UsageStatsResult } from './types.js';
 
 const QUESTION_MAX = 200;
@@ -28,14 +28,17 @@ function extractVerdictLabel(content: string): string | null {
 }
 
 /**
- * Aggregate daily usage from product conversations (Web + 知音楼).
- * A conversation counts if it has ≥1 user message whose created_at falls on dateYmd in timezone.
+ * Aggregate usage for an inclusive calendar-day range (Web + 知音楼).
+ * A conversation counts if it has ≥1 user message in [fromYmd, toYmd].
  */
 export function aggregateUsageStats(
   conversations: ConversationRecord[],
-  dateYmd: string,
+  fromYmd: string,
+  toYmd: string,
   timeZone: string,
 ): UsageStatsResult {
+  const from = fromYmd <= toYmd ? fromYmd : toYmd;
+  const to = fromYmd <= toYmd ? toYmd : fromYmd;
   const users = new Set<string>();
   let userMessages = 0;
   let withVerdict = 0;
@@ -43,23 +46,23 @@ export function aggregateUsageStats(
   const items: UsageStatsItem[] = [];
 
   for (const conversation of conversations) {
-    const dayUserMessages = conversation.messages.filter(
-      (message) => message.role === 'user' && isInstantInDay(message.created_at, dateYmd, timeZone),
+    const rangeUserMessages = conversation.messages.filter(
+      (message) =>
+        message.role === 'user' && isInstantInRange(message.created_at, from, to, timeZone),
     );
-    if (dayUserMessages.length === 0) continue;
+    if (rangeUserMessages.length === 0) continue;
 
-    userMessages += dayUserMessages.length;
+    userMessages += rangeUserMessages.length;
     if (conversation.owner_subject) users.add(conversation.owner_subject);
 
-    const questionSource = dayUserMessages[0]!;
+    const questionSource = rangeUserMessages[0]!;
     const question = truncate(questionSource.content || conversation.title || '(无正文)', QUESTION_MAX);
 
-    // Prefer fault final answers with 判定；else any assistant with verdict marker (same day or later that day).
     let conclusionMsg = null as (typeof conversation.messages)[number] | null;
     for (let index = conversation.messages.length - 1; index >= 0; index -= 1) {
       const message = conversation.messages[index]!;
       if (message.role !== 'assistant' || message.status !== 'completed') continue;
-      if (!isInstantInDay(message.created_at, dateYmd, timeZone)) continue;
+      if (!isInstantInRange(message.created_at, from, to, timeZone)) continue;
       if (!parseVerdictMarker(message.content)) continue;
       if (isFaultFinalAnswer(message.content)) {
         conclusionMsg = message;
@@ -103,7 +106,10 @@ export function aggregateUsageStats(
   items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 
   return {
-    date: dateYmd,
+    from,
+    to,
+    date: from === to ? from : `${from}~${to}`,
+    range: null,
     timezone: timeZone,
     summary: {
       unique_users: users.size,
@@ -114,4 +120,13 @@ export function aggregateUsageStats(
     },
     items,
   };
+}
+
+/** Single calendar day (日报). */
+export function aggregateUsageStatsForDay(
+  conversations: ConversationRecord[],
+  dateYmd: string,
+  timeZone: string,
+): UsageStatsResult {
+  return aggregateUsageStats(conversations, dateYmd, dateYmd, timeZone);
 }

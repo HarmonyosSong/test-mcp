@@ -9,6 +9,7 @@ import {
   rankUsageByUser,
 } from '../src/usage/digest-push.js';
 import { calendarDateInTimeZone, isValidDateYmd, yesterdayYmd } from '../src/usage/day.js';
+import { resolveUsageRangePreset } from '../src/usage/routes.js';
 import { nextCronFire, parseDailyCron } from '../src/usage/scheduler.js';
 
 const TZ = 'Asia/Shanghai';
@@ -101,7 +102,9 @@ test('aggregateUsageStats counts users questions verdicts and feedback', () => {
     }),
   ];
 
-  const stats = aggregateUsageStats(conversations, day, TZ);
+  const stats = aggregateUsageStats(conversations, day, day, TZ);
+  assert.equal(stats.from, day);
+  assert.equal(stats.to, day);
   assert.equal(stats.summary.unique_users, 2);
   assert.equal(stats.summary.conversations, 2);
   assert.equal(stats.summary.with_verdict, 2);
@@ -141,7 +144,7 @@ test('digest markdown ranks by usage count; name falls back to work code', () =>
         { role: 'user', content: 'q3', created_at: '2026-11-26T04:00:00.000Z' },
       ],
     }),
-  ], '2026-11-26', TZ);
+  ], '2026-11-26', '2026-11-26', TZ);
 
   const ranks = rankUsageByUser(stats.items);
   assert.equal(ranks[0]?.work_code, '10001');
@@ -171,4 +174,24 @@ test('yesterdayYmd differs from today', () => {
   const y = yesterdayYmd(TZ);
   assert.notEqual(y, today);
   assert.ok(isValidDateYmd(y));
+});
+
+test('resolveUsageRangePreset shifts window by preset', () => {
+  const now = new Date('2026-11-27T04:00:00.000Z');
+  assert.deepEqual(resolveUsageRangePreset('today', TZ, now), {
+    from: '2026-11-27',
+    to: '2026-11-27',
+  });
+  assert.deepEqual(resolveUsageRangePreset('yesterday', TZ, now), {
+    from: '2026-11-26',
+    to: '2026-11-26',
+  });
+  assert.deepEqual(resolveUsageRangePreset('3d', TZ, now), {
+    from: '2026-11-25',
+    to: '2026-11-27',
+  });
+  assert.deepEqual(resolveUsageRangePreset('7d', TZ, now), {
+    from: '2026-11-21',
+    to: '2026-11-27',
+  });
 });

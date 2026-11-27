@@ -5,6 +5,11 @@ export {
   navigateToChat,
   navigateToUsage,
   usagePageHref,
-  readUsageDateParam,
+  readUsageRangeParam,
 } from './route';
-export type { UsageStatsResult, UsageStatsItem, UsageStatsSummary } from './types';
+export type {
+  UsageRangeKey,
+  UsageStatsResult,
+  UsageStatsItem,
+  UsageStatsSummary,
+} from './types';

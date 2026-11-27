@@ -16,12 +16,17 @@ export function isValidDateYmd(value: string): boolean {
 
 /** Format a Date as YYYY-MM-DD in the given IANA timezone. */
 export function calendarDateInTimeZone(date: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
+  // formatToParts avoids en-CA locale quirks (some runtimes emit YYYY/MM/DD).
+  const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(date);
+  }).formatToParts(date);
+  const map = Object.fromEntries(
+    parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]),
+  );
+  return `${map.year}-${map.month}-${map.day}`;
 }
 
 /** Yesterday's calendar date in timezone. */
@@ -90,4 +95,21 @@ export function isInstantInDay(iso: string, dateYmd: string, timeZone: string): 
   const created = new Date(iso);
   if (Number.isNaN(created.getTime())) return false;
   return calendarDateInTimeZone(created, timeZone) === dateYmd;
+}
+
+/** Inclusive calendar-day range check (YYYY-MM-DD string compare). */
+export function isInstantInRange(
+  iso: string,
+  fromYmd: string,
+  toYmd: string,
+  timeZone: string,
+): boolean {
+  const created = new Date(iso);
+  if (Number.isNaN(created.getTime())) return false;
+  const ymd = calendarDateInTimeZone(created, timeZone);
+  return ymd >= fromYmd && ymd <= toYmd;
+}
+
+export function todayYmd(timeZone: string, now = new Date()): string {
+  return calendarDateInTimeZone(now, timeZone);
 }

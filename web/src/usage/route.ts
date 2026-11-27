@@ -1,12 +1,15 @@
 import { APP_PREFIX } from '../auth/paths';
+import type { UsageRangeKey } from './types';
 
 /** Frontend page path relative to APP_PREFIX → /xesapp-agent/usage */
 export const USAGE_PAGE_PATH = '/usage';
 
-export function usagePageHref(date?: string): string {
+const RANGE_KEYS: UsageRangeKey[] = ['today', 'yesterday', '3d', '7d', '30d'];
+
+export function usagePageHref(range?: UsageRangeKey): string {
   const base = `${APP_PREFIX}${USAGE_PAGE_PATH}`;
-  if (!date) return base;
-  return `${base}?date=${encodeURIComponent(date)}`;
+  if (!range || range === 'yesterday') return base;
+  return `${base}?range=${encodeURIComponent(range)}`;
 }
 
 export function isUsageRoute(pathname: string = window.location.pathname): boolean {
@@ -15,8 +18,8 @@ export function isUsageRoute(pathname: string = window.location.pathname): boole
   return normalized === target;
 }
 
-export function navigateToUsage(date?: string): void {
-  const href = usagePageHref(date);
+export function navigateToUsage(range?: UsageRangeKey): void {
+  const href = usagePageHref(range);
   if (`${window.location.pathname}${window.location.search}` === href) return;
   window.history.pushState({}, '', href);
   window.dispatchEvent(new PopStateEvent('popstate'));
@@ -28,7 +31,8 @@ export function navigateToChat(): void {
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
-export function readUsageDateParam(search: string = window.location.search): string | null {
-  const value = new URLSearchParams(search).get('date');
-  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+export function readUsageRangeParam(search: string = window.location.search): UsageRangeKey {
+  const value = new URLSearchParams(search).get('range');
+  if (value && RANGE_KEYS.includes(value as UsageRangeKey)) return value as UsageRangeKey;
+  return 'yesterday';
 }

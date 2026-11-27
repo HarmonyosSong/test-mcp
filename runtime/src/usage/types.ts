@@ -29,7 +29,16 @@ export interface UsageStatsItem {
 }
 
 export interface UsageStatsResult {
+  /** Inclusive range start (YYYY-MM-DD). */
+  from: string;
+  /** Inclusive range end (YYYY-MM-DD). */
+  to: string;
+  /**
+   * Single-day alias when from === to (日报用)；多日时为 `from~to`。
+   */
   date: string;
+  /** Echo of request preset when provided (today|yesterday|3d|7d|30d). */
+  range: string | null;
   timezone: string;
   summary: UsageStatsSummary;
   items: UsageStatsItem[];

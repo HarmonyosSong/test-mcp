@@ -31,20 +31,8 @@
   width: 100%;
 }
 
-.usage-date-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-left: auto;
-}
-
-.usage-date-row input[type='date'] {
-  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
-  background: color-mix(in srgb, canvas 88%, transparent);
-  color: inherit;
-  border-radius: 8px;
-  padding: 0.35rem 0.55rem;
-  font: inherit;
+.usage-page .feedback-stats-range {
+  margin: 0;
 }
 
 .usage-cards {
@@ -72,18 +60,6 @@
 .usage-card-label {
   font-size: 0.75rem;
   opacity: 0.7;
-}
-
-.usage-card-ok {
-  color: #1a7f4b;
-}
-
-.usage-card-vague {
-  color: #b07a00;
-}
-
-.usage-card-bad {
-  color: #b42318;
 }
 
 .usage-table-wrap {
@@ -133,10 +109,4 @@
 .usage-note-error {
   color: #b42318;
   opacity: 1;
-}
-
-.usage-channel {
-  white-space: nowrap;
-  font-size: 0.75rem;
-  opacity: 0.8;
 }

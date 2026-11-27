@@ -1,5 +1,7 @@
 export type UsageFeedbackVerdict = 'correct' | 'vague' | 'failed' | 'none';
 
+export type UsageRangeKey = 'today' | 'yesterday' | '3d' | '7d' | '30d';
+
 export interface UsageStatsSummary {
   unique_users: number;
   conversations: number;
@@ -27,7 +29,10 @@ export interface UsageStatsItem {
 }
 
 export interface UsageStatsResult {
+  from: string;
+  to: string;
   date: string;
+  range: string | null;
   timezone: string;
   summary: UsageStatsSummary;
   items: UsageStatsItem[];

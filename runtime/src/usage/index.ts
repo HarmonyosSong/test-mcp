@@ -1,14 +1,14 @@
 import type { RuntimeConfig } from '../config.js';
 import type { ProductStore } from '../product/store.js';
 import { integrationInfo, integrationWarn } from '../observability/integration-log.js';
-import { aggregateUsageStats } from './aggregate.js';
+import { aggregateUsageStatsForDay } from './aggregate.js';
 import { USAGE_API_MOUNT, USAGE_PAGE_PATH } from './constants.js';
 import { pushUsageDigest } from './digest-push.js';
 import { createUsageRoutes } from './routes.js';
 import { parseDailyCron, startDigestScheduler, type DigestSchedulerHandle } from './scheduler.js';
 
 export { USAGE_API_MOUNT, USAGE_PAGE_PATH };
-export { aggregateUsageStats } from './aggregate.js';
+export { aggregateUsageStats, aggregateUsageStatsForDay } from './aggregate.js';
 export type { UsageStatsResult, UsageStatsItem, UsageStatsSummary } from './types.js';
 
 export type UsageModule = {
@@ -37,7 +37,7 @@ export function createUsageModule(options: {
 
   const runDigest = async (dateYmd: string) => {
     const conversations = await store.listConversationRecords();
-    const stats = aggregateUsageStats(conversations, dateYmd, timeZone);
+    const stats = aggregateUsageStatsForDay(conversations, dateYmd, timeZone);
     const push = await pushUsageDigest(stats, digestDeps);
     return { stats, push };
   };
