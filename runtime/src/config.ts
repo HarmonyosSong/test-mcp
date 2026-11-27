@@ -145,7 +145,7 @@ export const runtimeConfigSchema = z.object({
   cosSignedUrlTtlSeconds: z.coerce.number().int().min(60).max(3_600).default(900),
   /** 使用统计日报目标群；空则不推送。 */
   usageDigestGroupId: z.string().default(''),
-  usageDigestCron: z.string().default('40 9 * * *'),
+  usageDigestCron: z.string().default('0 10 * * *'),
   usageDigestTz: z.string().default('Asia/Shanghai'),
   usageDigestLinkPic: z.string().default(''),
 });
@@ -366,7 +366,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     cosBucket: config.cosBucket.trim(),
     cosPrefix,
     usageDigestGroupId: config.usageDigestGroupId.trim(),
-    usageDigestCron: config.usageDigestCron.trim() || '40 9 * * *',
+    usageDigestCron: config.usageDigestCron.trim() || '0 10 * * *',
     usageDigestTz: config.usageDigestTz.trim() || 'Asia/Shanghai',
     usageDigestLinkPic: config.usageDigestLinkPic.trim(),
   };
