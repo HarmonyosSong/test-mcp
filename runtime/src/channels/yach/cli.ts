@@ -223,11 +223,12 @@ export class YachCli {
     });
   }
 
-  async groupHistory(groupId: string, windowMinutes = 30): Promise<unknown[]> {
+  async groupHistory(groupId: string, windowMinutes = 30, floorSec?: number): Promise<unknown[]> {
     await this.ensureConfigured();
     const end = Math.floor(Date.now() / 1000);
     // 只取近 30 分钟：群聊多话题混杂，过早的历史是噪音而非上下文。
-    const start = end - windowMinutes * 60;
+    // floorSec（/new 会话边界）更高时以它为准：用户开新会话即声明旧消息不再相关。
+    const start = Math.max(end - windowMinutes * 60, floorSec ?? 0);
     const result = await this.runCommand([
       'im',
       'history',
