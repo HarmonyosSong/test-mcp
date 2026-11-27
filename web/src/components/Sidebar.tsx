@@ -12,24 +12,30 @@ import type { ConnectionState } from '../types';
 import { ThemeToggle } from './ThemeToggle';
 import { Typewriter } from './Typewriter';
 
-export type SidebarNav = 'chat';
+export type SidebarNav = 'chat' | 'usage';
 
 interface SidebarProps {
   connection: ConnectionState;
   refreshing: boolean;
   identityLabel?: string;
+  activeNav?: SidebarNav;
+  onNavigateChat?: () => void;
+  onNavigateUsage?: () => void;
   onRefresh: () => void;
   onModelSettings: () => void;
   /** 打开问题归档统计（知音楼评测集）。 */
   onFeedbackStats: () => void;
   onLogout?: () => void;
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 export function Sidebar({
   connection,
   refreshing,
   identityLabel,
+  activeNav = 'chat',
+  onNavigateChat,
+  onNavigateUsage,
   onRefresh,
   onModelSettings,
   onFeedbackStats,
@@ -55,13 +61,27 @@ export function Sidebar({
       </div>
 
       <nav className="sidebar-nav" aria-label="主导航">
-        <button type="button" className="selected" aria-current="page">
+        <button
+          type="button"
+          className={activeNav === 'chat' ? 'selected' : ''}
+          aria-current={activeNav === 'chat' ? 'page' : undefined}
+          onClick={onNavigateChat}
+        >
           <MessageSquare size={16} />
           <span>聊天</span>
         </button>
+        <button
+          type="button"
+          className={activeNav === 'usage' ? 'selected' : ''}
+          aria-current={activeNav === 'usage' ? 'page' : undefined}
+          onClick={onNavigateUsage}
+        >
+          <BarChart3 size={16} />
+          <span>使用统计</span>
+        </button>
       </nav>
 
-      <div className="sidebar-content">{children}</div>
+      {activeNav === 'chat' ? <div className="sidebar-content">{children}</div> : <div className="sidebar-content" />}
 
       <div className="sidebar-footer">
         <span

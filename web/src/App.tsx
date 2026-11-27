@@ -12,6 +12,12 @@ import { Sidebar } from './components/Sidebar';
 import { SunSky } from './components/SunSky';
 import { Typewriter } from './components/Typewriter';
 import { useChatSessions } from './hooks/useChatSessions';
+import {
+  UsageStatsPage,
+  isUsageRoute,
+  navigateToChat,
+  navigateToUsage,
+} from './usage';
 import type {
   ConnectionState,
   MetaResponse,
@@ -52,12 +58,19 @@ function App() {
   const [modelStatus, setModelStatus] = useState<ModelStatus>(OFFLINE_MODEL_STATUS);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [onUsagePage, setOnUsagePage] = useState(() => isUsageRoute());
   const initialized = useRef(false);
 
   const chat = useChatSessions({
     connection,
     onNotice: setNotice,
   });
+
+  useEffect(() => {
+    const syncRoute = () => setOnUsagePage(isUsageRoute());
+    window.addEventListener('popstate', syncRoute);
+    return () => window.removeEventListener('popstate', syncRoute);
+  }, []);
 
   const loadWorkspace = useCallback(async (manual = false, manageRefreshing = true): Promise<boolean> => {
     if (manageRefreshing) setRefreshing(true);
@@ -150,6 +163,15 @@ function App() {
           connection={connection}
           refreshing={refreshing}
           identityLabel={session?.identity.displayName || session?.identity.subject}
+          activeNav={onUsagePage ? 'usage' : 'chat'}
+          onNavigateChat={() => {
+            navigateToChat();
+            setOnUsagePage(false);
+          }}
+          onNavigateUsage={() => {
+            navigateToUsage();
+            setOnUsagePage(true);
+          }}
           onRefresh={() => void refreshWorkspace()}
           onModelSettings={openModelSettings}
           onFeedbackStats={() => setShowFeedbackStats(true)}
@@ -166,76 +188,98 @@ function App() {
 
         <main className="main-area">
           <SunSky />
-          {connection === 'demo' && (
-            <div className="demo-banner" role="status">
-              <AlertTriangle size={15} />
-              <span>
-                <strong>API 未连接</strong> · 聊天诊断不可用，请启动后端服务后重新连接。
-              </span>
-            </div>
-          )}
-
-          {connection !== 'connected' ? (
-            <div className="chat-guide" role="status">
-              <span className="chat-guide-icon" aria-hidden="true">
-                <MessageSquare size={30} strokeWidth={1.6} />
-              </span>
-              <h2>
-                <Typewriter text="聊天需要连接诊断服务" />
-              </h2>
-              <p>连接服务并配置模型后，即可通过多轮对话排查 Android、iOS 和 HarmonyOS 问题。</p>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => void loadWorkspace(true)}
-              >
-                重新连接
-              </button>
-            </div>
-          ) : !modelStatus.configured ? (
-            <div className="chat-guide" role="status">
-              <span className="chat-guide-icon" aria-hidden="true">
-                <MessageSquare size={30} strokeWidth={1.6} />
-              </span>
-              <h2>
-                <Typewriter text="聊天需要先配置模型" />
-              </h2>
-              <p>对话能力由模型驱动，配置模型后即可开始提问。</p>
-              <button type="button" className="primary-button" onClick={openModelSettings}>
-                打开模型设置
-              </button>
-            </div>
-          ) : chat.active ? (
-            <ChatThread
-              conversation={chat.active}
-              sending={chat.sending}
-              composerDisabled={false}
-              modelStatus={modelStatus}
-              contextWindows={meta.context_windows || {}}
-              modelPrices={meta.model_prices || {}}
-              onSend={(content) => void chat.send(content)}
-              onStop={chat.stop}
-              onModelChange={(spec) => void chat.setModelOverride(spec)}
-              progress={chat.progress}
-              followupPending={chat.followupPending}
-            />
+          {onUsagePage ? (
+            connection !== 'connected' ? (
+              <div className="chat-guide" role="status">
+                <h2>
+                  <Typewriter text="使用统计需要连接诊断服务" />
+                </h2>
+                <p>连接服务后即可查看每日使用人数、问题、结论与反馈。</p>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void loadWorkspace(true)}
+                >
+                  重新连接
+                </button>
+              </div>
+            ) : (
+              <UsageStatsPage />
+            )
           ) : (
-            <div className="chat-guide" role="status">
-              <span className="chat-guide-icon" aria-hidden="true">
-                <MessageSquare size={30} strokeWidth={1.6} />
-              </span>
-              <h2>
-                <Typewriter text="开始一个新的会话" />
-              </h2>
-              <p>每个会话独立保存消息历史、工具调用记录与诊断报告。</p>
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => void chat.createNew()}
-              >
-                新建会话
-              </button>
-            </div>
+            <>
+              {connection === 'demo' && (
+                <div className="demo-banner" role="status">
+                  <AlertTriangle size={15} />
+                  <span>
+                    <strong>API 未连接</strong> · 聊天诊断不可用，请启动后端服务后重新连接。
+                  </span>
+                </div>
+              )}
+
+              {connection !== 'connected' ? (
+                <div className="chat-guide" role="status">
+                  <span className="chat-guide-icon" aria-hidden="true">
+                    <MessageSquare size={30} strokeWidth={1.6} />
+                  </span>
+                  <h2>
+                    <Typewriter text="聊天需要连接诊断服务" />
+                  </h2>
+                  <p>连接服务并配置模型后，即可通过多轮对话排查 Android、iOS 和 HarmonyOS 问题。</p>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void loadWorkspace(true)}
+                  >
+                    重新连接
+                  </button>
+                </div>
+              ) : !modelStatus.configured ? (
+                <div className="chat-guide" role="status">
+                  <span className="chat-guide-icon" aria-hidden="true">
+                    <MessageSquare size={30} strokeWidth={1.6} />
+                  </span>
+                  <h2>
+                    <Typewriter text="聊天需要先配置模型" />
+                  </h2>
+                  <p>对话能力由模型驱动，配置模型后即可开始提问。</p>
+                  <button type="button" className="primary-button" onClick={openModelSettings}>
+                    打开模型设置
+                  </button>
+                </div>
+              ) : chat.active ? (
+                <ChatThread
+                  conversation={chat.active}
+                  sending={chat.sending}
+                  composerDisabled={false}
+                  modelStatus={modelStatus}
+                  contextWindows={meta.context_windows || {}}
+                  modelPrices={meta.model_prices || {}}
+                  onSend={(content) => void chat.send(content)}
+                  onStop={chat.stop}
+                  onModelChange={(spec) => void chat.setModelOverride(spec)}
+                  progress={chat.progress}
+                  followupPending={chat.followupPending}
+                />
+              ) : (
+                <div className="chat-guide" role="status">
+                  <span className="chat-guide-icon" aria-hidden="true">
+                    <MessageSquare size={30} strokeWidth={1.6} />
+                  </span>
+                  <h2>
+                    <Typewriter text="开始一个新的会话" />
+                  </h2>
+                  <p>每个会话独立保存消息历史、工具调用记录与诊断报告。</p>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => void chat.createNew()}
+                  >
+                    新建会话
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </main>
       </div>

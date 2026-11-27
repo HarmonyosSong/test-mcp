@@ -315,6 +315,7 @@ export class YachChannel {
       title,
       channel: 'yach_im',
       owner_subject: event.workCode,
+      owner_display_name: event.displayName?.trim() || null,
     });
     session.conversationId = created.id;
     this.mapping.set(key, created.id);

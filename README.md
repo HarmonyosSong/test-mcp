@@ -24,6 +24,7 @@ React/Vite 网页 -> Mastra + Hono runtime -> 只读 MCP 能力 -> 模型供应�
 - 统一外部全栈 Agent（覆盖本项目前端、H5 和服务端）通过 Compass A2A Agent Slot 接入；诊断链路为单 loop：模型自主决定排查路径，`consult_compass` 是模型可见工具（预算 4 次/轮），完成态协查结论登记为 `kind=external` 正式观测，与本地观测同级引用。接入契约见 [`spec/compass-a2a-integration.md`](spec/compass-a2a-integration.md)，历史编排设计见带 superseded 说明的 [`docs/orchestration-layer-design.md`](docs/orchestration-layer-design.md)。
 - 客户端只有一个统一的 `DiagnosisAgent`，HarmonyOS、iOS 和 Android 通过会话端上下文、Skill、知识排序和版本快照适配处理差异；服务端或专项 Agent 通过 A2A Agent Slot 接入，Compass 是首个具体实例。
 - 当前架构图见 [`docs/diagrams/`](docs/diagrams/)（01 诊断主流程、02 知识与证据架构）。
+- 使用统计（独立模块）：页面 `/xesapp-agent/usage`，API `/xesapp-agent/api/usage/stats`。配置 `HARMONY_AGENT_USAGE_DIGEST_GROUP_ID` 后，每天 9:40（可改）向指定群推送昨日 markdown 日报：标题「问题排查助手每日使用统计(YYYY-MM-DD)」，正文为姓名 / 工号 / 使用次数表格（按次数降序；无姓名则姓名列用工号）。
 
 ## 技术栈
 
@@ -170,6 +171,10 @@ HARMONY_MASTRA_SERVE_WEB=true npm --prefix runtime start
 | `HARMONY_AGENT_MASTRA_OBSERVABILITY_PREVIEW_CHARS` | `0` | 观测正文最大字符数；`0` 表示尽量全文（硬顶约 2MB/字段）；需要截断时再设正整数 |
 | `HARMONY_AGENT_UCENTER_BASE_URL` | `https://ucenter-one-inner.speiyou.cn` | 学员档案查询（lookup_learner）内网服务 |
 | `HARMONY_AGENT_UCENTER_TIMEOUT_MS` | `10000` | 学员档案查询超时 |
+| `HARMONY_AGENT_USAGE_DIGEST_GROUP_ID` | 空 | 使用统计日报目标群；**空则不推送**。页面 `/xesapp-agent/usage`，API `/xesapp-agent/api/usage/stats` |
+| `HARMONY_AGENT_USAGE_DIGEST_CRON` | `40 9 * * *` | 日报定时（仅支持 `分 时 * * *`） |
+| `HARMONY_AGENT_USAGE_DIGEST_TZ` | `Asia/Shanghai` | 日报时区（推昨日） |
+| `HARMONY_AGENT_USAGE_DIGEST_LINK_PIC` | 空 | 知音楼 link 封面图；空则用内置占位图 |
 | `LOG_MCP_*` | 见 `.env.example` | 独立日志查询 MCP（`log-mcp/`，默认 `:8766`）；与 Agent Node 互不影响。配置只认根目录 `.env`，调用日志按轮次写入 `<data>/log-mcp/logs/log-mcp-round-YYYY-MM-DD_HH-MM-SS.log`（一轮问答一个文件，秒级粒度）。说明见 [`log-mcp/README.md`](log-mcp/README.md) |
 
 网页设置写入 `<data-root>/model-config.json`（默认 `.data/model-config.json`），文件权限为 `0600`。容器部署见 [`spec/data-root-persistence.md`](spec/data-root-persistence.md)：只设 `HARMONY_AGENT_DATA_ROOT=/data/troubleshoot-odyssey`，由平台挂卷，勿再写相对 `.data/...` 单项。runtime 会在应用管理的会话、报告、工具摘要、SSE 和评测产物边界脱敏已配置的 API Key。默认开启官方 Mastra Observability（`Observability` + `SensitiveDataFilter`），并由按会话落盘的 exporter 写入可读 JSON：`.data/mastra/observability/conversations/<年月日>_<时分秒>_<会话ID>/traces/*.json`（另有 `manifest.jsonl` 索引；目录名里的时刻是**会话创建时刻**，同一会话多轮 trace 落同一目录，字典序即会话先后顺序；启动时会把历史的 `<日期>_<会话ID>` 旧目录自动升级成新命名）。文件按「用户输入 → steps[]（每轮模型话术 + 工具入出参）→ 最终回答」组织；`processor_run` / `mapping` / `model_chunk` 视为噪音丢弃。终端默认安静（`logger: false`）。不改 knowledge JSONL/cases。需要关闭时设 `HARMONY_AGENT_MASTRA_OBSERVABILITY_CONSOLE=false`。应用异常和 CLI 错误会经过脱敏。第三方 provider 库及部署采集日志仍需在目标环境验证。环境变量配置优先于本地文件配置。模型设置中禁用模型后，聊天恢复为未配置状态。

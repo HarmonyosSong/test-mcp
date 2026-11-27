@@ -284,9 +284,11 @@ export function createConversationRoutes(
     const parsed = CreateConversationRequestSchema.safeParse(input);
     if (!parsed.success) return requestValidationError(parsed.error.issues);
     try {
+      const identity = context.get('identity');
       const conversation = await store.createConversation({
         title: parsed.data.title ?? '新会话',
-        owner_subject: context.get('identity')?.subject ?? null,
+        owner_subject: identity?.subject ?? null,
+        owner_display_name: identity?.displayName?.trim() || null,
       });
       return context.json(publicView(redactRecord(conversation, redact)), 201);
     } catch (error) {

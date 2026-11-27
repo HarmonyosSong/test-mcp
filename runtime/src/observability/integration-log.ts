@@ -1,6 +1,6 @@
 /** Lightweight integration diagnostics for packaged/production deploys. Never log secrets. */
 
-export type IntegrationChannel = 'sso' | 'ucenter' | 'a2a' | 'auth' | 'yach' | 'log-mcp' | 'api-mcp';
+export type IntegrationChannel = 'sso' | 'ucenter' | 'a2a' | 'auth' | 'yach' | 'log-mcp' | 'api-mcp' | 'usage';
 
 function stamp(channel: IntegrationChannel): string {
   return `[integration:${channel}]`;

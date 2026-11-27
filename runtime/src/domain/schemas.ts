@@ -325,6 +325,8 @@ export const ConversationRecordSchema = z.object({
   title: z.string().default('新会话'),
   channel: z.enum(['web', 'yach_im']).optional().default('web'),
   owner_subject: nullableText.optional().default(null),
+  /** SSO / 知音楼展示名；旧会话缺省 null，统计展示回退工号。 */
+  owner_display_name: nullableText.optional().default(null),
   workspace_path: nullableText.optional().default(null),
   repository_id: nullableText.optional().default(null),
   repository_name: nullableText.optional().default(null),

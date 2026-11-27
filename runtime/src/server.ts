@@ -6,7 +6,7 @@ import { integrationInfo } from './observability/integration-log.js';
 import { drainHttpServer } from './shutdown.js';
 
 const config = loadRuntimeConfig();
-const { app, mastra, store, capabilities, yachChannel } = await createRuntimeApp(config);
+const { app, mastra, store, capabilities, yachChannel, usageModule } = await createRuntimeApp(config);
 
 integrationInfo('auth', 'startup auth mode', {
   runMode: config.runMode,
@@ -28,12 +28,14 @@ const server = serve({ fetch: app.fetch, hostname: config.host, port: config.por
     yachChannel.start();
     console.log('Yach digital-partner IM channel started');
   }
+  usageModule.start();
 });
 
 let shutdownPromise: Promise<void> | undefined;
 const shutdown = () => {
   shutdownPromise ??= drainHttpServer(server, async () => {
     const results = await Promise.allSettled([
+      Promise.resolve().then(() => usageModule.close()),
       Promise.resolve().then(() => yachChannel?.close()),
       Promise.resolve().then(() => store.close()),
       Promise.resolve().then(() => capabilities.close()),

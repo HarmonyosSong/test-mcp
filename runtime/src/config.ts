@@ -141,6 +141,11 @@ export const runtimeConfigSchema = z.object({
   cosBucket: z.string().default(''),
   cosPrefix: z.string().default('troubleshoot-odyssey/test'),
   cosSignedUrlTtlSeconds: z.coerce.number().int().min(60).max(3_600).default(900),
+  /** 使用统计日报目标群；空则不推送。 */
+  usageDigestGroupId: z.string().default(''),
+  usageDigestCron: z.string().default('40 9 * * *'),
+  usageDigestTz: z.string().default('Asia/Shanghai'),
+  usageDigestLinkPic: z.string().default(''),
 });
 
 export type RuntimeConfig = Omit<
@@ -249,6 +254,10 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     cosBucket: env.COS_BUCKET,
     cosPrefix: env.COS_PREFIX,
     cosSignedUrlTtlSeconds: env.COS_SIGNED_URL_TTL_SECONDS,
+    usageDigestGroupId: env.HARMONY_AGENT_USAGE_DIGEST_GROUP_ID,
+    usageDigestCron: env.HARMONY_AGENT_USAGE_DIGEST_CRON,
+    usageDigestTz: env.HARMONY_AGENT_USAGE_DIGEST_TZ,
+    usageDigestLinkPic: env.HARMONY_AGENT_USAGE_DIGEST_LINK_PIC,
   });
   const projectRoot = resolve(repositoryRoot, config.projectRoot);
   const fromRoot = (path: string) => resolve(projectRoot, path);
@@ -353,6 +362,10 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     cosRegion: config.cosRegion.trim(),
     cosBucket: config.cosBucket.trim(),
     cosPrefix,
+    usageDigestGroupId: config.usageDigestGroupId.trim(),
+    usageDigestCron: config.usageDigestCron.trim() || '40 9 * * *',
+    usageDigestTz: config.usageDigestTz.trim() || 'Asia/Shanghai',
+    usageDigestLinkPic: config.usageDigestLinkPic.trim(),
   };
 }
 
