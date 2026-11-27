@@ -185,6 +185,24 @@ export function transformRelaxedRequestBody(body: Record<string, unknown>): Reco
   return transformed;
 }
 
+/** Compose request-body transforms; later steps see earlier output. */
+export function composeRequestBodyTransforms(
+  ...transforms: Array<((body: Record<string, unknown>) => Record<string, unknown>) | undefined>
+): ((body: Record<string, unknown>) => Record<string, unknown>) | undefined {
+  const active = transforms.filter((transform): transform is (body: Record<string, unknown>) => Record<string, unknown> => Boolean(transform));
+  if (active.length === 0) return undefined;
+  if (active.length === 1) return active[0];
+  return (body) => active.reduce((current, transform) => transform(current), body);
+}
+
+export function reasoningEffortTransform(
+  effort: string | undefined | null,
+): ((body: Record<string, unknown>) => Record<string, unknown>) | undefined {
+  const value = effort?.trim();
+  if (!value) return undefined;
+  return (body) => ({ ...body, reasoning_effort: value });
+}
+
 export function redactSecret(message: string, secret: string | null | undefined): string {
   return secret ? message.split(secret).join('***') : message;
 }
@@ -326,13 +344,17 @@ export class ModelConfiguration {
 
   async languageModel(spec?: string | null) {
     const resolved = await this.agentModel(spec);
+    const transformRequestBody = composeRequestBodyTransforms(
+      resolved.compatibility_mode === 'relaxed' ? transformRelaxedRequestBody : undefined,
+      reasoningEffortTransform(this.env.HARMONY_AGENT_REASONING_EFFORT),
+    );
     const provider = createOpenAICompatible({
       name: resolved.provider,
       baseURL: resolved.base_url,
       apiKey: resolved.api_key ?? '',
       supportsStructuredOutputs: resolved.compatibility_mode === 'standard',
       ...(this.fetch ? { fetch: this.fetch } : {}),
-      ...(resolved.compatibility_mode === 'relaxed' ? { transformRequestBody: transformRelaxedRequestBody } : {}),
+      ...(transformRequestBody ? { transformRequestBody } : {}),
     });
     return provider.chatModel(resolved.model_id);
   }

@@ -305,6 +305,31 @@ test('relaxed mode creates a Mastra-compatible model with structured output disa
   });
 });
 
+test('HARMONY_AGENT_REASONING_EFFORT is injected into chat completion request bodies', async () => {
+  let requestBody: Record<string, unknown> | undefined;
+  const fetchImpl: typeof fetch = async (_input, init = {}) => {
+    requestBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify({
+      id: 'chatcmpl-reasoning',
+      choices: [{ index: 0, message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  await withConfig(async (configuration) => {
+    await configuration.configure({
+      provider: 'custom',
+      model_name: 'deepseek-v4.1-flash',
+      base_url: 'http://127.0.0.1:9/v1',
+      no_api_key: true,
+    });
+    const model = await configuration.languageModel();
+    await model.doGenerate({
+      prompt: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+    });
+    assert.equal(requestBody?.reasoning_effort, 'none');
+  }, { HARMONY_AGENT_REASONING_EFFORT: 'none' }, fetchImpl);
+});
+
 test('configure uses request key, then matching active key, then provider environment key', async () => {
   await withConfig(async (configuration, filePath) => {
     const envKey = 'environment-qwen-secret';
