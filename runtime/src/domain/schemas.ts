@@ -377,6 +377,10 @@ export const UpdateConversationRequestSchema = z.object({
   title: z.string().trim().min(1).max(120).nullable().optional(),
   model_override: z.string().trim().max(250).nullable().optional(),
 });
+/** 归档评价提交（web 端）：对故障终稿回写 正确/模糊/失败，与知音楼归档同口径。 */
+export const SubmitMessageFeedbackSchema = z.strictObject({
+  verdict: z.enum(['correct', 'vague', 'failed']),
+});
 
 const credentialFreeHttpUrl = (value: string) => {
   let parsed: URL;

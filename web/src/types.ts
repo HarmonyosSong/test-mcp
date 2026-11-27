@@ -98,29 +98,6 @@ export interface ChatMessage {
   created_at: string;
 }
 
-/** 问题归档统计（GET /api/yach-feedback/stats 响应）。 */
-export interface YachFeedbackStats {
-  range: { from: string | null; to: string | null };
-  totals: {
-    final_answers: number;
-    archived: number;
-    correct: number;
-    vague: number;
-    failed: number;
-    unarchived: number;
-    /** 归档正确率 = correct / archived（模糊计为未达标）。 */
-    accuracy: number | null;
-  };
-  by_user: Array<{
-    work_code: string | null;
-    name: string | null;
-    correct: number;
-    vague: number;
-    failed: number;
-    total: number;
-  }>;
-}
-
 // waiting_confirmation 随人工审批流退役；历史数据由服务端启动修复为 failed。
 export type RunState =
   | 'idle'

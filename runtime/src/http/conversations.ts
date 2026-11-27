@@ -8,6 +8,7 @@ import {
   ConversationRecordSchema,
   UpdateConversationRequestSchema,
   SendMessageRequestSchema,
+  SubmitMessageFeedbackSchema,
   type ConversationRecord,
 } from '../domain/schemas.js';
 import { ProductNotFoundError, ProductStore } from '../product/store.js';
@@ -21,6 +22,7 @@ import {
 import { CapabilityMcp } from '../capabilities/mcp.js';
 import type { ModelConfiguration } from '../model/configuration.js';
 import { RepositoryGitError } from '../capabilities/repository.js';
+import { isFaultFinalAnswer } from '../channels/yach/archive.js';
 import { invalidJsonError, requestValidationError } from './errors.js';
 import { redactRecord, redactRecordInPlace, redactSensitiveText } from '../security/redaction.js';
 import type { AuthVariables } from '../auth/index.js';
@@ -458,6 +460,39 @@ export function createConversationRoutes(
       const conversation = await store.getConversation(context.req.param('id'));
       await store.deleteConversation(context.req.param('id'));
       return context.body(null, 204);
+    } catch (error) {
+      if (error instanceof ProductNotFoundError) return jsonError('conversation not found', 404);
+      throw error;
+    }
+  });
+
+  // 归档评价（web 端）：对指定故障终稿回写 正确/模糊/失败；重复提交以最新覆盖，与知音楼归档同口径。
+  routes.post('/conversations/:id/messages/:messageId/feedback', async (context) => {
+    let input: unknown;
+    try {
+      input = await context.req.json();
+    } catch {
+      return invalidJsonError();
+    }
+    const parsed = SubmitMessageFeedbackSchema.safeParse(input);
+    if (!parsed.success) return requestValidationError(parsed.error.issues);
+    try {
+      const conversation = await store.getConversation(context.req.param('id'));
+      const message = conversation.messages.find((item) => item.id === context.req.param('messageId'));
+      if (!message) return jsonError('message not found', 404);
+      if (message.role !== 'assistant' || !isFaultFinalAnswer(message.content)) {
+        return jsonError('仅故障终稿可归档评价', 422);
+      }
+      const identity = context.get('identity');
+      message.analysis_feedback = {
+        verdict: parsed.data.verdict,
+        by_work_code: identity?.subject ?? null,
+        by_name: identity?.displayName?.trim() || null,
+        at: new Date().toISOString(),
+      };
+      conversation.updated_at = new Date().toISOString();
+      await saveConversation(conversation);
+      return context.json({ ok: true, feedback: message.analysis_feedback });
     } catch (error) {
       if (error instanceof ProductNotFoundError) return jsonError('conversation not found', 404);
       throw error;

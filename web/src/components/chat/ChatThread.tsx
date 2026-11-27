@@ -129,16 +129,107 @@ function ConversationIdChip({ id }: { id: string }) {
   );
 }
 
+/** 与 runtime isFaultFinalAnswer 同口径：首行「判定：已定位|可能定位|证据不足|工具异常」且非（初步）。 */
+const FINAL_VERDICT_PATTERN = /^判定：(已定位|可能定位|证据不足|工具异常)(?!\s*[（(]\s*初步)/m;
+
+function isArchivableMessage(message: ChatMessage): boolean {
+  return (
+    message.role === 'assistant' &&
+    message.status === 'completed' &&
+    FINAL_VERDICT_PATTERN.test(message.content.trimStart())
+  );
+}
+
+type FeedbackVerdict = 'correct' | 'vague' | 'failed';
+
+const VERDICT_OPTIONS: Array<{ verdict: FeedbackVerdict; label: string }> = [
+  { verdict: 'correct', label: '分析正确' },
+  { verdict: 'vague', label: '分析模糊' },
+  { verdict: 'failed', label: '分析失败' },
+];
+
+function verdictLabel(verdict: FeedbackVerdict): string {
+  return VERDICT_OPTIONS.find((option) => option.verdict === verdict)?.label ?? verdict;
+}
+
+/** 归档评价条：对故障终稿提交/改评 正确/模糊/失败；重复评价以最新覆盖。 */
+function ArchiveFeedbackBar({
+  conversationId,
+  message,
+}: {
+  conversationId: string;
+  message: ChatMessage;
+}) {
+  const [feedback, setFeedback] = useState(message.analysis_feedback ?? null);
+  const [pending, setPending] = useState<FeedbackVerdict | null>(null);
+  const [failedSubmit, setFailedSubmit] = useState(false);
+
+  // 服务端刷新（如知音楼侧评价）后同步最新归档状态。
+  useEffect(() => {
+    setFeedback(message.analysis_feedback ?? null);
+  }, [message.analysis_feedback]);
+
+  const submit = async (verdict: FeedbackVerdict) => {
+    if (pending) return;
+    setPending(verdict);
+    setFailedSubmit(false);
+    try {
+      const result = await api.submitMessageFeedback(conversationId, message.id, verdict);
+      setFeedback(
+        result.feedback ?? { verdict, by_work_code: null, by_name: null, at: new Date().toISOString() },
+      );
+    } catch {
+      setFailedSubmit(true);
+    } finally {
+      setPending(null);
+    }
+  };
+
+  return (
+    <div className="archive-feedback" aria-label="问题归档评价">
+      <span className="archive-feedback-label">问题归档</span>
+      {VERDICT_OPTIONS.map((option) => (
+        <button
+          key={option.verdict}
+          type="button"
+          className={`archive-feedback-button archive-feedback-${option.verdict}${
+            feedback?.verdict === option.verdict ? ' selected' : ''
+          }`}
+          disabled={pending !== null}
+          onClick={() => void submit(option.verdict)}
+        >
+          {pending === option.verdict && <LoaderCircle className="spin" size={11} />}
+          {option.label}
+        </button>
+      ))}
+      {feedback && (
+        <span className="archive-feedback-meta">
+          已归档：{verdictLabel(feedback.verdict)}
+          {feedback.by_name || feedback.by_work_code
+            ? ` · ${feedback.by_name || feedback.by_work_code}`
+            : ''}
+        </span>
+      )}
+      {failedSubmit && <span className="archive-feedback-error">提交失败，请重试</span>}
+    </div>
+  );
+}
+
 function AssistantMessage({
   message,
   live,
   cost,
+  conversationId,
+  showFeedback,
 }: {
   message: ChatMessage;
   /** 是否为本会话正在进行的回复；否则 streaming 视为中断的遗留消息 */
   live: boolean;
   /** 本轮花费估算文本；无价格数据时为 null */
   cost: string | null;
+  conversationId: string;
+  /** 是否展示归档评价条（最近一条可归档终稿，或历史上已归档的消息） */
+  showFeedback: boolean;
 }) {
   const interrupted = message.status === 'failed' || (message.status === 'streaming' && !live);
   return (
@@ -168,6 +259,7 @@ function AssistantMessage({
           <span>{message.error || '回复中断'}</span>
         </div>
       )}
+      {showFeedback && <ArchiveFeedbackBar conversationId={conversationId} message={message} />}
       <time className="chat-message-time">
         {formatDate(message.created_at)}
         {message.steps.length > 0 && (
@@ -208,6 +300,14 @@ export function ChatThread({
   const messageCount = conversation.messages.length;
   const lastMessage = conversation.messages.at(-1);
   const consultations = conversation.consultations ?? [];
+  // 归档评价条挂点：最近一条可归档终稿（与知音楼「回写最近一条」同口径）；历史上已归档的消息也显示状态。
+  const lastArchivableId = useMemo(() => {
+    for (let index = conversation.messages.length - 1; index >= 0; index -= 1) {
+      const message = conversation.messages[index]!;
+      if (isArchivableMessage(message)) return message.id;
+    }
+    return null;
+  }, [conversation.messages]);
 
   const activeModelName = useMemo(() => {
     const override = conversation.model_override;
@@ -393,6 +493,10 @@ export function ChatThread({
                 key={message.id}
                 message={message}
                 live={sending && index === conversation.messages.length - 1}
+                conversationId={conversation.id}
+                showFeedback={
+                  message.id === lastArchivableId || message.analysis_feedback != null
+                }
                 cost={(() => {
                   const value = estimateCost(
                     message.input_tokens,

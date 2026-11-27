@@ -1211,3 +1211,79 @@ test('ai-traces 列表合并时间线事件（最新在前），事件详情可�
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('web 归档评价：故障终稿可评价、覆盖写、非终稿 422', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mastra-message-feedback-'));
+  const store = new ProductStore(createClient({ url: `file:${join(directory, 'runtime.db')}` }));
+  const routes = createConversationRoutes(store);
+  const app = new Hono<{ Variables: AuthVariables }>();
+  app.use('*', async (context, next) => {
+    context.set('identity', { subject: 'teacher-9', displayName: '归档老师', issuer: 'test' });
+    await next();
+  });
+  app.route('/', routes);
+  try {
+    const conversation = await store.createConversation({ title: 'web 归档' });
+    conversation.messages.push(
+      {
+        id: 'm-final', role: 'assistant', content: '判定：已定位\n直接原因：token 过期',
+        steps: [], status: 'completed', error: null, report: null,
+        input_tokens: null, output_tokens: null, context_tokens: null,
+        context_cache_read_tokens: null, analysis_feedback: null, tool_usage: {},
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 'm-plain', role: 'assistant', content: '这是普通回复，没有判定标记',
+        steps: [], status: 'completed', error: null, report: null,
+        input_tokens: null, output_tokens: null, context_tokens: null,
+        context_cache_read_tokens: null, analysis_feedback: null, tool_usage: {},
+        created_at: new Date().toISOString(),
+      },
+    );
+    await store.saveConversation(conversation);
+
+    // 终稿可评价：写入身份与时间
+    const ok = await app.request(`/conversations/${conversation.id}/messages/m-final/feedback`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ verdict: 'correct' }),
+    });
+    assert.equal(ok.status, 200);
+    const saved = await store.getConversation(conversation.id);
+    const feedback = saved.messages.find((m) => m.id === 'm-final')?.analysis_feedback;
+    assert.equal(feedback?.verdict, 'correct');
+    assert.equal(feedback?.by_work_code, 'teacher-9');
+    assert.equal(feedback?.by_name, '归档老师');
+    assert.ok(feedback?.at);
+
+    // 重复评价以最新覆盖（允许点错纠正）
+    const again = await app.request(`/conversations/${conversation.id}/messages/m-final/feedback`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ verdict: 'failed' }),
+    });
+    assert.equal(again.status, 200);
+    const overwritten = await store.getConversation(conversation.id);
+    assert.equal(overwritten.messages.find((m) => m.id === 'm-final')?.analysis_feedback?.verdict, 'failed');
+
+    // 非终稿不可评价
+    const plain = await app.request(`/conversations/${conversation.id}/messages/m-plain/feedback`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ verdict: 'correct' }),
+    });
+    assert.equal(plain.status, 422);
+
+    // 消息不存在 / 非法 verdict
+    const missing = await app.request(`/conversations/${conversation.id}/messages/nope/feedback`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ verdict: 'correct' }),
+    });
+    assert.equal(missing.status, 404);
+    const bad = await app.request(`/conversations/${conversation.id}/messages/m-final/feedback`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ verdict: 'great' }),
+    });
+    assert.equal(bad.status, 422);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
