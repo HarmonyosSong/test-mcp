@@ -129,14 +129,14 @@ function ConversationIdChip({ id }: { id: string }) {
   );
 }
 
-/** 与 runtime isFaultFinalAnswer 同口径：首行「判定：已定位|可能定位|证据不足|工具异常」且非（初步）。 */
-const FINAL_VERDICT_PATTERN = /^判定：(已定位|可能定位|证据不足|工具异常)(?!\s*[（(]\s*初步)/m;
+/** 与 runtime isFaultFinalAnswer 同口径：含「判定：已定位|可能定位|证据不足|工具异常」锚点且非（初步），不限行首。 */
+const FINAL_VERDICT_PATTERN = /判定\s*[:：]\s*(已定位|可能定位|证据不足|工具异常)(?!\s*[（(]\s*初步)/;
 
 function isArchivableMessage(message: ChatMessage): boolean {
   return (
     message.role === 'assistant' &&
     message.status === 'completed' &&
-    FINAL_VERDICT_PATTERN.test(message.content.trimStart())
+    FINAL_VERDICT_PATTERN.test(message.content)
   );
 }
 

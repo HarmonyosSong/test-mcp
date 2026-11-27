@@ -27,13 +27,15 @@ function archiveLink(label: string): string {
 export const ARCHIVE_SECTION = `**【问题归档】**\n${archiveLink('问题分析正确')}　${archiveLink('问题分析模糊')}　${archiveLink('问题分析失败')}`;
 
 /**
- * 故障排查终稿判定：首行「判定：已定位|可能定位|证据不足|工具异常」且不标「（初步）」。
+ * 故障排查终稿判定：含「判定：已定位|可能定位|证据不足|工具异常」锚点且不标「（初步）」。
+ * 锚点与 parseVerdictMarker 同口径（不限行首，句中出现也算——模型可能把判定揉进段落），
+ * 避免出现「统计有结论但不可归档」的口径裂缝。
  * 信息查询（查学员）与初步判定（协查在途）都不是终稿，不挂归档、也不作为归档回写目标。
  */
-const FINAL_VERDICT_PATTERN = /^判定：(已定位|可能定位|证据不足|工具异常)(?!\s*[（(]\s*初步)/m;
+const FINAL_VERDICT_PATTERN = /判定\s*[:：]\s*(已定位|可能定位|证据不足|工具异常)(?!\s*[（(]\s*初步)/;
 
 export function isFaultFinalAnswer(content: string): boolean {
-  return FINAL_VERDICT_PATTERN.test(content.trimStart());
+  return FINAL_VERDICT_PATTERN.test(content);
 }
 
 /** 给终稿正文追加「问题归档」区（仅在出站时追加，不落库）。
