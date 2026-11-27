@@ -335,6 +335,11 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
         maxRemoteCalls: config.investigationMaxRemoteCalls,
       },
       createConversationSource,
+      decompileBinary: {
+        jadxPath: config.jadxPath,
+        // 反编译产物按内容哈希缓存，与快照同根（快照目录已在 dataRoot 下）。
+        cacheRoot: resolve(config.snapshotDir, 'derived'),
+      },
     }));
     app.route('/api', createModelRoutes(modelConfiguration));
     app.route('/api', createYachFeedbackRoutes(store));
@@ -390,6 +395,10 @@ export async function createRuntimeApp(config: RuntimeConfig): Promise<RuntimeAp
             maxRemoteCalls: config.investigationMaxRemoteCalls,
           },
           createConversationSource,
+          decompileBinary: {
+            jadxPath: config.jadxPath,
+            cacheRoot: resolve(config.snapshotDir, 'derived'),
+          },
         },
       })
       : null;

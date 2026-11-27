@@ -88,6 +88,8 @@ export const runtimeConfigSchema = z.object({
   codeIndexTimeoutSeconds: z.coerce.number().int().min(5).max(600).default(90),
   skillsDir: z.string().default(resolve(repositoryRoot, 'skills')),
   snapshotDir: z.string().optional(),
+  /** jadx 可执行文件路径（反编译快照内三方 SDK 二进制用）；缺省按 PATH 查找。 */
+  jadxPath: z.string().trim().default('jadx'),
   versionRegistryRoot: z.string().default('version-registry'),
   gitlabBaseUrl: z.string().default('https://git.100tal.com'),
   gitlabToken: z.string().default(''),
@@ -205,6 +207,7 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     codeIndexTimeoutSeconds: env.HARMONY_AGENT_CODE_INDEX_TIMEOUT_SECONDS,
     skillsDir: env.HARMONY_MASTRA_SKILLS_DIR,
     snapshotDir: optionalEnvPath(env.HARMONY_MASTRA_SNAPSHOT_DIR),
+    jadxPath: env.HARMONY_AGENT_JADX_PATH,
     versionRegistryRoot: env.HARMONY_AGENT_VERSION_REGISTRY_ROOT,
     gitlabBaseUrl: env.HARMONY_AGENT_GITLAB_BASE_URL,
     gitlabToken: env.HARMONY_AGENT_GITLAB_TOKEN ?? env.ANALYSIS_GIT_TOKEN,

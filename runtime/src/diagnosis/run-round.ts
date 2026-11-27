@@ -9,6 +9,7 @@ import { createRoundCapabilitySession, type CapabilitySession, type CapabilityCo
 import type { ToolsetsInput } from '@mastra/core/agent';
 import { createLazySourceToolset, LazySourceHolder } from '../capabilities/lazy-source.js';
 import { createPrepareSourceTool } from '../capabilities/prepare-source-tool.js';
+import { createDecompileBinaryTool } from '../capabilities/decompile-binary-tool.js';
 import {
   composeFollowupMessage,
   createConsultCompassTool,
@@ -63,6 +64,12 @@ export interface RunDiagnosisRoundOptions {
     boundSource?: BoundSourceContext;
     signal?: AbortSignal;
   }) => Promise<Partial<Pick<ConversationRecord, 'workspace_path' | 'repository_id' | 'repository_name' | 'requested_ref' | 'resolved_commit' | 'source_repositories' | 'source_completeness' | 'source_limitations' | 'platform' | 'product_line' | 'form_factor' | 'version' | 'build'>>>;
+  /** 配置完成才挂载 decompile_binary 工具（三方 SDK 二进制反编译；工具可用性即能力边界）。 */
+  decompileBinary?: {
+    jadxPath: string;
+    /** 反编译产物缓存根（按二进制内容哈希分桶，跨版本复用）。 */
+    cacheRoot: string;
+  };
 }
 
 export interface RunDiagnosisRoundInput {
@@ -448,6 +455,14 @@ export async function runDiagnosisRound(input: RunDiagnosisRoundInput): Promise<
         bind: options.createConversationSource,
         holder: sourceHolder,
         content,
+        abortSignal,
+      });
+    }
+    if (options.decompileBinary) {
+      roundTools.decompile_binary = createDecompileBinaryTool({
+        conversation,
+        jadxPath: options.decompileBinary.jadxPath,
+        cacheRoot: options.decompileBinary.cacheRoot,
         abortSignal,
       });
     }

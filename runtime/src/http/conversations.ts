@@ -50,6 +50,11 @@ interface ConversationRouteOptions {
     boundSource?: BoundSourceContext;
     signal?: AbortSignal;
   }) => Promise<Partial<Pick<ConversationRecord, 'workspace_path' | 'repository_id' | 'repository_name' | 'requested_ref' | 'resolved_commit' | 'source_repositories' | 'source_completeness' | 'source_limitations' | 'platform' | 'product_line' | 'form_factor' | 'version' | 'build'>>>;
+  /** 三方 SDK 二进制反编译能力（decompile_binary）；配置完成才挂载。 */
+  decompileBinary?: {
+    jadxPath: string;
+    cacheRoot: string;
+  };
 }
 
 function publicConversation(value: ReturnType<typeof ConversationRecordSchema.parse>) {
@@ -153,6 +158,7 @@ export function createConversationRoutes(
               compassAvailable: options.compassAvailable,
               investigationBudget: options.investigationBudget,
               createConversationSource: options.createConversationSource,
+              decompileBinary: options.decompileBinary,
               onCompassFollowupSettled: ({ conversation: settled, message: followupMessage }) => {
                 send(sse('STATE_SNAPSHOT', runId, {
                   conversation_id: id,
