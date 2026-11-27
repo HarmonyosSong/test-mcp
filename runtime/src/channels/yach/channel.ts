@@ -34,6 +34,8 @@ interface EmployeeSession {
   running: boolean;
   conversationId: string | null;
   abort: AbortController | null;
+  /** 群历史下界（秒）：/new 时设为当时时刻，其前的群消息不再注入新会话上下文。 */
+  historyFloorSec: number | null;
 }
 
 function truncateReply(text: string): string {
@@ -141,7 +143,7 @@ export class YachChannel {
     const key = this.sessionKey(event);
     let session = this.sessions.get(key);
     if (!session) {
-      session = { queue: [], running: false, conversationId: null, abort: null };
+      session = { queue: [], running: false, conversationId: null, abort: null, historyFloorSec: null };
       this.sessions.set(key, session);
     }
     return session;
@@ -322,10 +324,10 @@ export class YachChannel {
     return created;
   }
 
-  private async diagnosisContent(event: YachEvent): Promise<string> {
+  private async diagnosisContent(session: EmployeeSession, event: YachEvent): Promise<string> {
     if (!event.groupId) return event.text;
     try {
-      const rows = await this.cli.groupHistory(event.groupId);
+      const rows = await this.cli.groupHistory(event.groupId, 30, session.historyFloorSec ?? undefined);
       const summary = summarizeGroupHistory(rows, {
         excludeSenders: this.deps.config.yachBotName.split(',').map((name) => name.trim()).filter(Boolean),
       });
@@ -371,6 +373,8 @@ export class YachChannel {
 
   private async handleEvent(session: EmployeeSession, event: YachEvent): Promise<void> {
     if (event.text === '/new') {
+      // 群历史下界同步抬到此刻：新会话的诊断不再吃进 /new 之前的群消息。
+      session.historyFloorSec = Math.floor(Date.now() / 1000);
       await this.resolveConversation(session, event, true);
       await this.reply(event, '已开启新的诊断会话，请发送问题。');
       return;
@@ -396,7 +400,7 @@ export class YachChannel {
     const progress = new YachProgressCard(this.cli, event);
     const abort = new AbortController();
     session.abort = abort;
-    const content = await this.diagnosisContent(event);
+    const content = await this.diagnosisContent(session, event);
     let sawText = false;
     try {
       const result = await runDiagnosisRound({

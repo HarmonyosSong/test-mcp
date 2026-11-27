@@ -1,7 +1,6 @@
 import type { ConversationRecord } from '../domain/schemas.js';
 import type { RunDiagnosisRoundOptions } from '../diagnosis/run-round.js';
 import { PromptVersionContextError, resolvePromptSourceContext } from './prompt-version-context.js';
-import { RepositoryGitError } from './repository.js';
 import { clearIncompleteSourceBinding, hasCompleteSourceBinding, needsIosComponents } from './source-binding.js';
 
 /** Runs after admission/stream start, shared by Web and IM. */
@@ -48,8 +47,10 @@ export async function prepareConversationSource(
     signal?.throwIfAborted();
     if (error instanceof PromptVersionContextError) {
       conversation.source_limitations = ['源码绑定所需上下文暂未唯一确定，本轮先查询关联日志或追问缺失信息。'];
-    } else if (error instanceof RepositoryGitError) {
-      conversation.source_limitations = [`源码快照暂未绑定：${error.message}。本轮先查询关联日志，补齐范围后自动重试。`];
-    } else throw error;
+    } else {
+      // 版本未登记/仓库故障/物化层错误都是可消化的绑定失败：写成可读 limitation 供模型调整重试。
+      // 与显式绑定路径同一工具合同（返回缺口文案，不裸抛 {"name":"Error"}）。
+      conversation.source_limitations = [`源码快照暂未绑定：${error instanceof Error ? error.message : String(error)}。本轮先查询关联日志，补齐范围后自动重试。`];
+    }
   }
 }

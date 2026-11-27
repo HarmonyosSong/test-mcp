@@ -165,6 +165,43 @@ test('group history excludes the bot itself and error dumps', () => {
   assert.doesNotMatch(summary, /培优问题排查助手|机器人二号|AI_APICallError|任务进度|诊断进度|正在查询远程日志|判定：/);
 });
 
+test('group history filters session control commands from users', () => {
+  const summary = summarizeGroupHistory([
+    { senderName: '甲', content: '/new' },
+    { senderName: '乙', content: '/stop' },
+    { senderName: '丙', content: '支付页面打不开' },
+  ]);
+  assert.equal(summary, '丙: 支付页面打不开');
+});
+
+test('groupHistory floor overrides the 30-minute window (session boundary from /new)', async () => {
+  const calls: string[][] = [];
+  const cli = new YachCli({
+    cliPath: 'yach-cli',
+    appKey: 'k',
+    appSecret: 's',
+    runCommand: async (args) => {
+      calls.push(args);
+      if (args[0] === 'config') return { stdout: '{"ok":true}', stderr: '', code: 0 };
+      return {
+        stdout: JSON.stringify({ ok: true, data: { code: 200, msg: '', obj: { messages: [] } } }),
+        stderr: '',
+        code: 0,
+      };
+    },
+  });
+  const floor = Math.floor(Date.now() / 1000) - 60; // 1 分钟前，远高于 30 分钟窗口起点
+  await cli.groupHistory('g1', 30, floor);
+  const historyCall = calls.find((args) => args[0] === 'im' && args[1] === 'history')!;
+  const start = Number(historyCall[historyCall.indexOf('--start-time') + 1]);
+  assert.equal(start, floor);
+  // 不传 floor 时维持 30 分钟窗口
+  await cli.groupHistory('g1');
+  const plainCall = calls.filter((args) => args[0] === 'im' && args[1] === 'history')[1]!;
+  const plainStart = Number(plainCall[plainCall.indexOf('--start-time') + 1]);
+  assert.ok(plainStart <= Math.floor(Date.now() / 1000) - 29 * 60);
+});
+
 test('extractList unwraps yach-cli data.obj.messages envelope', () => {
   const rows = extractList({
     ok: true,

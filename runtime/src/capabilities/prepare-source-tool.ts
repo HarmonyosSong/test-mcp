@@ -52,6 +52,9 @@ export function createPrepareSourceTool(options: {
       version: z.string().optional().describe(
         '配合 platform 使用指定对照端/显式端版本；缺省时优先事故版本号，未登记则按目标平台规则回落',
       ),
+      form_factor: z.enum(['phone', 'pad', 'universal']).optional().describe(
+        '端形态（手机/平板）；文本解析出的形态有误时显式纠正（如事故实为手机端却绑到平板仓），缺省沿用会话值',
+      ),
     }),
     execute: async (args) => {
       abortSignal?.throwIfAborted();
@@ -71,8 +74,10 @@ export function createPrepareSourceTool(options: {
       // 显式指定分支：事故平台未定时，platform 参数作为直接绑定目标（无端信息查询、
       // 多端规则对比的首绑端）——文本里有多个平台时文本解析必然歧义失败，这条路是
       // 模型唯一能主动推进的绑定方式。绑上后该端即事故端，再传另一 platform 自动走对照端。
-      if (args.platform && !incidentPlatform) {
-        return bindExplicitSlot(args.platform, args.version);
+      // 事故平台已定且模型显式传了同平台+版本/形态时同走此路：按显式参数重绑事故端——
+      // 模型按「换版本重试」指引操作或纠正形态误判时，显式参数不得被文本解析路径静默忽略。
+      if (args.platform && (!incidentPlatform || (args.platform === incidentPlatform && (!!args.version?.trim() || !!args.form_factor)))) {
+        return bindExplicitSlot(args.platform, args.version, args.form_factor ?? null);
       }
 
       const extractInput = args.hint ? `${content}\n${args.hint}` : content;
@@ -118,18 +123,21 @@ export function createPrepareSourceTool(options: {
   async function bindExplicitSlot(
     platform: 'harmony' | 'android' | 'ios',
     requestedVersion?: string,
+    /** 显式形态纠正：缺省（null）沿用会话值。 */
+    explicitFormFactor: 'phone' | 'pad' | 'universal' | null = null,
   ): Promise<Record<string, unknown>> {
     const { conversation, bind, holder, abortSignal } = options;
     if (!bind) {
       return { status: 'unavailable', limitation: '源码快照服务未配置，无法绑定源码。' };
     }
     const version = requestedVersion?.trim() || conversation.version || null;
+    const formFactor = explicitFormFactor ?? conversation.form_factor;
     try {
       const source = await bind({
         platform,
         // 与解析器同一规则：产品线未指明默认学而思（老会话可能尚无 product_line）。
         productLine: conversation.product_line ?? 'xueersi',
-        formFactor: conversation.form_factor,
+        formFactor,
         version,
         build: null,
         signal: abortSignal,
@@ -144,7 +152,8 @@ export function createPrepareSourceTool(options: {
       }
       // 与 prepareConversationSource 成功路径同构：先写 scope，再并入绑定结果。
       clearIncompleteSourceBinding(conversation);
-      Object.assign(conversation, { platform, version });
+      // 显式纠正的形态也要落会话：bind 返回不含 scope 字段时，残留的错误形态不得留存。
+      Object.assign(conversation, { platform, version, form_factor: formFactor });
       Object.assign(conversation, source);
       await holder.bind(conversation.workspace_path!);
       return {
