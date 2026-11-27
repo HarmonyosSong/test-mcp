@@ -155,3 +155,35 @@ test('产品线未指明时默认学而思，显式提到学家云（含历史�
     'xuejiayun',
   );
 });
+
+test('否定表述不误判形态：「安卓端手机版（非 HD/平板）」解析为 phone', () => {
+  const scope = resolvePromptSourceContext('学而思 App 安卓端手机版（非 HD/平板）7.106.0，招商银行支付无法拉起', {
+    platform: null, product_line: null, form_factor: null, version: null, build: null,
+  });
+  assert.equal(scope?.platform, 'android');
+  assert.equal(scope?.formFactor, 'phone');
+  assert.equal(scope?.version, '7.106.0');
+});
+
+test('否定表述不误判平台：「不是鸿蒙的问题，安卓上复现」解析为 android', () => {
+  const scope = resolvePromptSourceContext('不是鸿蒙的问题，在安卓上复现了', {
+    platform: null, product_line: null, form_factor: null, version: null, build: null,
+  });
+  assert.equal(scope?.platform, 'android');
+});
+
+test('端形态双命中（手机+平板）抛歧义，不静默二选一', () => {
+  assert.throws(
+    () => resolvePromptSourceContext('手机和平板都出现这个问题', {
+      platform: null, product_line: null, form_factor: null, version: null, build: null,
+    }),
+    (error: unknown) => error instanceof PromptVersionContextError && /端形态/.test(error.message),
+  );
+});
+
+test('回归：「学而思 HD 黑屏」仍解析为 pad', () => {
+  const scope = resolvePromptSourceContext('学而思 HD 黑屏', {
+    platform: null, product_line: null, form_factor: null, version: null, build: null,
+  });
+  assert.equal(scope?.formFactor, 'pad');
+});

@@ -368,3 +368,38 @@ test('对照端物化失败：返回缺口文本而不抛错（工具合同）',
   assert.equal(conversation.compare_source, null);
 });
 
+
+test('显式重绑：事故平台已定、传同平台+版本时按显式版本重绑事故端（不再走文本解析）', async () => {
+  // 模拟知音楼事故现场：首轮文本解析残留 platform=android / form_factor=pad / version=7.106.0，
+  // 模型换版本重试时 version 参数必须生效，不得被残留静默覆盖。
+  const conversation = makeConversation('分析下学而思 App 安卓端招商银行支付为什么启动不了');
+  conversation.platform = 'android';
+  conversation.form_factor = 'pad';
+  conversation.version = '7.106.0';
+  const holder = new LazySourceHolder(fakeProvider([]), conversation.id);
+  const bindInputs: Array<Record<string, unknown>> = [];
+  const tool = createPrepareSourceTool({
+    conversation,
+    holder,
+    content: '分析下学而思 App 安卓端招商银行支付为什么启动不了',
+    bind: async (input: Record<string, unknown>) => {
+      bindInputs.push(input);
+      return {
+        workspace_path: '/tmp/ws-rebind',
+        platform: 'android',
+        product_line: 'xueersi',
+        form_factor: null,
+        version: input.version as string,
+        build: '56071',
+        source_repositories: [],
+        source_completeness: 'complete',
+        source_limitations: [],
+      };
+    },
+  });
+  const result = await executeTool(tool, { platform: 'android', version: '7.105.0' });
+  assert.equal(result.status, 'bound');
+  assert.equal(bindInputs.length, 1);
+  assert.equal(bindInputs[0]!.version, '7.105.0');
+  assert.equal(conversation.version, '7.105.0');
+});
